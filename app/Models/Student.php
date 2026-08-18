@@ -36,7 +36,7 @@ class Student extends Authenticatable
 
         $studentNo = ltrim($studentNoOrEmail, 'Ss');
 
-        return 'S'.$studentNo.'@ad1.nutc.edu.tw';
+        return 's'.$studentNo.'@nutc.edu.tw';
     }
 
     public function courses(): BelongsToMany

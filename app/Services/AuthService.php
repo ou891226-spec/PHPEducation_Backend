@@ -48,6 +48,7 @@ class AuthService
 
     /**
      * Lookup order: admins.account → teachers.account → students.email
+     * Students type student no (e.g. s1411131000); backend stores school email.
      */
     private function findAuthenticatable(string $account): ?Authenticatable
     {
@@ -61,6 +62,6 @@ class AuthService
             return $teacher;
         }
 
-        return Student::query()->where('email', $account)->first();
+        return Student::query()->where('email', Student::emailFromStudentNo($account))->first();
     }
 }

@@ -290,8 +290,7 @@ CREATE TABLE `students` (
   `updated_at` timestamp NULL DEFAULT NULL COMMENT '更新時間',
   PRIMARY KEY (`id`),
   UNIQUE KEY `students_student_no_unique` (`student_no`),
-  UNIQUE KEY `email` (`email`),
-  UNIQUE KEY `email_2` (`email`)
+  UNIQUE KEY `students_email_unique` (`email`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -301,7 +300,7 @@ CREATE TABLE `students` (
 
 LOCK TABLES `students` WRITE;
 /*!40000 ALTER TABLE `students` DISABLE KEYS */;
-INSERT INTO `students` VALUES (1,'$2y$12$BdjKBDpHtL0VF.1RysbDM.VGFDaLYmzvdMKNbmT4AwrPEPRs51JSO','1411131000','王小明','S1411131000@ad1.nutc.edu.tw','2026-08-14 16:28:18','2026-08-14 16:28:18');
+INSERT INTO `students` VALUES (1,'$2y$12$BdjKBDpHtL0VF.1RysbDM.VGFDaLYmzvdMKNbmT4AwrPEPRs51JSO','1411131000','王小明','s1411131000@nutc.edu.tw','2026-08-14 16:28:18','2026-08-14 16:28:18');
 /*!40000 ALTER TABLE `students` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -436,4 +435,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-08-19  0:22:53
+-- Dump completed on 2026-08-19  0:54:24

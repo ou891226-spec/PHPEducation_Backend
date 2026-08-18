@@ -41,13 +41,13 @@ class AuthApiTest extends TestCase
     public function test_student_login(): void
     {
         $response = $this->postJson('/api/v1/auth/login', [
-            'account' => 'S1411131000@ad1.nutc.edu.tw',
+            'account' => 's1411131000',
             'password' => self::PASSWORD,
         ]);
 
         $response->assertOk()
             ->assertJsonPath('user.role', 'student')
-            ->assertJsonPath('user.account', 'S1411131000@ad1.nutc.edu.tw')
+            ->assertJsonPath('user.account', 's1411131000@nutc.edu.tw')
             ->assertJsonPath('user.student_no', '1411131000')
             ->assertJsonPath('user.name', '王小明');
     }
@@ -55,7 +55,7 @@ class AuthApiTest extends TestCase
     public function test_wrong_password_returns_401(): void
     {
         $response = $this->postJson('/api/v1/auth/login', [
-            'account' => 'S1411131000@ad1.nutc.edu.tw',
+            'account' => 's1411131000',
             'password' => 'wrong-password',
         ]);
 
@@ -168,7 +168,7 @@ class AuthApiTest extends TestCase
 
     public function test_student_cannot_access_teacher_course_crud(): void
     {
-        $token = $this->loginToken('S1411131000@ad1.nutc.edu.tw');
+        $token = $this->loginToken('s1411131000');
 
         $this->withToken($token)
             ->getJson('/api/v1/teacher/courses')

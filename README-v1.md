@@ -157,7 +157,7 @@ tests/
 | created_at | timestamp | 建立時間 |
 | updated_at | timestamp | 更新時間 |
 
-> 學生登入時，前端 Request 的 `account` 填學校信箱，例如 `S1411131000@ad1.nutc.edu.tw`。後端比對 `students.email`。學號仍存在 `student_no`，不當登入帳號。若開通時只填學號，系統組成 `S{學號}@ad1.nutc.edu.tw`。
+> 學生登入時，前端 Request 的 `account` 填學號（可含前綴 `s`），例如 `s1411131000`。後端組成並比對 `students.email`（`s1411131000@nutc.edu.tw`）。學號存在 `student_no`。若開通時只填學號，系統組成 `s{學號}@nutc.edu.tw`。
 
 ### student_applications 學生帳號申請
 
@@ -333,6 +333,17 @@ Laravel Sanctum 預設 Token 資料表（表名固定為 `personal_access_tokens
   "password": "Password123!"
 }
 ```
+
+學生登入時 `account` 填學號即可，不必填完整信箱：
+
+```json
+{
+  "account": "s1411131000",
+  "password": "Password123!"
+}
+```
+
+後端會組成 `s1411131000@nutc.edu.tw` 去對 `students.email`。成功時 `user.account` 仍回傳完整信箱。
 
 | 狀態碼 | 說明 |
 |--------|------|
@@ -531,7 +542,7 @@ Authorization: Bearer {token}
 
 管理員列表建議回明細列（每人一列），不要只回申請主檔。
 
-登入帳號為學校信箱 `S{學號}@ad1.nutc.edu.tw`，對應 `students.email`。
+登入時學生只填學號（例如 `s1411131000`），後端對應學校信箱 `s{學號}@nutc.edu.tw`（`students.email`）。
 
 ---
 
@@ -781,7 +792,7 @@ Request（新增／修改）：
 | 管理員 | admin@school.edu.tw | Password123! |
 | 教師 | teacher@school.edu.tw | Password123! |
 | 教師 | teacher2@school.edu.tw | Password123! |
-| 學生 | S1411131000@ad1.nutc.edu.tw | Password123! |
+| 學生 | s1411131000 | Password123! |
 
 Seeder 已為 `teacher2` 建立一門課「陳老師的課程」，供跨教師權限測試使用。
 
@@ -793,7 +804,7 @@ Seeder 已為 `teacher2` 建立一門課「陳老師的課程」，供跨教師�
 
 ```text
 資料庫在這裡
-database/sql/php_education_20260815.sql
+database/sql/php_education_20260819.sql
 ```
 
 ```bash

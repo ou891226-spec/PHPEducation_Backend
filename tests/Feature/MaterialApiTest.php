@@ -130,7 +130,7 @@ class MaterialApiTest extends TestCase
 
     public function test_student_cannot_access_material_api(): void
     {
-        $token = $this->loginToken('S1411131000@ad1.nutc.edu.tw');
+        $token = $this->loginToken('s1411131000');
 
         $this->withToken($token)
             ->getJson('/api/v1/teacher/courses/1/topics')
