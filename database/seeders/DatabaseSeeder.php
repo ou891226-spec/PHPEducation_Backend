@@ -45,7 +45,13 @@ class DatabaseSeeder extends Seeder
 
         Course::query()->create([
             'teacher_id' => $teacherB->id,
-            'name' => '陳老師的課程',
+            'name' => '網際系統設計 (資應)',
+            'semester' => '115-1',
+        ]);
+
+        Course::query()->create([
+            'teacher_id' => $teacherB->id,
+            'name' => '網際系統設計 (資管)',
             'semester' => '115-1',
         ]);
     }

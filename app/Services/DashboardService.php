@@ -25,6 +25,7 @@ class DashboardService
                 'courses' => $this->formatCourses(
                     Course::query()
                         ->where('teacher_id', $authenticatable->id)
+                        ->orderByDesc('semester')
                         ->orderByDesc('id')
                         ->get()
                 ),
@@ -33,7 +34,12 @@ class DashboardService
 
         if ($authenticatable instanceof Student) {
             return array_merge($payload, [
-                'courses' => $this->formatCourses($authenticatable->courses()->orderByDesc('courses.id')->get()),
+                'courses' => $this->formatCourses(
+                    $authenticatable->courses()
+                        ->orderByDesc('courses.semester')
+                        ->orderByDesc('courses.id')
+                        ->get()
+                ),
             ]);
         }
 
