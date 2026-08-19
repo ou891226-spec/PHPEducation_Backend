@@ -794,7 +794,7 @@ Request（新增／修改）：
 | 教師 | teacher2@school.edu.tw | Password123! |
 | 學生 | s1411131000 | Password123! |
 
-Seeder 已為 `teacher2` 建立一門課「陳老師的課程」，供跨教師權限測試使用。
+Seeder 已為 `teacher2`（陳老師）建立「網際系統設計 (資應)」「網際系統設計 (資管)」兩門課。
 
 ---
 

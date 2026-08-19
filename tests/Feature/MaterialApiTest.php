@@ -114,7 +114,14 @@ class MaterialApiTest extends TestCase
 
     public function test_teacher_cannot_access_other_teachers_materials(): void
     {
-        $otherCourse = Course::query()->where('name', '陳老師的課程')->firstOrFail();
+        $otherTeacher = \App\Models\Teacher::query()
+            ->where('account', 'teacher2@school.edu.tw')
+            ->firstOrFail();
+
+        $otherCourse = Course::query()
+            ->where('teacher_id', $otherTeacher->id)
+            ->orderBy('id')
+            ->firstOrFail();
         $token = $this->loginToken('teacher@school.edu.tw');
 
         $this->withToken($token)

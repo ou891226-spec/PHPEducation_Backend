@@ -88,7 +88,7 @@ CREATE TABLE `courses` (
   PRIMARY KEY (`id`),
   KEY `courses_teacher_id_foreign` (`teacher_id`),
   CONSTRAINT `courses_teacher_id_foreign` FOREIGN KEY (`teacher_id`) REFERENCES `teachers` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -97,7 +97,7 @@ CREATE TABLE `courses` (
 
 LOCK TABLES `courses` WRITE;
 /*!40000 ALTER TABLE `courses` DISABLE KEYS */;
-INSERT INTO `courses` VALUES (1,'陳老師的課程',NULL,'115-1',2,'2026-08-14 16:28:18','2026-08-14 16:28:18');
+INSERT INTO `courses` VALUES (2,'網際系統設計 (資應)',NULL,'115-1',2,'2026-08-19 05:35:00','2026-08-19 05:35:00'),(3,'網際系統設計 (資管)',NULL,'115-1',2,'2026-08-19 05:35:00','2026-08-19 05:35:00');
 /*!40000 ALTER TABLE `courses` ENABLE KEYS */;
 UNLOCK TABLES;
 
