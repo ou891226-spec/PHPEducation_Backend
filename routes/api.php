@@ -9,7 +9,19 @@ use App\Http\Controllers\Api\V1\Teacher\TopicController;
 use App\Http\Controllers\Api\V1\Teacher\UnitController;
 use Illuminate\Support\Facades\Route;
 
+use App\Http\Controllers\TeacherApplicationController;
+use App\Http\Controllers\TeacherApprovementController;
+use App\Http\Controllers\StudentAccountApplicationController;
+use App\Http\Controllers\StudentApprovementController;
+
 Route::prefix('v1')->group(function () {
+
+    Route::post('/teacher-applications', [TeacherApplicationController::class, 'store']);
+    Route::post('/teacher-applications/{id}/approve',[TeacherApprovementController::class, 'approve']);
+
+    Route::post('/teacher/student-applications',[StudentAccountApplicationController::class, 'store']);
+    Route::post('/teacher/student-applications/{id}/approve',[StudentApprovementController::class, 'approve']);
+
     Route::post('/auth/login', [AuthController::class, 'login']);
 
     Route::middleware('auth:sanctum')->group(function () {

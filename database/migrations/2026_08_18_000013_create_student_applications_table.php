@@ -12,15 +12,18 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('student_applications', function (Blueprint $table) {
-            $table->unsignedBigInteger('id')->comment('教師編號');
-            $table->string('class_name')->comment('申請班級');
+            $table->id();
+            
+            $table->foreignId('tid')
+                ->constrained('teachers')
+                ->cascadeOnDelete()
+                ->comment('教師 ID');
+                
+            $table->string('class_name')->comment('班級名稱');
             $table->string('status')->default('pending')->comment('申請狀態');
-            $table->timestamp('created_at')->nullable()->comment('建立時間');
-            $table->timestamp('updated_at')->nullable()->comment('更新時間');
 
-            $table->primary('id');
-            $table->foreign('id')->references('id')->on('teachers')->cascadeOnDelete();
-        });
+            $table->timestamp('created_at')->nullable()->comment('建立時間');
+            $table->timestamp('updated_at')->nullable()->comment('更新時間');        });
     }
 
     public function down(): void
