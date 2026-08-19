@@ -12,6 +12,7 @@ class CourseService
     {
         return Course::query()
             ->where('teacher_id', $teacher->id)
+            ->orderByDesc('semester')
             ->orderByDesc('id')
             ->get()
             ->map(fn (Course $course) => $this->formatCourse($course))
