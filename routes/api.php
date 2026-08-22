@@ -16,11 +16,13 @@ use App\Http\Controllers\StudentApprovementController;
 
 Route::prefix('v1')->group(function () {
 
+    // 教師帳號 申請/審核 相關路由
     Route::post('/teacher-applications', [TeacherApplicationController::class, 'store']);
-    Route::post('/teacher-applications/{id}/approve',[TeacherApprovementController::class, 'approve']);
+    Route::post('/teacher-applications/{id}/approve', [TeacherApprovementController::class, 'approve']);
 
-    Route::post('/teacher/student-applications',[StudentAccountApplicationController::class, 'store']);
-    Route::post('/teacher/student-applications/{id}/approve',[StudentApprovementController::class, 'approve']);
+    // 學生批次帳號 申請/審核 相關路由
+    Route::post('/teacher/student-applications', [StudentAccountApplicationController::class, 'store']);
+    Route::post('/teacher/student-applications/{id}/approve', [StudentApprovementController::class, 'approve']);
 
     Route::post('/auth/login', [AuthController::class, 'login']);
 

@@ -6,6 +6,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Laravel\Sanctum\HasApiTokens;
 
+/**
+ * 學生正式帳號模型
+ */
 class Student extends Authenticatable
 {
     use HasApiTokens;
@@ -21,6 +24,9 @@ class Student extends Authenticatable
         'password',
     ];
 
+    /**
+     * 關聯：學生修習的多門課程
+     */
     protected function casts(): array
     {
         return [
@@ -28,6 +34,13 @@ class Student extends Authenticatable
         ];
     }
 
+    /**
+     * 輔助方法：根據學號產生校園 Email 地址
+     * 若已為 Email 格式則直接返回，否則轉為 s[學號]@nutc.edu.tw
+     *
+     * @param string $studentNoOrEmail
+     * @return string
+     */
     public static function emailFromStudentNo(string $studentNoOrEmail): string
     {
         if (str_contains($studentNoOrEmail, '@')) {
@@ -39,6 +52,9 @@ class Student extends Authenticatable
         return 's'.$studentNo.'@nutc.edu.tw';
     }
 
+    /**
+     * 關聯： 學生與課程之間的多對多關聯，透過 enrollments 資料表
+     */
     public function courses(): BelongsToMany
     {
         return $this->belongsToMany(Course::class, 'enrollments');

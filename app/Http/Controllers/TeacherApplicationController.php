@@ -7,16 +7,28 @@ use App\Http\Requests\StoreTeacherApplicationRequest;
 use App\Models\TeacherApplication;
 use App\Models\Teacher;
 
+/**
+ * Class TeacherApplicationController
+ * 負責處理外部使用者提交教師帳號申請的控制器
+ */
 class TeacherApplicationController extends Controller
 {
-    //
+    /**
+     * 提交教師帳號申請
+     *
+     * 驗證流程：
+     * 1. 確認該 Email 是否已為正式教師
+     * 2. 確認該 Email 是否已有尚未審核的申請案件（避免重複申請）
+     * 3. 建立待審核（status: pending）的申請記錄
+     *
+     * @param StoreTeacherApplicationRequest $request
+     * @return JsonResponse
+     */
     public function store(StoreTeacherApplicationRequest $request)
     {
-        // 
-        // 驗證請求資料
         $validatedData = $request->validated();
 
-        // 已經是教師
+        // 1. 確認該 Email 是否已為正式教師
         $isTeacher = Teacher::where('email', $validatedData['email'])->exists();
         
         if ($isTeacher) {
@@ -25,7 +37,7 @@ class TeacherApplicationController extends Controller
             ], 422);
         }
         
-        // 已經有待審核申請
+        // 2. 確認該 Email 是否已有尚未審核的申請案件（避免重複申請）
         $hasPendingApplication = TeacherApplication::where('email', $validatedData['email'])
             ->where('status', 'pending')
             ->exists();
@@ -36,6 +48,7 @@ class TeacherApplicationController extends Controller
             ], 422);
         }
 
+        // 3. 建立待審核（status: pending）的申請記錄
         $teacherApplication = TeacherApplication::create([
             'name' => $validatedData['name'],
             'email' => $validatedData['email'],

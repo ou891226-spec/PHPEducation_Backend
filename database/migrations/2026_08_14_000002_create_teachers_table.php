@@ -13,10 +13,12 @@ return new class extends Migration
     {
         Schema::create('teachers', function (Blueprint $table) {
             $table->id()->comment('教師 ID');
+
             $table->string('account')->unique()->comment('登入帳號');
             $table->string('password')->comment('加密後的密碼');
             $table->string('name')->comment('教師姓名');
             $table->string('email')->unique()->comment('Email');
+            
             $table->timestamp('created_at')->nullable()->comment('建立時間');
             $table->timestamp('updated_at')->nullable()->comment('更新時間');
         });

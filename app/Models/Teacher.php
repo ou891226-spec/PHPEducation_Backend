@@ -6,6 +6,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Laravel\Sanctum\HasApiTokens;
 
+/**
+ * 教師正式帳號模型
+ */
 class Teacher extends Authenticatable
 {
     use HasApiTokens;
