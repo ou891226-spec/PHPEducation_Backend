@@ -44,7 +44,7 @@ class MaterialDraftService
         $topics = $parsed['topics'];
         if ($topics === []) {
             throw ValidationException::withMessages([
-                'file' => ['沒有可匯入的教材列（範例列會被略過）'],
+                'file' => ['沒有可匯入的教材列（第 3 列範本不讀）'],
             ]);
         }
 
@@ -305,7 +305,7 @@ class MaterialDraftService
     /**
      * 草稿新增知識卡。
      *
-     * @param  array{title: string, content: string, sort_order?: int|null}  $data
+     * @param  array{title: string, content: string, example?: string|null, sort_order?: int|null}  $data
      * @return array<string, mixed>
      */
     public function addCard(Teacher $teacher, int $draftId, string $unitId, array $data): array
@@ -317,6 +317,7 @@ class MaterialDraftService
             'id' => (string) Str::ulid(),
             'title' => $data['title'],
             'content' => $data['content'],
+            'example' => $data['example'] ?? null,
             'sort_order' => $data['sort_order'] ?? count($unit['knowledge_cards']) + 1,
         ];
         $this->saveTree($draft, $tree);
@@ -327,7 +328,7 @@ class MaterialDraftService
     /**
      * 草稿修改知識卡。
      *
-     * @param  array{title: string, content: string, sort_order?: int|null}  $data
+     * @param  array{title: string, content: string, example?: string|null, sort_order?: int|null}  $data
      * @return array<string, mixed>
      */
     public function updateCard(Teacher $teacher, int $draftId, string $nodeId, array $data): array
@@ -337,6 +338,7 @@ class MaterialDraftService
         $card = &$this->findCard($tree, $nodeId);
         $card['title'] = $data['title'];
         $card['content'] = $data['content'];
+        $card['example'] = $data['example'] ?? null;
         if (array_key_exists('sort_order', $data) && $data['sort_order'] !== null) {
             $card['sort_order'] = $data['sort_order'];
         }
@@ -426,6 +428,7 @@ class MaterialDraftService
                                 'unit_id' => $unit->id,
                                 'title' => $cardNode['title'],
                                 'content' => $cardNode['content'],
+                                'example' => $cardNode['example'] ?? null,
                                 'sort_order' => $cardNode['sort_order'] ?? 0,
                             ]);
                         }
@@ -675,6 +678,7 @@ class MaterialDraftService
                             'id' => (string) Str::ulid(),
                             'title' => $card->title,
                             'content' => $card->content,
+                            'example' => $card->example,
                             'sort_order' => $card->sort_order,
                         ];
                     }

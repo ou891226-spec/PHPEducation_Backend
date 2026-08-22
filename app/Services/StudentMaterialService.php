@@ -68,6 +68,7 @@ class StudentMaterialService
                 'id' => $card->id,
                 'title' => $card->title,
                 'content' => $card->content,
+                'example' => $card->example,
                 'sort_order' => $card->sort_order,
             ])
             ->all();

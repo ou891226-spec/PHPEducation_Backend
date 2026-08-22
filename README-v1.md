@@ -304,6 +304,7 @@ Seeder 已讓王小明選修「網際系統設計 (資應)」。
 | unit_id | bigint | 所屬單元 ID（FK → units.id） |
 | title | string | 知識卡標題 |
 | content | text | 知識卡內容 |
+| example | text | 知識卡範例（可空） |
 | sort_order | integer | 排序順序 |
 | created_at | timestamp | 建立時間 |
 | updated_at | timestamp | 更新時間 |
@@ -317,7 +318,7 @@ courses → topics → chapters → units → knowledge_cards
 ```
 
 畫面採一層一層點進去（鑽層）：課程 → 主題 → 章節 → 單元 → 知識卡。  
-列表的 `item_count` 代表下一層有幾筆（對應畫面上的「N 項」）。知識卡沒有下一層，回傳 `title`、`content`。刪除上層時，下層會一併刪除。
+列表的 `item_count` 代表下一層有幾筆（對應畫面上的「N 項」）。知識卡沒有下一層，回傳 `title`、`content`、`example`。刪除上層時，下層會一併刪除。
 
 ### personal_access_tokens
 
@@ -811,7 +812,7 @@ Authorization: Bearer {token}
 ```text
 教師 Excel
   → Laravel 接收、驗證、確認是該課教師
-  → ExcelMaterialParser 解析（第 4 列範例整列不讀、之後範例欄有值也不讀、讀取教材名稱）
+  → ExcelMaterialParser 解析（第 3 列範本整列不讀，「範例」欄寫進知識卡 example）
   → 依 Topic → Chapter → Unit → Knowledge Card 組成 Tree
   → 教材名稱與該課既有 Draft 重複則 422
   → 存成 Material Draft
@@ -828,7 +829,7 @@ Authorization: Bearer {token}
   發布新 Draft → 舊 published 改 archived，正式表換成新的
 ```
 
-空白的 topic／chapter／unit 會沿用上一列。Excel 列規則：第 1 列教材名稱、第 2 列說明不讀、第 3 列欄位標題、第 4 列範例資料整列不讀、第 5 列起才是教師內容。之後「範例」欄有值的列仍會略過。知識卡沒有獨立標題欄，標題取內容前約 80 字。Excel 最上方必須有教材名稱（例如 `教材名稱：PHP 程式設計`），這與 Topic 名稱（例如 `PHP 基礎`）是不同層級。
+空白的 topic／chapter／unit 會沿用上一列。Excel 列規則：第 1 列說明、第 2 列欄位標題（例如 `topics (主題)`）、第 3 列範本示範整列不讀、第 4 列起才是教師內容。「範例」欄存成知識卡 `example`，可空。知識卡沒有獨立標題欄，標題取內容前約 80 字。有寫 `教材名稱：…` 就當教材名稱；沒寫則用第一個 Topic 名稱。
 
 整份 Excel 再上傳期間，學生仍看已發布的正式教材，直到第 2 份也發布。從已發布教材開新 Draft 修改時，學生也仍看上一版，直到新 Draft 發布。
 
@@ -871,7 +872,7 @@ public/templates/material_import_template.xlsx
 | DELETE | `/api/v1/teacher/material-drafts/{draftId}/knowledge-cards/{nodeId}` | 草稿刪除知識卡 |
 | POST | `/api/v1/teacher/material-drafts/{draftId}/publish` | 發布為正式教材 |
 
-草稿節點 Request 與正式教材相同：主題／章節／單元用 `name`、`sort_order`；知識卡用 `title`、`content`、`sort_order`。成功匯入／新增為 **201**。
+草稿節點 Request 與正式教材相同：主題／章節／單元用 `name`、`sort_order`；知識卡用 `title`、`content`、`example`、`sort_order`。成功匯入／新增為 **201**。
 
 只上傳範本裡的範例列會 **422**（沒有可匯入的教材列）。找不到教材名稱會 **422**。不是該課教師 **404**。已發布或已封存的 Draft 不能直接改／再發布，會 **422**。同一份 Draft 裡主題名稱重複會 **422**。Excel 教材名稱與該課既有 Draft 重複會 **422**。
 
@@ -951,11 +952,12 @@ Request（新增／修改）：
 {
   "title": "PHP 變數介紹",
   "content": "變數是用來儲存資料的容器，PHP 使用 $ 符號宣告變數。",
+  "example": "$name = \"PHP\";",
   "sort_order": 1
 }
 ```
 
-`title`、`content` 必填。畫面上一層用 `name`，知識卡請用 `title`。
+`title`、`content` 必填，`example` 選填。畫面上一層用 `name`，知識卡請用 `title`。
 
 成功建立為 **201**。刪除成功 200：
 

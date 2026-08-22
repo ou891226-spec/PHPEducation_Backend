@@ -6,8 +6,8 @@ use InvalidArgumentException;
 use ZipArchive;
 
 /**
- * 依 Excel 欄位組成教材樹：教材名稱 + Topic → Chapter → Unit → Knowledge Card。
- * 欄位列的下一列是範例資料，整列不讀；之後「範例」欄有值的列也不匯入。
+ * 依 Excel 欄位組成教材樹：Topic → Chapter → Unit → Knowledge Card + example。
+ * 第 1 列說明、第 2 列欄位、第 3 列範本示範整列不讀、第 4 列起正式資料。
  */
 class ExcelMaterialParser
 {
@@ -33,13 +33,10 @@ class ExcelMaterialParser
         $lastChapter = '';
         $lastUnit = '';
 
-        // 欄位列的下一列是範例資料，從再下一列開始讀教師內容
+        // 欄位列的下一列是範本示範，整列不讀；再下一列起 knowledge_card + example
         for ($i = $headerIndex + 2, $count = count($rows); $i < $count; $i++) {
             $row = $rows[$i];
             $example = $this->cell($row, $map['example'] ?? null);
-            if ($example !== '') {
-                continue;
-            }
 
             $topic = $this->cell($row, $map['topics'] ?? null);
             $chapter = $this->cell($row, $map['chapters'] ?? null);
@@ -68,12 +65,20 @@ class ExcelMaterialParser
                 continue;
             }
 
-            $this->appendCard($topics, $topic, $chapter, $unit, $content);
+            $this->appendCard($topics, $topic, $chapter, $unit, $content, $example);
+        }
+
+        $topics = $this->finalizeTopics($topics);
+        if ($name === '' && $topics !== []) {
+            $name = (string) $topics[0]['name'];
+        }
+        if ($name === '') {
+            throw new InvalidArgumentException('找不到教材名稱');
         }
 
         return [
             'name' => $name,
-            'topics' => $this->finalizeTopics($topics),
+            'topics' => $topics,
         ];
     }
 
@@ -111,7 +116,7 @@ class ExcelMaterialParser
     /**
      * @param  array<string, array<string, mixed>>  $topics
      */
-    private function appendCard(array &$topics, string $topic, string $chapter, string $unit, string $content): void
+    private function appendCard(array &$topics, string $topic, string $chapter, string $unit, string $content, string $example = ''): void
     {
         if (! isset($topics[$topic])) {
             $topics[$topic] = $this->namedNode($topic, 'chapters');
@@ -131,6 +136,7 @@ class ExcelMaterialParser
             'id' => $this->newId(),
             'title' => $this->titleFromContent($content),
             'content' => $content,
+            'example' => $example !== '' ? $example : null,
             'sort_order' => count($units[$unit]['knowledge_cards']) + 1,
         ];
     }
@@ -176,7 +182,7 @@ class ExcelMaterialParser
             }
         }
 
-        throw new InvalidArgumentException('找不到教材名稱');
+        return '';
     }
 
     /**
@@ -204,15 +210,15 @@ class ExcelMaterialParser
 
         foreach ($row as $column => $value) {
             $key = mb_strtolower(trim($value));
-            if ($key === 'topics') {
+            if (str_starts_with($key, 'topics') || $key === '主題') {
                 $map['topics'] = $column;
-            } elseif ($key === 'chapters') {
+            } elseif (str_starts_with($key, 'chapters') || $key === '章節') {
                 $map['chapters'] = $column;
-            } elseif ($key === 'units') {
+            } elseif (str_starts_with($key, 'units') || $key === '單元') {
                 $map['units'] = $column;
-            } elseif (str_contains($key, 'knowledge_card')) {
+            } elseif (str_contains($key, 'knowledge_card') || str_contains($key, '知識卡')) {
                 $map['knowledge_card'] = $column;
-            } elseif ($key === '範例') {
+            } elseif ($key === '範例' || str_starts_with($key, '範例')) {
                 $map['example'] = $column;
             }
         }

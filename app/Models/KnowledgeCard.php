@@ -11,6 +11,7 @@ class KnowledgeCard extends Model
         'unit_id',
         'title',
         'content',
+        'example',
         'sort_order',
     ];
 

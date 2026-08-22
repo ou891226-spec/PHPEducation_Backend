@@ -152,6 +152,7 @@ class MaterialService
             'unit_id' => $unit->id,
             'title' => $data['title'],
             'content' => $data['content'],
+            'example' => $data['example'] ?? null,
             'sort_order' => $data['sort_order'] ?? $this->nextSortOrder(KnowledgeCard::query()->where('unit_id', $unit->id)),
         ]);
 
@@ -165,6 +166,7 @@ class MaterialService
         $payload = [
             'title' => $data['title'],
             'content' => $data['content'],
+            'example' => $data['example'] ?? null,
         ];
 
         if (array_key_exists('sort_order', $data) && $data['sort_order'] !== null) {
@@ -291,6 +293,7 @@ class MaterialService
             'id' => $card->id,
             'title' => $card->title,
             'content' => $card->content,
+            'example' => $card->example,
             'sort_order' => $card->sort_order,
         ];
     }

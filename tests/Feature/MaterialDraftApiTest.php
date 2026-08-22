@@ -19,9 +19,8 @@ class MaterialDraftApiTest extends TestCase
         $path = $this->xlsxPath([
             ['請參考上方範例資料的填寫方式，於下方空白列開始填寫教材內容。'],
             ['topics', 'chapters', 'units', 'knowledge_card', '範例'],
-            ['PHP 基礎', '第一章 PHP 簡介', '變數', '變數是用來儲存資料的容器。', ''],
+            ['PHP 基礎', '第一章 PHP 簡介', '變數', '變數是用來儲存資料的容器。', '$name = "PHP";'],
             ['PHP 基礎', '第一章 PHP 簡介', '資料型別', 'PHP 的資料型別包含 string。', ''],
-            ['Java 基礎', '第一章', '類別', '老師在範例欄填了東西也不該匯入', '範例'],
         ]);
 
         $token = $this->loginToken('teacher2@school.edu.tw');
@@ -40,6 +39,7 @@ class MaterialDraftApiTest extends TestCase
             ->assertJsonPath('draft.topics.0.name', 'PHP 基礎')
             ->assertJsonCount(1, 'draft.topics')
             ->assertJsonPath('draft.topics.0.chapters.0.units.0.name', '變數')
+            ->assertJsonPath('draft.topics.0.chapters.0.units.0.knowledge_cards.0.example', '$name = "PHP";')
             ->assertJsonCount(2, 'draft.topics.0.chapters.0.units');
     }
 
@@ -101,7 +101,7 @@ class MaterialDraftApiTest extends TestCase
     {
         $path = $this->xlsxPath([
             ['topics', 'chapters', 'units', 'knowledge_card', '範例'],
-            ['PHP 基礎', '第一章 PHP 簡介', '變數', '變數是容器。', ''],
+            ['PHP 基礎', '第一章 PHP 簡介', '變數', '變數是容器。', '$name = "PHP";'],
         ]);
 
         $teacherToken = $this->loginToken('teacher2@school.edu.tw');
@@ -132,6 +132,7 @@ class MaterialDraftApiTest extends TestCase
 
         $this->assertSame(1, Topic::query()->where('course_id', $course->id)->count());
         $this->assertSame(1, KnowledgeCard::query()->count());
+        $this->assertSame('$name = "PHP";', KnowledgeCard::query()->value('example'));
 
         $studentToken = $this->loginToken('s1411131000');
         $topics = $this->withToken($studentToken)
@@ -155,7 +156,8 @@ class MaterialDraftApiTest extends TestCase
         $this->withToken($studentToken)
             ->getJson("/api/v1/student/units/{$units[0]['id']}/knowledge-cards")
             ->assertOk()
-            ->assertJsonPath('knowledge_cards.0.content', '變數是容器。');
+            ->assertJsonPath('knowledge_cards.0.content', '變數是容器。')
+            ->assertJsonPath('knowledge_cards.0.example', '$name = "PHP";');
     }
 
     public function test_teacher_creates_new_draft_from_published_materials_then_publishes_update(): void
@@ -367,11 +369,11 @@ class MaterialDraftApiTest extends TestCase
             ->assertJsonPath('draft.topics.0.name', 'PHP 基礎');
     }
 
-    public function test_excel_without_material_name_is_rejected(): void
+    public function test_excel_without_material_name_uses_first_topic(): void
     {
         $path = $this->xlsxPath([
-            ['topics', 'chapters', 'units', 'knowledge_card', '範例'],
-            ['PHP 基礎', '第一章 PHP 簡介', '變數', '變數是容器。', ''],
+            ['topics (主題)', 'chapters (章節)', 'units (單元)', 'knowledge_card (知識卡)', '範例'],
+            ['PHP 基礎', '第一章 PHP 簡介', '變數', '變數是容器。', '$x = 1;'],
         ], null);
 
         $token = $this->loginToken('teacher2@school.edu.tw');
@@ -383,11 +385,9 @@ class MaterialDraftApiTest extends TestCase
                 "/api/v1/teacher/courses/{$course->id}/materials/import",
                 ['file' => $this->upload($path)],
             )
-            ->assertStatus(422)
-            ->assertJsonValidationErrors('file')
-            ->assertJsonFragment([
-                '找不到教材名稱',
-            ]);
+            ->assertCreated()
+            ->assertJsonPath('draft.name', 'PHP 基礎')
+            ->assertJsonPath('draft.topics.0.chapters.0.units.0.knowledge_cards.0.example', '$x = 1;');
     }
 
     public function test_student_cannot_read_unenrolled_course_materials(): void

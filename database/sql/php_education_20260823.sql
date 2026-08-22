@@ -140,6 +140,7 @@ CREATE TABLE `knowledge_cards` (
   `unit_id` bigint unsigned NOT NULL,
   `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '知識卡標題',
   `content` text COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '知識卡內容',
+  `example` text COLLATE utf8mb4_unicode_ci COMMENT '知識卡範例',
   `sort_order` int NOT NULL COMMENT '排序順序',
   `created_at` timestamp NULL DEFAULT NULL COMMENT '建立時間',
   `updated_at` timestamp NULL DEFAULT NULL COMMENT '更新時間',
@@ -474,4 +475,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-08-23  4:14:51
+-- Dump completed on 2026-08-23  4:47:53

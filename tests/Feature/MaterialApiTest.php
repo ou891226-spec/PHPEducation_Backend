@@ -64,11 +64,13 @@ class MaterialApiTest extends TestCase
         $card = $this->withToken($token)->postJson("/api/v1/teacher/units/{$unitId}/knowledge-cards", [
             'title' => 'PHP 變數介紹',
             'content' => '變數是用來儲存資料的容器，PHP 使用 $ 符號宣告變數。',
+            'example' => '$name = "PHP";',
         ]);
 
         $card->assertCreated()
             ->assertJsonPath('knowledge_card.title', 'PHP 變數介紹')
-            ->assertJsonPath('knowledge_card.content', '變數是用來儲存資料的容器，PHP 使用 $ 符號宣告變數。');
+            ->assertJsonPath('knowledge_card.content', '變數是用來儲存資料的容器，PHP 使用 $ 符號宣告變數。')
+            ->assertJsonPath('knowledge_card.example', '$name = "PHP";');
 
         $cardId = $card->json('knowledge_card.id');
 
