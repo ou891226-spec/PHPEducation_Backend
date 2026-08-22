@@ -52,7 +52,7 @@ class MaterialDraftApiTest extends TestCase
             ->withHeader('Accept', 'application/json')
             ->post(
                 "/api/v1/teacher/courses/{$course->id}/materials/import",
-                ['file' => $this->upload(resource_path('templates/material_import_template.xlsx'))],
+                ['file' => $this->upload(public_path('templates/material_import_template.xlsx'))],
             )->assertStatus(422);
     }
 

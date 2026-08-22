@@ -9,7 +9,7 @@ class MaterialTemplateController extends Controller
 {
     public function download(): BinaryFileResponse
     {
-        $path = resource_path('templates/material_import_template.xlsx');
+        $path = public_path('templates/material_import_template.xlsx');
 
         abort_unless(is_file($path), 500, '教材匯入範本不存在');
 

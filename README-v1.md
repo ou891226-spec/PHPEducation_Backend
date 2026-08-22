@@ -89,7 +89,7 @@ app/
 
 bootstrap/          → 應用程式啟動與 Middleware 註冊
 config/             → 設定檔（auth、cors、sanctum、database 等）
-resources/templates/
+public/templates/
 └─ material_import_template.xlsx  → 教師教材匯入 Excel 範本
 database/
 ├─ migrations/      → 資料表結構
@@ -798,7 +798,7 @@ Authorization: Bearer {token}
 檔案位置（專案內固定這一份，下載 API 直接讀這個檔）：
 
 ```text
-resources/templates/material_import_template.xlsx
+public/templates/material_import_template.xlsx
 ```
 
 老師下載後檔名會顯示為 `教材匯入範本.xlsx`。
