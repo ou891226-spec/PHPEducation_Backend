@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DashboardController;
+use App\Http\Controllers\Api\V1\StatsController;
 use App\Http\Controllers\Api\V1\Student\MaterialController as StudentMaterialController;
 use App\Http\Controllers\Api\V1\Teacher\ChapterController;
 use App\Http\Controllers\Api\V1\Teacher\CourseController;
@@ -36,6 +37,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/dashboard', [DashboardController::class, 'show']);
 
         Route::middleware('role:admin')->group(function () {
+            Route::get('/stats', [StatsController::class, 'show']);
             Route::get('/teacher-applications', [TeacherApplicationController::class, 'index']);
             Route::get('/student-applications', [StudentAccountApplicationController::class, 'index']);
         });

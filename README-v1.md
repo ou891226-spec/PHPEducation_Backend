@@ -597,6 +597,26 @@ POST /teacher/student-applications/{id}/approve
 
 非管理員 **403**。未登入 **401**。
 
+### GET `/api/v1/stats`
+
+管理員取得老師、學生、課程數量。需要管理員 Token。
+
+`semester_course_count` 以資料裡最新的 `semester` 計算（例如 `115-1`）。
+
+成功回應 **200**：
+
+```json
+{
+  "teacher_count": 2,
+  "student_count": 1,
+  "course_count": 2,
+  "semester_course_count": 2,
+  "semester": "115-1"
+}
+```
+
+非管理員 **403**。未登入 **401**。
+
 登入時學生只填學號（例如 `s1411131000`），後端對應學校信箱 `s{學號}@nutc.edu.tw`（`students.email`）。
 
 ---
