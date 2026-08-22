@@ -26,7 +26,7 @@ class StudentAccountService
     public function createApplication(string $tid, array $data): StudentApplications
     {
         return DB::transaction(function () use ($tid, $data) {
-            $application =  StudentApplications::create([
+            $application = StudentApplications::create([
                 'tid' => $tid,
                 'class_name' => $data['class_name'],
                 'status' => 'pending',

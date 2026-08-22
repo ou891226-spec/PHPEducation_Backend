@@ -124,8 +124,33 @@ CREATE TABLE `enrollments` (
 
 LOCK TABLES `enrollments` WRITE;
 /*!40000 ALTER TABLE `enrollments` DISABLE KEYS */;
+INSERT INTO `enrollments` VALUES (1,2);
 /*!40000 ALTER TABLE `enrollments` ENABLE KEYS */;
 UNLOCK TABLES;
+
+--
+-- Table structure for table `material_drafts`
+--
+
+DROP TABLE IF EXISTS `material_drafts`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `material_drafts` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '草稿 ID',
+  `course_id` bigint unsigned NOT NULL,
+  `teacher_id` bigint unsigned NOT NULL,
+  `name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '教材名稱',
+  `status` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft' COMMENT 'draft、published 或 archived',
+  `tree` json NOT NULL COMMENT '主題／章節／單元／知識卡樹',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `material_drafts_course_id_foreign` (`course_id`),
+  KEY `material_drafts_teacher_id_foreign` (`teacher_id`),
+  CONSTRAINT `material_drafts_course_id_foreign` FOREIGN KEY (`course_id`) REFERENCES `courses` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `material_drafts_teacher_id_foreign` FOREIGN KEY (`teacher_id`) REFERENCES `teachers` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Table structure for table `knowledge_cards`

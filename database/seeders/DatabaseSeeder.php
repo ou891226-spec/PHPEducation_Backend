@@ -36,23 +36,27 @@ class DatabaseSeeder extends Seeder
             'email' => 'teacher2@school.edu.tw',
         ]);
 
-        Student::query()->create([
+        $student = Student::query()->create([
             'password' => $password,
             'student_no' => '1411131000',
             'name' => '王小明',
             'email' => Student::emailFromStudentNo('1411131000'),
         ]);
 
-        Course::query()->create([
+        $courseYing = Course::query()->create([
             'teacher_id' => $teacherB->id,
             'name' => '網際系統設計 (資應)',
+            'description' => '資應班網際系統設計課程',
             'semester' => '115-1',
         ]);
 
         Course::query()->create([
             'teacher_id' => $teacherB->id,
             'name' => '網際系統設計 (資管)',
+            'description' => '資管班網際系統設計課程',
             'semester' => '115-1',
         ]);
+
+        $student->courses()->attach($courseYing->id);
     }
 }

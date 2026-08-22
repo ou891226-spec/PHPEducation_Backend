@@ -15,7 +15,7 @@ class StoreCourseRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'description' => ['nullable', 'string', 'max:2000'],
+            'description' => ['required', 'string', 'max:2000'],
             'semester' => ['required', 'string', 'max:50'],
         ];
     }

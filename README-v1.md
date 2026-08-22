@@ -24,6 +24,7 @@ courses    → 課程（teacher_id → teachers）
 enrollments → 選課（students ↔ courses）
 
 教材部分
+material_drafts → 匯入草稿（一門課可有多份；`name` 為教材名稱）
 topics          → 主題（course_id → courses）
 chapters        → 章節（topic_id → topics）
 units           → 單元（chapter_id → chapters）
@@ -35,6 +36,7 @@ knowledge_cards → 知識卡（unit_id → units）
 課程由教師建立並擁有（`courses.teacher_id`）；學生透過 `enrollments` 與課程形成多對多關聯。
 
 教材層級：教師 → 課程 → 主題 → 章節 → 單元 → 知識卡。
+Excel → Parser → `material_drafts.tree` → 前端畫樹編輯 → 發布 → 正式教材表。
 
 ---
 
@@ -50,8 +52,13 @@ app/
 │  ├─ Controllers/Api/V1/
 │  │  ├─ AuthController.php
 │  │  ├─ DashboardController.php
+│  │  ├─ Student/
+│  │  │  └─ MaterialController.php
 │  │  └─ Teacher/
 │  │     ├─ CourseController.php
+│  │     ├─ MaterialTemplateController.php
+│  │     ├─ MaterialImportController.php
+│  │     ├─ MaterialDraftController.php
 │  │     ├─ TopicController.php
 │  │     ├─ ChapterController.php
 │  │     ├─ UnitController.php
@@ -65,7 +72,7 @@ app/
 │
 ├─ Models/
 │  └─ Admin、Teacher、Student、Course、Enrollment、
-│     Topic、Chapter、Unit、KnowledgeCard
+│     MaterialDraft、Topic、Chapter、Unit、KnowledgeCard
 │
 ├─ Providers/
 │  └─ 服務提供者
@@ -74,11 +81,16 @@ app/
    ├─ AuthService.php
    ├─ CourseService.php
    ├─ MaterialService.php
+   ├─ ExcelMaterialParser.php
+   ├─ MaterialDraftService.php
+   ├─ StudentMaterialService.php
    ├─ DashboardService.php
    └─ UserFormatterService.php
 
 bootstrap/          → 應用程式啟動與 Middleware 註冊
 config/             → 設定檔（auth、cors、sanctum、database 等）
+resources/templates/
+└─ material_import_template.xlsx  → 教師教材匯入 Excel 範本
 database/
 ├─ migrations/      → 資料表結構
 └─ seeders/         → 測試帳號與示範資料
@@ -204,7 +216,7 @@ teachers.id
 |------|------|------|
 | id | bigint | 課程 ID（PK） |
 | name | string | 課程名稱 |
-| description | text | 課程介紹（nullable） |
+| description | text | 課程介紹 |
 | semester | string | 開課學期 |
 | teacher_id | bigint | 授課教師 ID（FK → teachers.id） |
 | created_at | timestamp | 建立時間 |
@@ -225,6 +237,21 @@ students ── enrollments ── courses
 ```
 
 學生 Dashboard 的「已修課程」透過 `enrollments` 關聯查詢（`Student` ↔ `Course` many-to-many）。
+Seeder 已讓王小明選修「網際系統設計 (資應)」。
+
+### material_drafts 教材匯入草稿
+一門課可有多份草稿（用 `id` 區分）。同一門課同時只能有一份 `published`；舊的發布版會變成 `archived`，不刪列。學生只看目前 `published` 寫進正式表的內容。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 草稿 ID（PK） |
+| course_id | bigint | 所屬課程 ID（FK → courses.id） |
+| teacher_id | bigint | 匯入教師 ID（FK → teachers.id） |
+| name | string | 教材名稱。Excel 匯入時不可與該課既有 Draft 同名；小修改複製 Draft 可沿用同名 |
+| status | string | `draft`、`published` 或 `archived` |
+| tree | json | 主題／章節／單元／知識卡樹 |
+| created_at | timestamp | 建立時間 |
+| updated_at | timestamp | 更新時間 |
 
 ### topics 主題資料
 一門課程底下可有多個主題
@@ -408,16 +435,13 @@ Authorization: Bearer {token}
 
 ## 教師帳號申請
 
-資料表 `teacher_applications` 已建立。以下為與前端對齊的 API 約定；**申請／列表／核准 API 目前尚未實作**。
-
-前端已使用的路徑（base URL 為 `/api/v1`）：
+資料表 `teacher_applications` 已建立。
 
 ```text
 POST /teacher-applications
+GET  /teacher-applications
 POST /teacher-applications/{id}/approve
 ```
-
-管理員列表前端目前為假資料，待後端提供 GET。
 
 ### POST `/api/v1/teacher-applications`
 
@@ -469,9 +493,8 @@ Request：
 Authorization: Bearer {token}
 ```
 
-僅限管理員。可只回 `pending`，或回全部並由前端篩選。
-
-成功回應 **200** 建議格式：
+僅限管理員。可加 `?status=pending` 只看待審核。
+成功回應 **200**：
 
 ```json
 {
@@ -527,20 +550,52 @@ Authorization: Bearer {token}
 
 ## 學生帳號申請
 
-資料表 `student_applications`、`student_application_items` 已建立。**申請／列表／開通 API 目前尚未實作**。
+資料表 `student_applications`、`student_application_items` 已建立。
 
-流程：教師送出班級與多名學生 → 管理員在使用者管理開通 → 寫入 `students`。
+```text
+POST /teacher/student-applications
+GET  /teacher/courses/{courseId}/student-applications
+GET  /student-applications
+POST /teacher/student-applications/{id}/approve
+```
 
-前端待審學生目前為假資料，欄位大致為：
+流程：教師送出班級與多名學生（body 帶 `tid`）→ 管理員在使用者管理開通 → 寫入 `students`。
 
-| 前端欄位 | 對應 |
-|----------|------|
+### GET `/api/v1/teacher/courses/{courseId}/student-applications`
+
+該課教師取得待開通名單（每人一列）。先確認這門課是自己的，再查該教師的申請單。預設只回 `pending`，可加 `?status=approved`。別人的課 **404**。
+
+### GET `/api/v1/student-applications`
+
+管理員取得待開通／申請明細（每人一列）。需要管理員 Token。可加 `?status=pending`。
+
+| 欄位 | 對應 |
+|------|------|
 | id | `student_application_items.id` |
-| studentNo | `student_no` |
-| name | `name` |
-| providerTeacherName | 申請教師的 `teachers.name`（經 `application_id` = `teachers.id`） |
+| student_no | 學號 |
+| name | 學生姓名 |
+| provider_teacher_name | 申請教師姓名 |
 
-管理員列表建議回明細列（每人一列），不要只回申請主檔。
+成功回應 **200**：
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "student_no": "1411131001",
+      "name": "李小華",
+      "email": "s1411131001@nutc.edu.tw",
+      "application_id": 1,
+      "class_name": "資應二甲",
+      "status": "pending",
+      "provider_teacher_name": "陳老師"
+    }
+  ]
+}
+```
+
+非管理員 **403**。未登入 **401**。
 
 登入時學生只填學號（例如 `s1411131000`），後端對應學校信箱 `s{學號}@nutc.edu.tw`（`students.email`）。
 
@@ -625,7 +680,7 @@ Authorization: Bearer {token}
 
 ### GET `/api/v1/teacher/courses`
 
-功能：取得目前教師自己的課程列表。
+功能：取得目前教師自己的課程列表。依開課學期由新到舊排序
 
 ### POST `/api/v1/teacher/courses`
 
@@ -641,7 +696,7 @@ Request：
 }
 ```
 
-`description` 為選填，最多 2000 字；不傳則為 `null`。  
+`description` 為必填，最多 2000 字。  
 `teacher_id` 不需要由前端傳送，後端會從登入 Token 判斷目前教師。
 
 成功回應 **201**。
@@ -664,6 +719,8 @@ Request：
 }
 ```
 
+`description` 為必填，最多 2000 字。
+
 ### DELETE `/api/v1/teacher/courses/{id}`
 
 功能：刪除指定課程。只能刪除自己的課程。
@@ -680,7 +737,7 @@ Request：
 
 ## 教師教材管理
 
-以下 API 僅限教師使用，且只能操作自己課程底下的教材。
+以下 API 除「下載 Excel 範本」外，僅限教師操作**自己課程**底下的教材。
 
 需要：
 
@@ -692,11 +749,111 @@ Authorization: Bearer {token}
 |--------|------|
 | 200 / 201 | 成功 |
 | 401 | 未登入 |
-| 403 | 非教師角色 |
+| 403 | 非教師角色，或不是該課教師 |
 | 404 | 資料不存在或不屬於目前教師 |
 | 422 | Request 欄位驗證失敗 |
 
+### 教材匯入流程（權限）
+
+範本是系統給所有教師的固定檔，**不綁某一門課**。課程權限放在「匯入／草稿／發布」。
+
+| 功能 | API | 權限 |
+|------|-----|------|
+| 下載 Excel 範本 | `GET /api/v1/teacher/materials/template` | 教師 |
+| 匯入教材 | `POST /api/v1/teacher/courses/{courseId}/materials/import` | 該課教師 |
+| 查看草稿 | `GET /api/v1/teacher/courses/{courseId}/material-drafts` | 該課教師 |
+| 從已發布教材開新 Draft | `POST /api/v1/teacher/courses/{courseId}/material-drafts` | 該課教師 |
+| 編輯草稿 | `/api/v1/teacher/material-drafts/{draftId}/...` | 該課教師 |
+| 發布教材 | `POST /api/v1/teacher/material-drafts/{draftId}/publish` | 該課教師 |
+| 學生查看正式教材 | `/api/v1/student/courses/{courseId}/topics` 等 | 修課學生 |
+
+第一版流程：
+
+```text
+教師 Excel
+  → Laravel 接收、驗證、確認是該課教師
+  → ExcelMaterialParser 解析（第 4 列範例整列不讀、之後範例欄有值也不讀、讀取教材名稱）
+  → 依 Topic → Chapter → Unit → Knowledge Card 組成 Tree
+  → 教材名稱與該課既有 Draft 重複則 422
+  → 存成 Material Draft
+  → API 回傳 Draft JSON
+  → 前端 Vue 畫樹（不要在瀏覽器解析 Excel）
+  → 教師增刪改，打 Draft API 存回
+  → 發布
+  → 寫入正式教材
+  → 已選課學生查看正式教材
+
+正式教材之後：
+  少量修改 → POST 從已發布教材開新 Draft（沿用同一教材名稱）→ 改完再發布
+  整份 Excel 再上傳 → 另建 Draft（教材名稱與現有 Draft 重複則 422）
+  發布新 Draft → 舊 published 改 archived，正式表換成新的
+```
+
+空白的 topic／chapter／unit 會沿用上一列。Excel 列規則：第 1 列教材名稱、第 2 列說明不讀、第 3 列欄位標題、第 4 列範例資料整列不讀、第 5 列起才是教師內容。之後「範例」欄有值的列仍會略過。知識卡沒有獨立標題欄，標題取內容前約 80 字。Excel 最上方必須有教材名稱（例如 `教材名稱：PHP 程式設計`），這與 Topic 名稱（例如 `PHP 基礎`）是不同層級。
+
+整份 Excel 再上傳期間，學生仍看已發布的正式教材，直到第 2 份也發布。從已發布教材開新 Draft 修改時，學生也仍看上一版，直到新 Draft 發布。
+
+### 教材匯入範本
+
+檔案位置（專案內固定這一份，下載 API 直接讀這個檔）：
+
+```text
+resources/templates/material_import_template.xlsx
+```
+
+老師下載後檔名會顯示為 `教材匯入範本.xlsx`。
+
+| Method | URL | 說明 |
+|--------|-----|------|
+| GET | `/api/v1/teacher/materials/template` | 下載 Excel 匯入範本 |
+
+任何已登入教師皆可下載。學生會得到 403。
+
+### 匯入、草稿、發布
+
+`multipart/form-data`，欄位名 `file`，副檔名必須是 `.xlsx`。
+
+| Method | URL | 說明 |
+|--------|-----|------|
+| POST | `/api/v1/teacher/courses/{courseId}/materials/import` | 後端解析 Excel，新增一份草稿（前端不要自己解析） |
+| GET | `/api/v1/teacher/courses/{courseId}/material-drafts` | 列出該課所有草稿 |
+| POST | `/api/v1/teacher/courses/{courseId}/material-drafts` | 從目前已發布教材複製一份新 Draft |
+| POST | `/api/v1/teacher/material-drafts/{draftId}/topics` | 草稿新增主題 |
+| PUT | `/api/v1/teacher/material-drafts/{draftId}/topics/{nodeId}` | 草稿修改主題 |
+| DELETE | `/api/v1/teacher/material-drafts/{draftId}/topics/{nodeId}` | 草稿刪除主題 |
+| POST | `/api/v1/teacher/material-drafts/{draftId}/topics/{topicId}/chapters` | 草稿新增章節 |
+| PUT | `/api/v1/teacher/material-drafts/{draftId}/chapters/{nodeId}` | 草稿修改章節 |
+| DELETE | `/api/v1/teacher/material-drafts/{draftId}/chapters/{nodeId}` | 草稿刪除章節 |
+| POST | `/api/v1/teacher/material-drafts/{draftId}/chapters/{chapterId}/units` | 草稿新增單元 |
+| PUT | `/api/v1/teacher/material-drafts/{draftId}/units/{nodeId}` | 草稿修改單元 |
+| DELETE | `/api/v1/teacher/material-drafts/{draftId}/units/{nodeId}` | 草稿刪除單元 |
+| POST | `/api/v1/teacher/material-drafts/{draftId}/units/{unitId}/knowledge-cards` | 草稿新增知識卡 |
+| PUT | `/api/v1/teacher/material-drafts/{draftId}/knowledge-cards/{nodeId}` | 草稿修改知識卡 |
+| DELETE | `/api/v1/teacher/material-drafts/{draftId}/knowledge-cards/{nodeId}` | 草稿刪除知識卡 |
+| POST | `/api/v1/teacher/material-drafts/{draftId}/publish` | 發布為正式教材 |
+
+草稿節點 Request 與正式教材相同：主題／章節／單元用 `name`、`sort_order`；知識卡用 `title`、`content`、`sort_order`。成功匯入／新增為 **201**。
+
+只上傳範本裡的範例列會 **422**（沒有可匯入的教材列）。找不到教材名稱會 **422**。不是該課教師 **404**。已發布或已封存的 Draft 不能直接改／再發布，會 **422**。同一份 Draft 裡主題名稱重複會 **422**。Excel 教材名稱與該課既有 Draft 重複會 **422**。
+
+發布在 transaction 裡：把同課其他 `published` 改成 `archived`，用這份 `tree` **整棵覆寫**正式教材，再把這份設成 `published`。舊 Draft 列保留。再上傳 Excel 會另建一筆 `draft`。
+
+### 學生教材（已發布、已選課）
+
+學生只能看正式教材，看不到草稿。未選課回 **404**。非學生打這些路由 **403**。
+
+| Method | URL | 說明 |
+|--------|-----|------|
+| GET | `/api/v1/student/courses/{courseId}/topics` | 列出該課主題 |
+| GET | `/api/v1/student/topics/{topicId}/chapters` | 列出該主題章節 |
+| GET | `/api/v1/student/chapters/{chapterId}/units` | 列出該章節單元 |
+| GET | `/api/v1/student/units/{unitId}/knowledge-cards` | 列出該單元知識卡 |
+
+一層一層往下點，格式與教師列表相同（含 `item_count`）。
+
 ### 主題 topics
+
+這段是**正式教材**的鑽層 API（`MaterialService`），給已發布內容或教師手動建正式表用。Excel 匯入與老師改第一版樹請用上面的 **Draft API**，不要走這組。
 
 | Method | URL | 說明 |
 |--------|-----|------|
@@ -781,7 +938,8 @@ Request（新增／修改）：
 | 學生 | ✓ | ✓ | — | ✗ | ✗ | ✗ | ✗ | ✗ |
 
 教師只能管理自己建立的課程，無法查看、修改或刪除其他教師的課程（**404**）。  
-非教師存取 `/teacher/*` 回傳 **403**。
+非教師存取 `/teacher/*` 回傳 **403**。  
+學生只能看自己有選課的課程教材（未選課 **404**）；草稿未發布時學生列表為空。
 
 ---
 
@@ -794,7 +952,7 @@ Request（新增／修改）：
 | 教師 | teacher2@school.edu.tw | Password123! |
 | 學生 | s1411131000 | Password123! |
 
-Seeder 已為 `teacher2`（陳老師）建立「網際系統設計 (資應)」「網際系統設計 (資管)」兩門課。
+Seeder 已為 `teacher2`（陳老師）建立「網際系統設計 (資應)」「網際系統設計 (資管)」兩門課，並讓王小明選修「網際系統設計 (資應)」。
 
 ---
 

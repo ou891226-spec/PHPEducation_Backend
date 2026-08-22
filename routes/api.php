@@ -2,9 +2,13 @@
 
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DashboardController;
+use App\Http\Controllers\Api\V1\Student\MaterialController as StudentMaterialController;
 use App\Http\Controllers\Api\V1\Teacher\ChapterController;
 use App\Http\Controllers\Api\V1\Teacher\CourseController;
 use App\Http\Controllers\Api\V1\Teacher\KnowledgeCardController;
+use App\Http\Controllers\Api\V1\Teacher\MaterialDraftController;
+use App\Http\Controllers\Api\V1\Teacher\MaterialImportController;
+use App\Http\Controllers\Api\V1\Teacher\MaterialTemplateController;
 use App\Http\Controllers\Api\V1\Teacher\TopicController;
 use App\Http\Controllers\Api\V1\Teacher\UnitController;
 use Illuminate\Support\Facades\Route;
@@ -31,10 +35,39 @@ Route::prefix('v1')->group(function () {
         Route::get('/auth/me', [AuthController::class, 'me']);
         Route::get('/dashboard', [DashboardController::class, 'show']);
 
+        Route::middleware('role:admin')->group(function () {
+            Route::get('/teacher-applications', [TeacherApplicationController::class, 'index']);
+            Route::get('/student-applications', [StudentAccountApplicationController::class, 'index']);
+        });
+
         Route::middleware('role:teacher')->prefix('teacher')->group(function () {
             Route::apiResource('courses', CourseController::class)->parameters([
                 'courses' => 'courseId',
             ]);
+
+            Route::get('materials/template', [MaterialTemplateController::class, 'download']);
+            Route::post('courses/{courseId}/materials/import', [MaterialImportController::class, 'store']);
+            Route::get('courses/{courseId}/material-drafts', [MaterialDraftController::class, 'indexForCourse']);
+            Route::get('courses/{courseId}/student-applications', [StudentAccountApplicationController::class, 'indexForCourse']);
+            Route::post('courses/{courseId}/material-drafts', [MaterialDraftController::class, 'storeFromPublished']);
+
+            Route::post('material-drafts/{draftId}/topics', [MaterialDraftController::class, 'storeTopic']);
+            Route::put('material-drafts/{draftId}/topics/{nodeId}', [MaterialDraftController::class, 'updateTopic']);
+            Route::delete('material-drafts/{draftId}/topics/{nodeId}', [MaterialDraftController::class, 'destroyTopic']);
+
+            Route::post('material-drafts/{draftId}/topics/{topicId}/chapters', [MaterialDraftController::class, 'storeChapter']);
+            Route::put('material-drafts/{draftId}/chapters/{nodeId}', [MaterialDraftController::class, 'updateChapter']);
+            Route::delete('material-drafts/{draftId}/chapters/{nodeId}', [MaterialDraftController::class, 'destroyChapter']);
+
+            Route::post('material-drafts/{draftId}/chapters/{chapterId}/units', [MaterialDraftController::class, 'storeUnit']);
+            Route::put('material-drafts/{draftId}/units/{nodeId}', [MaterialDraftController::class, 'updateUnit']);
+            Route::delete('material-drafts/{draftId}/units/{nodeId}', [MaterialDraftController::class, 'destroyUnit']);
+
+            Route::post('material-drafts/{draftId}/units/{unitId}/knowledge-cards', [MaterialDraftController::class, 'storeCard']);
+            Route::put('material-drafts/{draftId}/knowledge-cards/{nodeId}', [MaterialDraftController::class, 'updateCard']);
+            Route::delete('material-drafts/{draftId}/knowledge-cards/{nodeId}', [MaterialDraftController::class, 'destroyCard']);
+
+            Route::post('material-drafts/{draftId}/publish', [MaterialDraftController::class, 'publish']);
 
             Route::get('courses/{courseId}/topics', [TopicController::class, 'index']);
             Route::post('courses/{courseId}/topics', [TopicController::class, 'store']);
@@ -55,6 +88,13 @@ Route::prefix('v1')->group(function () {
             Route::post('units/{unitId}/knowledge-cards', [KnowledgeCardController::class, 'store']);
             Route::put('knowledge-cards/{cardId}', [KnowledgeCardController::class, 'update']);
             Route::delete('knowledge-cards/{cardId}', [KnowledgeCardController::class, 'destroy']);
+        });
+
+        Route::middleware('role:student')->prefix('student')->group(function () {
+            Route::get('courses/{courseId}/topics', [StudentMaterialController::class, 'topics']);
+            Route::get('topics/{topicId}/chapters', [StudentMaterialController::class, 'chapters']);
+            Route::get('chapters/{chapterId}/units', [StudentMaterialController::class, 'units']);
+            Route::get('units/{unitId}/knowledge-cards', [StudentMaterialController::class, 'knowledgeCards']);
         });
     });
 });

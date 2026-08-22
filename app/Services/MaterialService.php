@@ -11,7 +11,11 @@ use App\Models\Unit;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Validation\ValidationException;
 
+/**
+ * 正式教材鑽層 CRUD（topics / chapters / units / knowledge_cards）。
+ */
 class MaterialService
 {
     public function listTopics(Teacher $teacher, int $courseId): array
@@ -28,6 +32,7 @@ class MaterialService
     public function createTopic(Teacher $teacher, int $courseId, array $data): array
     {
         $course = $this->ownedCourse($teacher, $courseId);
+        $this->assertUniqueTopicName($course->id, $data['name']);
 
         $topic = Topic::query()->create([
             'course_id' => $course->id,
@@ -41,6 +46,7 @@ class MaterialService
     public function updateTopic(Teacher $teacher, int $topicId, array $data): array
     {
         $topic = $this->ownedTopic($teacher, $topicId);
+        $this->assertUniqueTopicName($topic->course_id, $data['name'], $topic->id);
         $this->updateNamedNode($topic, $data);
         $topic = $topic->fresh()->loadCount('chapters');
 
@@ -287,5 +293,23 @@ class MaterialService
             'content' => $card->content,
             'sort_order' => $card->sort_order,
         ];
+    }
+
+    private function assertUniqueTopicName(int $courseId, string $name, ?int $ignoreTopicId = null): void
+    {
+        $name = trim($name);
+        $query = Topic::query()
+            ->where('course_id', $courseId)
+            ->where('name', $name);
+
+        if ($ignoreTopicId !== null) {
+            $query->whereKeyNot($ignoreTopicId);
+        }
+
+        if ($query->exists()) {
+            throw ValidationException::withMessages([
+                'name' => ['教材名稱與現有教材重複（'.$name.'），請修改後再試'],
+            ]);
+        }
     }
 }

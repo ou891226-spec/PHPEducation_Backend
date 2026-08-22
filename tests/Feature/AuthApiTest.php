@@ -157,6 +157,7 @@ class AuthApiTest extends TestCase
         $this->withToken($teacherAToken)
             ->putJson("/api/v1/teacher/courses/{$otherCourse->id}", [
                 'name' => '非法修改',
+                'description' => '非法修改',
                 'semester' => '115-1',
             ])
             ->assertNotFound();

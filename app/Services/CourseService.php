@@ -24,7 +24,7 @@ class CourseService
         $course = Course::query()->create([
             'teacher_id' => $teacher->id,
             'name' => $data['name'],
-            'description' => $data['description'] ?? null,
+            'description' => $data['description'],
             'semester' => $data['semester'],
         ]);
 
@@ -44,7 +44,7 @@ class CourseService
 
         $course->update([
             'name' => $data['name'],
-            'description' => $data['description'] ?? null,
+            'description' => $data['description'],
             'semester' => $data['semester'],
         ]);
 

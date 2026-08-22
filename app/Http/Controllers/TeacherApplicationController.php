@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use App\Http\Requests\StoreTeacherApplicationRequest;
 use App\Models\TeacherApplication;
@@ -13,6 +14,27 @@ use App\Models\Teacher;
  */
 class TeacherApplicationController extends Controller
 {
+    public function index(Request $request): JsonResponse
+    {
+        $status = $request->query('status');
+
+        $applications = TeacherApplication::query()
+            ->when(is_string($status) && $status !== '', fn ($query) => $query->where('status', $status))
+            ->orderBy('id')
+            ->get()
+            ->map(fn (TeacherApplication $application) => [
+                'id' => $application->id,
+                'name' => $application->name,
+                'email' => $application->email,
+                'reason' => $application->reason,
+                'status' => $application->status,
+            ]);
+
+        return response()->json([
+            'applications' => $applications,
+        ]);
+    }
+
     /**
      * 提交教師帳號申請
      *

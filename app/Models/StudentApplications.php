@@ -17,7 +17,7 @@ class StudentApplications extends Model
         'class_name',
         'status',
     ];
-    
+
     /**
      * 關聯：此申請單包含的多筆學生明細
      */

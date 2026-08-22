@@ -1,0 +1,144 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Chapter;
+use App\Models\Course;
+use App\Models\KnowledgeCard;
+use App\Models\Student;
+use App\Models\Topic;
+use App\Models\Unit;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+
+class StudentMaterialService
+{
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listTopics(Student $student, int $courseId): array
+    {
+        $course = $this->enrolledCourse($student, $courseId);
+
+        return $course->topics()
+            ->withCount('chapters')
+            ->get()
+            ->map(fn (Topic $topic) => $this->formatNamedNode($topic, (int) $topic->chapters_count))
+            ->all();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listChapters(Student $student, int $topicId): array
+    {
+        $topic = $this->enrolledTopic($student, $topicId);
+
+        return $topic->chapters()
+            ->withCount('units')
+            ->get()
+            ->map(fn (Chapter $chapter) => $this->formatNamedNode($chapter, (int) $chapter->units_count))
+            ->all();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listUnits(Student $student, int $chapterId): array
+    {
+        $chapter = $this->enrolledChapter($student, $chapterId);
+
+        return $chapter->units()
+            ->withCount('knowledgeCards')
+            ->get()
+            ->map(fn (Unit $unit) => $this->formatNamedNode($unit, (int) $unit->knowledge_cards_count))
+            ->all();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listKnowledgeCards(Student $student, int $unitId): array
+    {
+        $unit = $this->enrolledUnit($student, $unitId);
+
+        return $unit->knowledgeCards()
+            ->get()
+            ->map(fn (KnowledgeCard $card) => [
+                'id' => $card->id,
+                'title' => $card->title,
+                'content' => $card->content,
+                'sort_order' => $card->sort_order,
+            ])
+            ->all();
+    }
+
+    private function enrolledCourse(Student $student, int $courseId): Course
+    {
+        $course = Course::query()
+            ->whereKey($courseId)
+            ->whereHas('students', fn (Builder $query) => $query->where('students.id', $student->id))
+            ->first();
+
+        if ($course === null) {
+            throw new ModelNotFoundException();
+        }
+
+        return $course;
+    }
+
+    private function enrolledTopic(Student $student, int $topicId): Topic
+    {
+        $topic = Topic::query()
+            ->whereKey($topicId)
+            ->whereHas('course.students', fn (Builder $query) => $query->where('students.id', $student->id))
+            ->first();
+
+        if ($topic === null) {
+            throw new ModelNotFoundException();
+        }
+
+        return $topic;
+    }
+
+    private function enrolledChapter(Student $student, int $chapterId): Chapter
+    {
+        $chapter = Chapter::query()
+            ->whereKey($chapterId)
+            ->whereHas('topic.course.students', fn (Builder $query) => $query->where('students.id', $student->id))
+            ->first();
+
+        if ($chapter === null) {
+            throw new ModelNotFoundException();
+        }
+
+        return $chapter;
+    }
+
+    private function enrolledUnit(Student $student, int $unitId): Unit
+    {
+        $unit = Unit::query()
+            ->whereKey($unitId)
+            ->whereHas('chapter.topic.course.students', fn (Builder $query) => $query->where('students.id', $student->id))
+            ->first();
+
+        if ($unit === null) {
+            throw new ModelNotFoundException();
+        }
+
+        return $unit;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function formatNamedNode(\Illuminate\Database\Eloquent\Model $model, int $itemCount): array
+    {
+        return [
+            'id' => $model->getKey(),
+            'name' => $model->getAttribute('name'),
+            'sort_order' => $model->getAttribute('sort_order'),
+            'item_count' => $itemCount,
+        ];
+    }
+}

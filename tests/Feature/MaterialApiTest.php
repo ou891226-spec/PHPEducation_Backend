@@ -16,6 +16,7 @@ class MaterialApiTest extends TestCase
 
         $courseId = $this->withToken($token)->postJson('/api/v1/teacher/courses', [
             'name' => 'PHP 程式設計',
+            'description' => '從基礎語法到實作練習',
             'semester' => '115-1',
         ])->json('course.id');
 
@@ -142,6 +143,26 @@ class MaterialApiTest extends TestCase
         $this->withToken($token)
             ->getJson('/api/v1/teacher/courses/1/topics')
             ->assertForbidden();
+    }
+
+    public function test_teacher_cannot_create_topic_with_duplicate_name(): void
+    {
+        $token = $this->loginToken('teacher@school.edu.tw');
+        $courseId = $this->withToken($token)->postJson('/api/v1/teacher/courses', [
+            'name' => 'PHP 程式設計',
+            'description' => '從基礎語法到實作練習',
+            'semester' => '115-1',
+        ])->json('course.id');
+
+        $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/topics", [
+            'name' => 'PHP 基礎',
+        ])->assertCreated();
+
+        $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/topics", [
+            'name' => 'PHP 基礎',
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('name');
     }
 
     private function loginToken(string $account): string
