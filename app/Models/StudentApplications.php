@@ -14,6 +14,7 @@ class StudentApplications extends Model
     //
     protected $fillable = [
         'tid',
+        'course_id',
         'class_name',
         'status',
     ];
@@ -32,5 +33,10 @@ class StudentApplications extends Model
     public function teacher(): BelongsTo
     {
         return $this->belongsTo(Teacher::class, 'tid', 'id');
+    }
+
+    public function course(): BelongsTo
+    {
+        return $this->belongsTo(Course::class);
     }
 }

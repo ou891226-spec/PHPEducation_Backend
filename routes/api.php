@@ -38,8 +38,10 @@ Route::prefix('v1')->group(function () {
 
         Route::middleware('role:admin')->group(function () {
             Route::get('/stats', [StatsController::class, 'show']);
+            Route::get('/courses', [StudentAccountApplicationController::class, 'courses']);
             Route::get('/teacher-applications', [TeacherApplicationController::class, 'index']);
             Route::get('/student-applications', [StudentAccountApplicationController::class, 'index']);
+            Route::post('/student-applications/approve', [StudentApprovementController::class, 'approveSelected']);
         });
 
         Route::middleware('role:teacher')->prefix('teacher')->group(function () {

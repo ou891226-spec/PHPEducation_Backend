@@ -19,6 +19,19 @@ class CourseService
             ->all();
     }
 
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function listAll(): array
+    {
+        return Course::query()
+            ->orderByDesc('semester')
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (Course $course) => $this->formatCourse($course))
+            ->all();
+    }
+
     public function create(Teacher $teacher, array $data): array
     {
         $course = Course::query()->create([

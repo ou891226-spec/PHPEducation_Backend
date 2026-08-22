@@ -23,6 +23,8 @@ class StoreStudentAccountApplicationRequest extends FormRequest
             //
             'tid' => ['required', 'integer', 'exists:teachers,id'],
 
+            'course_id' => ['required', 'integer', 'exists:courses,id'],
+
             'class_name' => ['required', 'string', 'max:255'],
 
             'students' => ['required', 'array', 'min:1', 'max:50'],

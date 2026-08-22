@@ -554,20 +554,37 @@ Authorization: Bearer {token}
 
 ```text
 POST /teacher/student-applications
+GET  /courses
 GET  /teacher/courses/{courseId}/student-applications
 GET  /student-applications
+POST /student-applications/approve
 POST /teacher/student-applications/{id}/approve
 ```
 
-流程：教師送出班級與多名學生（body 帶 `tid`）→ 管理員在使用者管理開通 → 寫入 `students`。
+流程：教師送出班級與多名學生（body 帶 `tid`、`course_id`）→ 管理員先選課、再勾人開通。沒帳號就建 `students` 並寫 `enrollments`；已有帳號只寫選課。可整班（全選）或只開其中幾人。
+
+### GET `/api/v1/courses`
+
+管理員開通頁的課程下拉。需要管理員 Token。
 
 ### GET `/api/v1/teacher/courses/{courseId}/student-applications`
 
-該課教師取得待開通名單（每人一列）。先確認這門課是自己的，再查該教師的申請單。預設只回 `pending`，可加 `?status=approved`。別人的課 **404**。
+該課教師取得這門課的待開通名單（每人一列）。預設只回 `pending`，可加 `?status=approved`。別人的課 **404**。
 
 ### GET `/api/v1/student-applications`
 
-管理員取得待開通／申請明細（每人一列）。需要管理員 Token。可加 `?status=pending`。
+管理員取得待開通／申請明細（每人一列）。需要管理員 Token。可加 `?course_id=`、`?status=pending`、`?q=`（學號或姓名）。
+
+### POST `/api/v1/student-applications/approve`
+
+管理員開通勾選的學生。需要管理員 Token。
+
+```json
+{
+  "course_id": 2,
+  "item_ids": [1, 2]
+}
+```
 
 | 欄位 | 對應 |
 |------|------|
@@ -589,7 +606,9 @@ POST /teacher/student-applications/{id}/approve
       "application_id": 1,
       "class_name": "資應二甲",
       "status": "pending",
-      "provider_teacher_name": "陳老師"
+      "course_id": 1,
+      "provider_teacher_name": "陳老師",
+      "has_account": false
     }
   ]
 }

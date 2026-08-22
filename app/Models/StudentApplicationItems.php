@@ -16,6 +16,7 @@ class StudentApplicationItems extends Model
         'student_no',
         'name',
         'email',
+        'status',
     ];
 
     public function application(): BelongsTo
