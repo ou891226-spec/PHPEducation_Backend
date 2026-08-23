@@ -35,6 +35,7 @@ class UserFormatterService
                 'account' => $authenticatable->email,
                 'student_no' => $authenticatable->student_no,
                 'name' => $authenticatable->name,
+                'class_name' => $authenticatable->class_name,
                 'role' => 'student',
             ];
         }

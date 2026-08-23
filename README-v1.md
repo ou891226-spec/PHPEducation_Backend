@@ -15,9 +15,9 @@
 基本資料
 admins     → 管理員
 teachers   → 教師
-students   → 學生（以學校信箱 email 作為登入帳號，student_no 為學號）
+students   → 學生（以學校信箱 email 作為登入帳號，student_no 為學號，含 class_name 班級）
 teacher_applications → 教師帳號申請（核准後寫入 teachers）
-student_applications → 學生帳號申請（一筆對一位教師，PK = teachers.id）
+student_applications → 學生帳號申請（tid → teachers, course_id → courses）
 student_application_items → 學生申請明細（一筆申請多位學生，核准後寫入 students）
 
 courses    → 課程（teacher_id → teachers）
@@ -148,6 +148,7 @@ tests/
 | id | bigint | 申請 ID（PK） |
 | name | string | 教師姓名 |
 | email | string | 教師信箱（unique） |
+| account | string | 教師自訂帳號（unique） |
 | reason | string | 申請理由 |
 | status | string | 申請狀態：`pending`（待審核）、`approved`（已通過），預設 `pending` |
 | created_at | timestamp | 建立時間 |
@@ -165,6 +166,7 @@ tests/
 | password | string | 加密後的密碼 |
 | student_no | string | 學號（unique） |
 | name | string | 學生姓名 |
+| class_name | string | 現有班級（可為空） |
 | email | string | 學校信箱（unique），**作為登入帳號** |
 | created_at | timestamp | 建立時間 |
 | updated_at | timestamp | 更新時間 |
@@ -173,12 +175,14 @@ tests/
 
 ### student_applications 學生帳號申請
 
-由**已核准的教師**幫班級學生申請帳號。此表與 `teachers` **一對一**：主鍵 `id` 就是教師 ID，不是另外流水號。
-老師交一份班級名單，上面可以有很多學生
+由**已核准的教師**幫班級學生申請帳號。
+老師交一份班級名單，上面可以有很多學生。
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
-| id | bigint | 教師 ID（PK，FK → teachers.id，刪除教師時一併刪除） |
+| id | bigint | 申請 ID（PK） |
+| tid | bigint | 教師 ID（FK → teachers.id，刪除教師時一併刪除） |
+| course_id | bigint | 課程 ID（FK → courses.id，刪除課程時一併刪除） |
 | class_name | string | 申請班級 |
 | status | string | 申請狀態：`pending`（待審核）、`approved`（已通過），預設 `pending` |
 | created_at | timestamp | 建立時間 |
@@ -191,23 +195,23 @@ tests/
 | 欄位 | 型別 | 說明 |
 |------|------|------|
 | id | bigint | 明細 ID（PK） |
-| application_id | bigint | 申請 ID（FK → student_applications.id，即教師 ID） |
+| application_id | bigint | 申請 ID（FK → student_applications.id） |
 | student_no | string | 學生學號 |
 | name | string | 學生姓名 |
-| email | string | 信箱 |
+| status | string | 審核狀態：`pending`（待審核）、`approved`（已開通），預設 `pending` |
 | created_at | timestamp | 建立時間 |
 | updated_at | timestamp | 更新時間 |
 
 同一申請內 `student_no` 不可重複（`application_id` + `student_no` unique）。
 
 ```text
-teachers.id
+teachers.id / courses.id
     │
-    └─ student_applications.id（同一值）
+    └─ student_applications.id（主單：班級與課程）
             │
-            └─ student_application_items（多位學生）
+            └─ student_application_items（多位學生：學號與姓名）
                     │
-                    └─ 核准後寫入 students
+                    └─ 核准後寫入 students（由學號自動產生校園信箱）
 ```
 
 ### courses 課程資料
@@ -454,6 +458,7 @@ Request：
 {
   "name": "陳老師",
   "email": "chen@example.com",
+  "account": "teacher_chen",
   "reason": "申請教師帳號"
 }
 ```
@@ -462,17 +467,19 @@ Request：
 |------|------|------|
 | name | ✓ | 教師姓名 |
 | email | ✓ | 信箱（不可與已申請或已註冊教師重複） |
+| account | ✓ | 教師自訂帳號（不可與已申請或已註冊教師重複） |
 | reason | ✓ | 申請理由 |
 
 成功回應 **201**：
 
 ```json
 {
-  "message": "申請已送出",
+  "message": "Teacher application submitted successfully.",
   "data": {
     "id": 1,
     "name": "陳老師",
     "email": "chen@example.com",
+    "account": "teacher_chen",
     "reason": "申請教師帳號",
     "status": "pending"
   }
@@ -482,7 +489,7 @@ Request：
 | 狀態碼 | 說明 |
 |--------|------|
 | 201 | 申請成功，狀態為 `pending` |
-| 422 | 欄位錯誤，或信箱已被申請／已是教師 |
+| 422 | 欄位錯誤，或帳號／信箱已被申請／已是教師 |
 
 ### GET `/api/v1/teacher-applications`
 
@@ -504,6 +511,7 @@ Authorization: Bearer {token}
       "id": 1,
       "name": "陳老師",
       "email": "chen@example.com",
+      "account": "teacher_chen",
       "reason": "申請教師帳號",
       "status": "pending"
     }
@@ -513,24 +521,25 @@ Authorization: Bearer {token}
 
 ### POST `/api/v1/teacher-applications/{id}/approve`
 
-功能：管理員核准申請。核准後建立 `teachers` 帳號，申請 `status` 改為 `approved`。
+功能：管理員核准申請。核准後建立 `teachers` 帳號，申請 `status` 改為 `approved`，並寄發開通通知信（含帳號與初始密碼）。
 
 需要管理員 Token。
 
-**帳號生成規則：** 取 Email 的 `@` 前字串，加上 `_` 與信箱代碼（`gmail.com` → `g`、`yahoo.com` → `y`，其他取網域首字）。例如 `chen@gmail.com` → `chen_g`。
+**帳號：** 使用教師申請時填寫之自訂帳號 `account`。
 
-**密碼：** 隨機 12 碼，以 `Hash::make` 存進 `teachers.password`，**明文只在此次回應回傳一次**。
+**密碼：** 系統隨機生成 12 碼，以 `password => hashed` cast 存進 `teachers.password`，**明文只在此次回應與信件發送一次**。
 
 成功回應 **200**：
 
 ```json
 {
-  "message": "已核准並建立教師帳號",
+  "message": "Teacher application approved.",
   "data": {
     "tid": 3,
-    "account": "chen_g",
-    "password": "xY8zR9wP2qTs",
-    "status": "approved"
+    "name": "陳老師",
+    "email": "chen@example.com",
+    "account": "teacher_chen",
+    "password": "xY8zR9wP2qTs"
   }
 }
 ```
@@ -543,7 +552,7 @@ Authorization: Bearer {token}
 | 401 | 未登入 |
 | 403 | 非管理員 |
 | 404 | 申請不存在 |
-| 422 | 已核准，或無法建立帳號 |
+| 422 | 已處理完畢，或無法建立帳號 |
 
 前端使用者管理有「拒絕」，目前資料表沒有 `rejected` 狀態，拒絕 API 尚未定義。
 
@@ -562,7 +571,55 @@ POST /student-applications/approve
 POST /teacher/student-applications/{id}/approve
 ```
 
-流程：教師送出班級與多名學生（body 帶 `tid`、`course_id`）→ 管理員先選課、再勾人開通。沒帳號就建 `students` 並寫 `enrollments`；已有帳號只寫選課。可整班（全選）或只開其中幾人。
+流程：教師送出班級與多名學生（body 帶 `tid`、`course_id`，學生名冊僅需學號與姓名）→ 管理員審核開通。沒帳號就建 `students`（以學號自動產生校園信箱）並寫 `enrollments`；已有帳號只寫選課。可勾選指定學生開通或整單一鍵開通。
+
+### POST `/api/v1/teacher/student-applications`
+
+功能：教師送出班級學生帳號申請名冊。**不需要提供學生信箱**。
+
+Request：
+
+```json
+{
+  "tid": 2,
+  "course_id": 1,
+  "class_name": "資應二甲",
+  "students": [
+    {
+      "student_no": "1411131001",
+      "name": "李小華"
+    },
+    {
+      "student_no": "1411131002",
+      "name": "張小明"
+    }
+  ]
+}
+```
+
+| 欄位 | 必填 | 說明 |
+|------|------|------|
+| tid | ✓ | 教師 ID（FK → teachers.id） |
+| course_id | ✓ | 課程 ID（FK → courses.id，必須為該教師所開課程） |
+| class_name | ✓ | 班級名稱 |
+| students | ✓ | 學生名冊陣列（1～50 筆） |
+| students.*.student_no | ✓ | 學生學號 |
+| students.*.name | ✓ | 學生姓名 |
+
+成功回應 **201**：
+
+```json
+{
+  "message": "Student account application submitted successfully.",
+  "data": {
+    "id": 1,
+    "tid": 2,
+    "course_id": 1,
+    "class_name": "資應二甲",
+    "status": "pending"
+  }
+}
+```
 
 ### GET `/api/v1/courses`
 
@@ -575,24 +632,6 @@ POST /teacher/student-applications/{id}/approve
 ### GET `/api/v1/student-applications`
 
 管理員取得待開通／申請明細（每人一列）。需要管理員 Token。可加 `?course_id=`、`?status=pending`、`?q=`（學號或姓名）。
-
-### POST `/api/v1/student-applications/approve`
-
-管理員開通勾選的學生。需要管理員 Token。
-
-```json
-{
-  "course_id": 2,
-  "item_ids": [1, 2]
-}
-```
-
-| 欄位 | 對應 |
-|------|------|
-| id | `student_application_items.id` |
-| student_no | 學號 |
-| name | 學生姓名 |
-| provider_teacher_name | 申請教師姓名 |
 
 成功回應 **200**：
 
@@ -612,6 +651,53 @@ POST /teacher/student-applications/{id}/approve
       "has_account": false
     }
   ]
+}
+```
+
+### POST `/api/v1/student-applications/approve`
+
+功能：管理員開通勾選的學生。需要管理員 Token。
+
+Request：
+
+```json
+{
+  "course_id": 1,
+  "item_ids": [1, 2]
+}
+```
+
+| 欄位 | 必填 | 說明 |
+|------|------|------|
+| course_id | ✓ | 課程 ID |
+| item_ids | ✓ | 欲開通之學生明細 ID 陣列（`student_application_items.id`） |
+
+成功回應 **200**：
+
+```json
+{
+  "message": "已開通學生。",
+  "activated_count": 2,
+  "created_count": 2,
+  "enrolled_count": 2
+}
+```
+
+非管理員 **403**。未登入 **401**。
+
+### POST `/api/v1/teacher/student-applications/{id}/approve`
+
+功能：管理員將整張申請單一次全數審核開通。需要管理員 Token。
+
+成功回應 **200**：
+
+```json
+{
+  "message": "Student account application approved.",
+  "data": {
+    "application_id": 1,
+    "activated_count": 2
+  }
 }
 ```
 

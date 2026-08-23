@@ -40,6 +40,7 @@ class DatabaseSeeder extends Seeder
             'password' => $password,
             'student_no' => '1411131000',
             'name' => '王小明',
+            'class_name' => '資應二甲',
             'email' => Student::emailFromStudentNo('1411131000'),
         ]);
 

@@ -90,6 +90,7 @@ class StudentAccountService
                     $plainPassword = $this->generatePassword();
 
                     $student = Student::create([
+                        'class_name' => $item->application?->class_name,
                         'student_no' => $item->student_no,
                         'name' => $item->name,
                         'password' => $plainPassword,
