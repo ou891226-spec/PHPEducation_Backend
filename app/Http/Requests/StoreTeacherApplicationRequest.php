@@ -22,7 +22,8 @@ class StoreTeacherApplicationRequest extends FormRequest
             //
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255'],
-            'reason' => ['required','nullable', 'string'],
+            'account' => ['required', 'string', 'max:255'],
+            'reason' => ['required', 'nullable', 'string'],
         ];
     }
 }

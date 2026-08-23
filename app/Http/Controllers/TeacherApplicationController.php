@@ -26,6 +26,7 @@ class TeacherApplicationController extends Controller
                 'id' => $application->id,
                 'name' => $application->name,
                 'email' => $application->email,
+                'account' => $application->account,
                 'reason' => $application->reason,
                 'status' => $application->status,
             ]);
@@ -39,8 +40,8 @@ class TeacherApplicationController extends Controller
      * 提交教師帳號申請
      *
      * 驗證流程：
-     * 1. 確認該 Email 是否已為正式教師
-     * 2. 確認該 Email 是否已有尚未審核的申請案件（避免重複申請）
+     * 1. 確認該 Email/Account 是否已為正式教師
+     * 2. 確認該 Email/Account 是否已有尚未審核的申請案件（避免重複申請）
      * 3. 建立待審核（status: pending）的申請記錄
      *
      * @param StoreTeacherApplicationRequest $request
@@ -50,17 +51,22 @@ class TeacherApplicationController extends Controller
     {
         $validatedData = $request->validated();
 
-        // 1. 確認該 Email 是否已為正式教師
-        $isTeacher = Teacher::where('email', $validatedData['email'])->exists();
+        // 1. 確認該 Email / Account 是否已為正式教師
+        $isTeacher = Teacher::where('email', $validatedData['email'])
+            ->orWhere('account', $validatedData['account'])
+            ->exists();
         
         if ($isTeacher) {
             return response()->json([
-                'message' => 'This email is already registered as a teacher.'
+                'message' => 'This email or account is already registered as a teacher.'
             ], 422);
         }
         
-        // 2. 確認該 Email 是否已有尚未審核的申請案件（避免重複申請）
-        $hasPendingApplication = TeacherApplication::where('email', $validatedData['email'])
+        // 2. 確認該 Email / Account 是否已有尚未審核的申請案件（避免重複申請）
+        $hasPendingApplication = TeacherApplication::where(function ($query) use ($validatedData) {
+                $query->where('email', $validatedData['email'])
+                    ->orWhere('account', $validatedData['account']);
+            })
             ->where('status', 'pending')
             ->exists();
             
@@ -74,6 +80,7 @@ class TeacherApplicationController extends Controller
         $teacherApplication = TeacherApplication::create([
             'name' => $validatedData['name'],
             'email' => $validatedData['email'],
+            'account' => $validatedData['account'],
             'reason' => $validatedData['reason'] ?? null,
             'status' => 'pending',
         ]);

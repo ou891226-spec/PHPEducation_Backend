@@ -57,11 +57,15 @@ class StudentApprovementController extends Controller
 
         $this->notifyTeachers($result['created_by_teacher']);
 
+        // 做測試用
+        $newStudents = collect($result['created_by_teacher'])->flatMap(fn ($group) => $group['students'])->values();
+
         return response()->json([
             'message' => 'Student account application approved.',
             'data' => [
                 'application_id' => $application->id,
                 'activated_count' => $result['activated_count'],
+                'students' => $newStudents, // 測試用
             ],
         ]);
     }

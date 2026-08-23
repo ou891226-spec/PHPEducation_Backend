@@ -22,6 +22,7 @@ class ApplicationApiTest extends TestCase
         TeacherApplication::query()->create([
             'name' => '林老師',
             'email' => 'lin@example.com',
+            'account' => 'teacher_lin',
             'reason' => '申請教師帳號',
             'status' => 'pending',
         ]);
@@ -33,7 +34,97 @@ class ApplicationApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('applications.0.name', '林老師')
             ->assertJsonPath('applications.0.email', 'lin@example.com')
+            ->assertJsonPath('applications.0.account', 'teacher_lin')
             ->assertJsonPath('applications.0.status', 'pending');
+    }
+
+    public function test_teacher_application_creation_and_approval_flow(): void
+    {
+        Mail::fake();
+
+        // 1. 提交教師申請
+        $storeResponse = $this->postJson('/api/v1/teacher-applications', [
+            'name' => '張老師',
+            'email' => 'chang@example.com',
+            'account' => 'teacher_chang',
+            'reason' => '想使用平台教學',
+        ]);
+
+        $storeResponse->assertCreated()
+            ->assertJsonPath('data.name', '張老師')
+            ->assertJsonPath('data.account', 'teacher_chang');
+
+        $appId = $storeResponse->json('data.id');
+
+        // 2. 審核教師申請（需 Admin 權限）
+        $adminToken = $this->loginToken('admin@school.edu.tw');
+
+        $approveResponse = $this->withToken($adminToken)
+            ->postJson("/api/v1/teacher-applications/{$appId}/approve");
+        $approveResponse->assertOk()
+            ->assertJsonPath('data.account', 'teacher_chang')
+            ->assertJsonPath('data.email', 'chang@example.com');
+
+        $teacher = Teacher::query()->where('account', 'teacher_chang')->first();
+        $this->assertNotNull($teacher);
+        $this->assertSame('chang@example.com', $teacher->email);
+
+        Mail::assertSent(\App\Mail\TeacherAccountCreated::class, function ($mail) use ($teacher) {
+            return $mail->account === 'teacher_chang'
+                && !empty($mail->password);
+        });
+    }
+
+    public function test_non_admin_cannot_approve_teacher_application(): void
+    {
+        $app = TeacherApplication::query()->create([
+            'name' => '測試老師',
+            'email' => 'test_teacher_non_admin@example.com',
+            'account' => 'teacher_non_admin',
+            'reason' => '申請',
+            'status' => 'pending',
+        ]);
+
+        // 未登入 (401)
+        $this->postJson("/api/v1/teacher-applications/{$app->id}/approve")
+            ->assertUnauthorized();
+
+        // 教師嘗試審核 (403)
+        $teacherToken = $this->loginToken('teacher@school.edu.tw');
+        $this->withToken($teacherToken)
+            ->postJson("/api/v1/teacher-applications/{$app->id}/approve")
+            ->assertForbidden();
+
+        // 學生嘗試審核 (403)
+        $studentToken = $this->loginToken('s1411131000');
+        $this->withToken($studentToken)
+            ->postJson("/api/v1/teacher-applications/{$app->id}/approve")
+            ->assertForbidden();
+    }
+
+    public function test_teacher_cannot_submit_duplicate_teacher_application(): void
+    {
+        TeacherApplication::query()->create([
+            'name' => '林老師',
+            'email' => 'lin_dup@example.com',
+            'account' => 'teacher_lin_dup',
+            'reason' => '申請教師帳號',
+            'status' => 'pending',
+        ]);
+
+        $this->postJson('/api/v1/teacher-applications', [
+            'name' => '林老師2',
+            'email' => 'lin_dup@example.com',
+            'account' => 'teacher_lin_dup2',
+            'reason' => '重複信箱',
+        ])->assertStatus(422);
+
+        $this->postJson('/api/v1/teacher-applications', [
+            'name' => '林老師3',
+            'email' => 'lin_dup3@example.com',
+            'account' => 'teacher_lin_dup',
+            'reason' => '重複帳號',
+        ])->assertStatus(422);
     }
 
     public function test_teacher_cannot_list_teacher_applications(): void
@@ -61,7 +152,6 @@ class ApplicationApiTest extends TestCase
             'application_id' => $application->id,
             'student_no' => '1411131001',
             'name' => '李小華',
-            'email' => 's1411131001@nutc.edu.tw',
             'status' => 'pending',
         ]);
 
@@ -103,7 +193,6 @@ class ApplicationApiTest extends TestCase
             'application_id' => $application->id,
             'student_no' => '1411131001',
             'name' => '李小華',
-            'email' => 's1411131001@nutc.edu.tw',
             'status' => 'pending',
         ]);
 
@@ -145,7 +234,6 @@ class ApplicationApiTest extends TestCase
             'application_id' => $application->id,
             'student_no' => '1411131001',
             'name' => '李小華',
-            'email' => 's1411131001@nutc.edu.tw',
             'status' => 'pending',
         ]);
 
@@ -190,7 +278,6 @@ class ApplicationApiTest extends TestCase
             'application_id' => $application->id,
             'student_no' => $existing->student_no,
             'name' => $existing->name,
-            'email' => $existing->email,
             'status' => 'pending',
         ]);
 
@@ -233,7 +320,6 @@ class ApplicationApiTest extends TestCase
             'application_id' => $application->id,
             'student_no' => '1411132001',
             'name' => '林小安',
-            'email' => 's1411132001@nutc.edu.tw',
             'status' => 'pending',
         ]);
 
@@ -241,7 +327,6 @@ class ApplicationApiTest extends TestCase
             'application_id' => $application->id,
             'student_no' => '1411132002',
             'name' => '張小華',
-            'email' => 's1411132002@nutc.edu.tw',
             'status' => 'pending',
         ]);
 
@@ -269,6 +354,87 @@ class ApplicationApiTest extends TestCase
                 'course_id' => $course->id,
                 'item_ids' => [1],
             ])
+            ->assertForbidden();
+    }
+
+    public function test_teacher_can_submit_student_application_without_email_and_approve_it(): void
+    {
+        Mail::fake();
+
+        $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
+        $course = Course::query()->where('name', '網際系統設計 (資應)')->firstOrFail();
+
+        // 1. 教師提交名單（只有 student_no 和 name，沒有 email）
+        $storeResponse = $this->postJson('/api/v1/teacher/student-applications', [
+            'tid' => $teacher->id,
+            'course_id' => $course->id,
+            'class_name' => '資應二甲',
+            'students' => [
+                [
+                    'student_no' => '1411139001',
+                    'name' => '王小明',
+                ],
+            ],
+        ]);
+
+        $storeResponse->assertCreated()
+            ->assertJsonPath('data.class_name', '資應二甲');
+
+        $appId = $storeResponse->json('data.id');
+
+        // 2. 審核開通學生（需 Admin 權限）
+        $adminToken = $this->loginToken('admin@school.edu.tw');
+
+        $approveResponse = $this->withToken($adminToken)
+            ->postJson("/api/v1/teacher/student-applications/{$appId}/approve");
+        $approveResponse->assertOk()
+            ->assertJsonPath('data.activated_count', 1);
+
+        $student = Student::query()->where('student_no', '1411139001')->first();
+        $this->assertNotNull($student);
+        $this->assertSame('s1411139001@nutc.edu.tw', $student->email);
+
+        // 3. 檢查通知信件包含正確明文密碼與信箱
+        Mail::assertSent(\App\Mail\StudentAccountCreated::class, function ($mail) use ($student) {
+            return $mail->students[0]['student_no'] === '1411139001'
+                && $mail->students[0]['email'] === 's1411139001@nutc.edu.tw'
+                && !empty($mail->students[0]['password']);
+        });
+    }
+
+    public function test_non_admin_cannot_approve_student_application_batch(): void
+    {
+        $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
+        $course = Course::query()->where('name', '網際系統設計 (資應)')->firstOrFail();
+
+        $application = StudentApplications::query()->create([
+            'tid' => $teacher->id,
+            'course_id' => $course->id,
+            'class_name' => '資應二甲',
+            'status' => 'pending',
+        ]);
+
+        StudentApplicationItems::query()->create([
+            'application_id' => $application->id,
+            'student_no' => '1411139999',
+            'name' => '測試生',
+            'status' => 'pending',
+        ]);
+
+        // 未登入 (401)
+        $this->postJson("/api/v1/teacher/student-applications/{$application->id}/approve")
+            ->assertUnauthorized();
+
+        // 教師嘗試審核 (403)
+        $teacherToken = $this->loginToken('teacher@school.edu.tw');
+        $this->withToken($teacherToken)
+            ->postJson("/api/v1/teacher/student-applications/{$application->id}/approve")
+            ->assertForbidden();
+
+        // 學生嘗試審核 (403)
+        $studentToken = $this->loginToken('s1411131000');
+        $this->withToken($studentToken)
+            ->postJson("/api/v1/teacher/student-applications/{$application->id}/approve")
             ->assertForbidden();
     }
 

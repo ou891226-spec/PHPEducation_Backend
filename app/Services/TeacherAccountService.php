@@ -21,14 +21,14 @@ class TeacherAccountService
      */
     public function createFromApplication(TeacherApplication $application): array
     {
-        $account = $this->generateAccount($application->email);
+        $account = $application->account;
         $password = $this->generatePassword();
         
         $teacher = Teacher::create([
             'name' => $application->name,
             'email' => $application->email,
             'account' => $account,
-            'password' => Hash::make($password),
+            'password' => $password,
         ]);
 
         return [
@@ -36,32 +36,6 @@ class TeacherAccountService
             'account' => $account,
             'password' => $password,
         ];
-    }
-
-    /**
-     * 依據 Email 自動生成預設帳號
-     *
-     * 規則：[使用者名稱]_[網域代碼]
-     * 例如：test@gmail.com => test_g
-     *       john@yahoo.com => john_y
-     *
-     * @param string $email
-     * @return string
-     */
-    private function generateAccount(string $email): string
-    {
-        [$username, $domain] = explode('@', $email, 2);
-        $domainName = explode('.', $domain)[0];
-
-        $providerCode = match ($domainName) {
-            'gmail' => 'g',
-            'yahoo' => 'y',
-            'hotmail' => 'h',
-            'outlook' => 'o',
-            default => substr($domainName, 0, 1),
-        };
-
-        return $username . '_' . $providerCode;
     }
 
     /**

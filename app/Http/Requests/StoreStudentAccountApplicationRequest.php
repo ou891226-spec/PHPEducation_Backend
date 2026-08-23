@@ -32,8 +32,6 @@ class StoreStudentAccountApplicationRequest extends FormRequest
             'students.*.student_no' => ['required', 'string'],
 
             'students.*.name' => ['required', 'string'],
-
-            'students.*.email' => ['required', 'email'],
         ];
     }
 }

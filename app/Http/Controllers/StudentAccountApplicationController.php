@@ -131,7 +131,7 @@ class StudentAccountApplicationController extends Controller
             'id' => $item->id,
             'student_no' => $item->student_no,
             'name' => $item->name,
-            'email' => $item->email,
+            'email' => Student::emailFromStudentNo($item->student_no),
             'application_id' => $item->application_id,
             'class_name' => $item->application?->class_name,
             'status' => $item->status,

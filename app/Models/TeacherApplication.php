@@ -13,6 +13,7 @@ class TeacherApplication extends Model
     protected $fillable = [
         'name',
         'email',
+        'account',
         'reason',
         'status',
     ];

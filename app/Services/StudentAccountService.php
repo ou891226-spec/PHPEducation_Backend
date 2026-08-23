@@ -42,7 +42,6 @@ class StudentAccountService
                     'application_id' => $application->id,
                     'student_no' => $studentData['student_no'],
                     'name' => $studentData['name'],
-                    'email' => $studentData['email'],
                     'status' => 'pending',
                 ]);
             }
@@ -85,6 +84,7 @@ class StudentAccountService
                     ->first();
 
                 $plainPassword = null;
+                $email = Student::emailFromStudentNo($item->student_no);
 
                 if ($student === null) {
                     $plainPassword = $this->generatePassword();
@@ -93,7 +93,7 @@ class StudentAccountService
                         'student_no' => $item->student_no,
                         'name' => $item->name,
                         'password' => $plainPassword,
-                        'email' => $item->email,
+                        'email' => $email,
                     ]);
 
                     $createdCount++;
@@ -132,7 +132,7 @@ class StudentAccountService
                         'student_no' => $student->student_no,
                         'name' => $item->name,
                         'password' => $plainPassword,
-                        'email' => $item->email,
+                        'email' => $email,
                     ];
                 }
             }

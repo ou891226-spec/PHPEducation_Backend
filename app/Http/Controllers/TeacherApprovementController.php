@@ -65,7 +65,7 @@ class TeacherApprovementController extends Controller
                 'name' => $application->name,
                 'email' => $application->email,
                 'account' => $teacher['account'],
-                // 'password' => $teacher['password'],
+                'password' => $teacher['password'],
             ],
         ], 200);
     }    
