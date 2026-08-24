@@ -6,16 +6,22 @@ use InvalidArgumentException;
 use ZipArchive;
 
 /**
- * 依 Excel 欄位組成教材樹：Topic → Chapter → Unit → Knowledge Card + example。
- * 第 1 列說明、第 2 列欄位、第 3 列範本示範整列不讀、第 4 列起正式資料。
+ * 依 Excel 欄位組成教材樹：Chapter → Unit → Knowledge Card + example。
+ * 主題由網頁匯入時一次填寫，不從 Excel 讀 topics 欄。
+ * 欄位列的下一列是範本示範，整列不讀；再下一列起才是正式資料。
  */
 class ExcelMaterialParser
 {
     /**
      * @return array{name: string, topics: list<array<string, mixed>>}
      */
-    public function parse(string $path): array
+    public function parse(string $path, string $topicName): array
     {
+        $topicName = trim($topicName);
+        if ($topicName === '') {
+            throw new InvalidArgumentException('請填寫主題名稱');
+        }
+
         $rows = $this->readRows($path);
         if ($rows === []) {
             throw new InvalidArgumentException('找不到教材名稱');
@@ -23,13 +29,12 @@ class ExcelMaterialParser
 
         $headerIndex = $this->findHeaderRow($rows);
         if ($headerIndex === null) {
-            throw new InvalidArgumentException('找不到欄位列（topics / chapters / units / knowledge_card）');
+            throw new InvalidArgumentException('找不到欄位列（chapters / units / knowledge_card）');
         }
 
         $name = $this->findMaterialName($rows, $headerIndex);
         $map = $this->mapColumns($rows[$headerIndex]);
         $topics = [];
-        $lastTopic = '';
         $lastChapter = '';
         $lastUnit = '';
 
@@ -37,17 +42,9 @@ class ExcelMaterialParser
         for ($i = $headerIndex + 2, $count = count($rows); $i < $count; $i++) {
             $row = $rows[$i];
             $example = $this->cell($row, $map['example'] ?? null);
-
-            $topic = $this->cell($row, $map['topics'] ?? null);
             $chapter = $this->cell($row, $map['chapters'] ?? null);
             $unit = $this->cell($row, $map['units'] ?? null);
             $content = $this->cell($row, $map['knowledge_card'] ?? null);
-
-            if ($topic !== '') {
-                $lastTopic = $topic;
-            } else {
-                $topic = $lastTopic;
-            }
 
             if ($chapter !== '') {
                 $lastChapter = $chapter;
@@ -61,16 +58,16 @@ class ExcelMaterialParser
                 $unit = $lastUnit;
             }
 
-            if ($topic === '' || $chapter === '' || $unit === '' || $content === '') {
+            if ($chapter === '' || $unit === '' || $content === '') {
                 continue;
             }
 
-            $this->appendCard($topics, $topic, $chapter, $unit, $content, $example);
+            $this->appendCard($topics, $topicName, $chapter, $unit, $content, $example);
         }
 
         $topics = $this->finalizeTopics($topics);
         if ($name === '' && $topics !== []) {
-            $name = (string) $topics[0]['name'];
+            $name = $topicName;
         }
         if ($name === '') {
             throw new InvalidArgumentException('找不到教材名稱');
@@ -192,7 +189,9 @@ class ExcelMaterialParser
     {
         foreach ($rows as $index => $row) {
             $joined = implode(' ', array_map(fn (string $value) => mb_strtolower(trim($value)), $row));
-            if (str_contains($joined, 'topics') && str_contains($joined, 'chapters') && str_contains($joined, 'units')) {
+            $hasChapters = str_contains($joined, 'chapters') || str_contains($joined, '章節');
+            $hasUnits = str_contains($joined, 'units') || str_contains($joined, '單元');
+            if ($hasChapters && $hasUnits) {
                 return $index;
             }
         }
@@ -210,9 +209,7 @@ class ExcelMaterialParser
 
         foreach ($row as $column => $value) {
             $key = mb_strtolower(trim($value));
-            if (str_starts_with($key, 'topics') || $key === '主題') {
-                $map['topics'] = $column;
-            } elseif (str_starts_with($key, 'chapters') || $key === '章節') {
+            if (str_starts_with($key, 'chapters') || $key === '章節') {
                 $map['chapters'] = $column;
             } elseif (str_starts_with($key, 'units') || $key === '單元') {
                 $map['units'] = $column;

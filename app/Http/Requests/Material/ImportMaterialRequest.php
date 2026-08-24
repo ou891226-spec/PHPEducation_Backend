@@ -14,8 +14,18 @@ class ImportMaterialRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'topic' => ['required', 'string', 'max:255'],
             'file' => ['required', 'file', 'max:10240'],
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('topic')) {
+            $this->merge([
+                'topic' => trim((string) $this->input('topic')),
+            ]);
+        }
     }
 
     public function withValidator($validator): void

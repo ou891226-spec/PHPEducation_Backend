@@ -26,16 +26,16 @@ class MaterialDraftService
 
     /**
      * Excel 匯入成一份新 Draft（status = draft）。
-     * 教材名稱來自 Excel 最上方，與 Topic 名稱不是同一件事。
+     * 主題名稱來自網頁表單；教材名稱來自 Excel 最上方，與 Topic 名稱不是同一件事。
      *
      * @return array<string, mixed>
      */
-    public function import(Teacher $teacher, int $courseId, string $path): array
+    public function import(Teacher $teacher, int $courseId, string $path, string $topicName): array
     {
         $this->courseService->findForTeacher($teacher, $courseId);
 
         try {
-            $parsed = $this->parser->parse($path);
+            $parsed = $this->parser->parse($path, $topicName);
         } catch (InvalidArgumentException $exception) {
             throw ValidationException::withMessages([
                 'file' => [$exception->getMessage()],

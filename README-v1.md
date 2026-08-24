@@ -36,7 +36,7 @@ knowledge_cards → 知識卡（unit_id → units）
 課程由教師建立並擁有（`courses.teacher_id`）；學生透過 `enrollments` 與課程形成多對多關聯。
 
 教材層級：教師 → 課程 → 主題 → 章節 → 單元 → 知識卡。
-Excel → Parser → `material_drafts.tree` → 前端畫樹編輯 → 發布 → 正式教材表。
+主題名稱由匯入表單一次填寫；Excel 只含章節以下。表單主題 + Excel → Parser → `material_drafts.tree` → 前端畫樹編輯 → 發布 → 正式教材表。
 
 ---
 
@@ -896,10 +896,10 @@ Authorization: Bearer {token}
 第一版流程：
 
 ```text
-教師 Excel
-  → Laravel 接收、驗證、確認是該課教師
-  → ExcelMaterialParser 解析（第 3 列範本整列不讀，「範例」欄寫進知識卡 example）
-  → 依 Topic → Chapter → Unit → Knowledge Card 組成 Tree
+前端填主題名稱 + 教師 Excel
+  → Laravel 接收、驗證 topic / file、確認是該課教師
+  → ExcelMaterialParser 解析（主題用表單欄位；欄位列的下一列範本整列不讀，「範例」欄寫進知識卡 example）
+  → 整份 Excel 掛在同一個 Topic 下，組成 Chapter → Unit → Knowledge Card
   → 教材名稱與該課既有 Draft 重複則 422
   → 存成 Material Draft
   → API 回傳 Draft JSON
@@ -915,7 +915,7 @@ Authorization: Bearer {token}
   發布新 Draft → 舊 published 改 archived，正式表換成新的
 ```
 
-空白的 topic／chapter／unit 會沿用上一列。Excel 列規則：第 1 列說明、第 2 列欄位標題（例如 `topics (主題)`）、第 3 列範本示範整列不讀、第 4 列起才是教師內容。「範例」欄存成知識卡 `example`，可空。知識卡沒有獨立標題欄，標題取內容前約 80 字。有寫 `教材名稱：…` 就當教材名稱；沒寫則用第一個 Topic 名稱。
+一份 Excel 只對應一個主題，主題名稱來自表單 `topic`，不從 Excel 讀。空白的 chapter／unit 會沿用上一列。Excel 列規則：第 1 列可寫 `教材名稱：…`、第 2 列說明、第 3 列欄位標題（`chapters (章節)` / `units (單元)` / `knowledge_card (知識卡)` / `範例`）、第 4 列範本示範整列不讀、第 5 列起才是教師內容。「範例」欄存成知識卡 `example`，可空。知識卡沒有獨立標題欄，標題取內容前約 80 字。有寫 `教材名稱：…` 就當教材名稱；沒寫則用表單的主題名稱。
 
 整份 Excel 再上傳期間，學生仍看已發布的正式教材，直到第 2 份也發布。從已發布教材開新 Draft 修改時，學生也仍看上一版，直到新 Draft 發布。
 
@@ -927,7 +927,7 @@ Authorization: Bearer {token}
 public/templates/material_import_template.xlsx
 ```
 
-老師下載後檔名會顯示為 `教材匯入範本.xlsx`。
+老師下載後檔名會顯示為 `教材匯入範本.xlsx`。範本**沒有主題欄**。
 
 | Method | URL | 說明 |
 |--------|-----|------|
@@ -937,7 +937,14 @@ public/templates/material_import_template.xlsx
 
 ### 匯入、草稿、發布
 
-`multipart/form-data`，欄位名 `file`，副檔名必須是 `.xlsx`。
+`multipart/form-data`：
+
+| 欄位 | 必填 | 說明 |
+|------|------|------|
+| topic | 是 | 主題名稱。一份檔只掛這一個主題 |
+| file | 是 | `.xlsx`，最大 10MB |
+
+沒帶 `topic`（空字串也不行）會 **422**。副檔名必須是 `.xlsx`。
 
 | Method | URL | 說明 |
 |--------|-----|------|
@@ -960,7 +967,7 @@ public/templates/material_import_template.xlsx
 
 草稿節點 Request 與正式教材相同：主題／章節／單元用 `name`、`sort_order`；知識卡用 `title`、`content`、`example`、`sort_order`。成功匯入／新增為 **201**。
 
-只上傳範本裡的範例列會 **422**（沒有可匯入的教材列）。找不到教材名稱會 **422**。不是該課教師 **404**。已發布或已封存的 Draft 不能直接改／再發布，會 **422**。同一份 Draft 裡主題名稱重複會 **422**。Excel 教材名稱與該課既有 Draft 重複會 **422**。
+只上傳範本裡的範例列會 **422**（沒有可匯入的教材列）。沒填 `topic` 會 **422**。找不到教材名稱會 **422**。不是該課教師 **404**。已發布或已封存的 Draft 不能直接改／再發布，會 **422**。同一份 Draft 裡主題名稱重複會 **422**。Excel 教材名稱與該課既有 Draft 重複會 **422**。
 
 發布在 transaction 裡：把同課其他 `published` 改成 `archived`，用這份 `tree` **整棵覆寫**正式教材，再把這份設成 `published`。舊 Draft 列保留。再上傳 Excel 會另建一筆 `draft`。
 
@@ -977,7 +984,7 @@ public/templates/material_import_template.xlsx
 
 一層一層往下點，格式與教師列表相同（含 `item_count`）。
 
-### 主題 topics
+### topics 主題
 
 這段是**正式教材**的鑽層 API（`MaterialService`），給已發布內容或教師手動建正式表用。Excel 匯入與老師改第一版樹請用上面的 **Draft API**，不要走這組。
 
@@ -1001,7 +1008,7 @@ Request（新增／修改）：
 
 列表／單筆會含 `item_count`（底下章節數量）。
 
-### 章節 chapters
+### chapters 章節
 
 | Method | URL | 說明 |
 |--------|-----|------|
@@ -1012,7 +1019,7 @@ Request（新增／修改）：
 
 Request 同主題，欄位為 `name`、`sort_order`。`item_count` 為底下單元數量。
 
-### 單元 units
+### units 單元
 
 | Method | URL | 說明 |
 |--------|-----|------|
@@ -1023,7 +1030,7 @@ Request 同主題，欄位為 `name`、`sort_order`。`item_count` 為底下單�
 
 Request 同主題。`item_count` 為底下知識卡數量。
 
-### 知識卡 knowledge_cards
+### knowledge_cards 知識卡
 
 | Method | URL | 說明 |
 |--------|-----|------|
