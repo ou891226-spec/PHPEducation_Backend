@@ -8,13 +8,13 @@ return new class extends Migration
 {
     /**
      * 題目本身
-     * 掛在單元下，與知識卡同層
+     * 掛在課程下，再透過 question_knowledge_cards 對應知識卡
      */
     public function up(): void
     {
         Schema::create('questions', function (Blueprint $table) {
             $table->id()->comment('題目編號');
-            $table->foreignId('unit_id')->constrained('units')->cascadeOnDelete()->comment('所屬單元 ID');
+            $table->foreignId('course_id')->constrained('courses')->cascadeOnDelete()->comment('所屬課程 ID');
             $table->foreignId('teacher_id')->constrained('teachers')->comment('建立教師 ID');
             $table->string('title')->comment('題目標題');
             $table->string('type')->comment('choice、debug 或 coding');

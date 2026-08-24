@@ -30,4 +30,9 @@ class Course extends Model
     {
         return $this->hasMany(Topic::class)->orderBy('sort_order');
     }
+
+    public function questions(): HasMany
+    {
+        return $this->hasMany(Question::class);
+    }
 }

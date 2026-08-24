@@ -4,12 +4,14 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\StatsController;
 use App\Http\Controllers\Api\V1\Student\MaterialController as StudentMaterialController;
+use App\Http\Controllers\Api\V1\Student\QuestionController as StudentQuestionController;
 use App\Http\Controllers\Api\V1\Teacher\ChapterController;
 use App\Http\Controllers\Api\V1\Teacher\CourseController;
 use App\Http\Controllers\Api\V1\Teacher\KnowledgeCardController;
 use App\Http\Controllers\Api\V1\Teacher\MaterialDraftController;
 use App\Http\Controllers\Api\V1\Teacher\MaterialImportController;
 use App\Http\Controllers\Api\V1\Teacher\MaterialTemplateController;
+use App\Http\Controllers\Api\V1\Teacher\QuestionRecordController;
 use App\Http\Controllers\Api\V1\Teacher\TopicController;
 use App\Http\Controllers\Api\V1\Teacher\UnitController;
 use Illuminate\Support\Facades\Route;
@@ -90,6 +92,9 @@ Route::prefix('v1')->group(function () {
             Route::post('units/{unitId}/knowledge-cards', [KnowledgeCardController::class, 'store']);
             Route::put('knowledge-cards/{cardId}', [KnowledgeCardController::class, 'update']);
             Route::delete('knowledge-cards/{cardId}', [KnowledgeCardController::class, 'destroy']);
+
+            Route::get('courses/{courseId}/question-records', [QuestionRecordController::class, 'index']);
+            Route::put('question-records/{recordId}', [QuestionRecordController::class, 'update']);
         });
 
         Route::middleware('role:student')->prefix('student')->group(function () {
@@ -97,6 +102,9 @@ Route::prefix('v1')->group(function () {
             Route::get('topics/{topicId}/chapters', [StudentMaterialController::class, 'chapters']);
             Route::get('chapters/{chapterId}/units', [StudentMaterialController::class, 'units']);
             Route::get('units/{unitId}/knowledge-cards', [StudentMaterialController::class, 'knowledgeCards']);
+            Route::get('courses/{courseId}/questions', [StudentQuestionController::class, 'index']);
+            Route::get('questions/{questionId}', [StudentQuestionController::class, 'show']);
+            Route::post('questions/{questionId}/submit', [StudentQuestionController::class, 'submit']);
         });
     });
 });

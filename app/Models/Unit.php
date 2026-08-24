@@ -30,9 +30,4 @@ class Unit extends Model
     {
         return $this->hasMany(KnowledgeCard::class)->orderBy('sort_order');
     }
-
-    public function questions(): HasMany
-    {
-        return $this->hasMany(Question::class);
-    }
 }

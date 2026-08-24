@@ -29,6 +29,8 @@ topics          → 主題（course_id → courses）
 chapters        → 章節（topic_id → topics）
 units           → 單元（chapter_id → chapters）
 knowledge_cards → 知識卡（unit_id → units）
+questions       → 題目（course_id → courses，teacher_id → teachers）
+question_knowledge_cards → 題目 ↔ 知識卡
 ```
 
 三者各自獨立儲存帳號與密碼，由 `AuthService` 依固定順序查詢並判斷 `role`。
@@ -166,7 +168,7 @@ tests/
 | password | string | 加密後的密碼 |
 | student_no | string | 學號（unique） |
 | name | string | 學生姓名 |
-| class_name | string | 現有班級（可為空） |
+| class_name | string | 現屬班級（可為空；開通帳號時由申請單的 `class_name` 寫入） |
 | email | string | 學校信箱（unique），**作為登入帳號** |
 | created_at | timestamp | 建立時間 |
 | updated_at | timestamp | 更新時間 |
@@ -182,7 +184,7 @@ tests/
 |------|------|------|
 | id | bigint | 申請 ID（PK） |
 | tid | bigint | 教師 ID（FK → teachers.id，刪除教師時一併刪除） |
-| course_id | bigint | 課程 ID（FK → courses.id，刪除課程時一併刪除） |
+| course_id | bigint | 課程 ID（規格的 Cid；FK → courses.id，刪除課程時一併刪除） |
 | class_name | string | 申請班級 |
 | status | string | 申請狀態：`pending`（待審核）、`approved`（已通過），預設 `pending` |
 | created_at | timestamp | 建立時間 |
@@ -201,6 +203,8 @@ tests/
 | status | string | 審核狀態：`pending`（待審核）、`approved`（已開通），預設 `pending` |
 | created_at | timestamp | 建立時間 |
 | updated_at | timestamp | 更新時間 |
+
+明細**沒有 email**。開通時後端用學號組成 `s{學號}@nutc.edu.tw` 寫入 `students.email`。
 
 同一申請內 `student_no` 不可重複（`application_id` + `student_no` unique）。
 
@@ -319,10 +323,41 @@ Seeder 已讓王小明選修「網際系統設計 (資應)」。
 
 ```text
 courses → topics → chapters → units → knowledge_cards
+courses → questions
+questions ↔ knowledge_cards（question_knowledge_cards）
 ```
 
 畫面採一層一層點進去（鑽層）：課程 → 主題 → 章節 → 單元 → 知識卡。  
 列表的 `item_count` 代表下一層有幾筆（對應畫面上的「N 項」）。知識卡沒有下一層，回傳 `title`、`content`、`example`。刪除上層時，下層會一併刪除。
+
+### questions 題目資料
+
+題目屬於課程，不掛在單元上。與教材的對應透過知識卡。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 題目編號（PK） |
+| course_id | bigint | 所屬課程 ID（FK → courses.id） |
+| teacher_id | bigint | 建立教師 ID（FK → teachers.id） |
+| title | string | 題目標題 |
+| type | string | `choice`、`debug` 或 `coding` |
+| question_content | text | 題目內容 |
+| created_at | timestamp | 建立時間 |
+| updated_at | timestamp | 更新時間 |
+
+### question_knowledge_cards 題目與知識卡
+
+一題可對多張知識卡；一張知識卡也可被多題使用。關聯的知識卡應屬於同一門課。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 流水號（PK） |
+| question_id | bigint | 題目編號（FK → questions.id） |
+| knowledge_card_id | bigint | 知識卡編號（FK → knowledge_cards.id） |
+| created_at | timestamp | 建立時間 |
+| updated_at | timestamp | 更新時間 |
+
+同一題對同一張知識卡不可重複（`question_id` + `knowledge_card_id` unique）。刪題目或知識卡時，對應關聯會一併刪除。
 
 ### personal_access_tokens
 
@@ -731,7 +766,7 @@ Request：
 
 ### GET `/api/v1/auth/me`
 
-功能：依 Token 查詢目前登入的使用者資料（id、account、name、role）。
+功能：依 Token 查詢目前登入的使用者資料。教師／管理員為 id、account、name、role；學生另含 `student_no`、`class_name`。
 
 需要：
 
@@ -753,6 +788,21 @@ Authorization: Bearer {token}
     "account": "teacher@school.edu.tw",
     "name": "許老師",
     "role": "teacher"
+  }
+}
+```
+
+學生：
+
+```json
+{
+  "user": {
+    "id": 1,
+    "account": "s1411131000@nutc.edu.tw",
+    "student_no": "1411131000",
+    "name": "王小明",
+    "class_name": "資應二甲",
+    "role": "student"
   }
 }
 ```
@@ -983,6 +1033,52 @@ public/templates/material_import_template.xlsx
 | GET | `/api/v1/student/units/{unitId}/knowledge-cards` | 列出該單元知識卡 |
 
 一層一層往下點，格式與教師列表相同（含 `item_count`）。
+
+### 學生作答（一題一答）
+
+闖關範圍（單元或章節）尚未定，入口先依**課程**取題。可選 `?knowledge_card_id=` 只看某張知識卡關聯的題。未選課 **404**。非學生 **403**。
+
+取題**不回傳正解**：選擇題沒有 `is_answer`；除錯題不給 `code_line`／`answer`；實作題不給 `ref_answer`／`ref_output`。
+
+| Method | URL | 說明 |
+|--------|-----|------|
+| GET | `/api/v1/student/courses/{courseId}/questions` | 列出該課題目（可加 `knowledge_card_id`） |
+| GET | `/api/v1/student/questions/{questionId}` | 取得單題 |
+| POST | `/api/v1/student/questions/{questionId}/submit` | 交卷 |
+
+選擇題 Request：`{ "option_id": 1 }`  
+成功時 `system_status` 為 `correct` 或 `wrong`，`explanation` 為正解選項的 `description`。`result` 存選項 ID。
+
+除錯題 Request：至少要有 `code_line` 或 `answer`（可同時傳）。後端比對 `debug_sub_info`，回傳 `system_status` 與 `description`。
+
+實作題 Request：`{ "code": "..." }`。只建紀錄，不批改。
+
+```json
+{
+  "message": "已提交",
+  "system_status": "pending",
+  "record": {
+    "id": 1,
+    "student_id": 1,
+    "question_id": 3,
+    "result": "<?php echo \"hi\";",
+    "question_mapping_id": 1,
+    "system_status": "pending",
+    "teacher_status": "pending"
+  }
+}
+```
+
+每次交卷都**新增**一筆 `question_records`（可重交）。Bloom/SOLO 使用該題第一筆映射；沒有映射會 **422**。`teacher_status` 交卷時一律 `pending`。
+
+### 教師覆核作答
+
+只能看自己課程的紀錄。非該課教師 **404**。不做 AI 批改。
+
+| Method | URL | 說明 |
+|--------|-----|------|
+| GET | `/api/v1/teacher/courses/{courseId}/question-records` | 列出該課學生作答 |
+| PUT | `/api/v1/teacher/question-records/{recordId}` | 覆核 `teacher_status`：`correct` 或 `wrong` |
 
 ### topics 主題
 
