@@ -20,8 +20,11 @@ class StudentMaterialService
     {
         $course = $this->enrolledCourse($student, $courseId);
 
-        return $course->topics()
+        return Topic::query()
+            ->where('course_id', $course->id)
             ->withCount('chapters')
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
             ->get()
             ->map(fn (Topic $topic) => $this->formatNamedNode($topic, (int) $topic->chapters_count))
             ->all();
@@ -70,6 +73,8 @@ class StudentMaterialService
                 'content' => $card->content,
                 'example' => $card->example,
                 'sort_order' => $card->sort_order,
+                'created_at' => $card->created_at,
+                'updated_at' => $card->updated_at,
             ])
             ->all();
     }
@@ -140,6 +145,8 @@ class StudentMaterialService
             'name' => $model->getAttribute('name'),
             'sort_order' => $model->getAttribute('sort_order'),
             'item_count' => $itemCount,
+            'created_at' => $model->getAttribute('created_at'),
+            'updated_at' => $model->getAttribute('updated_at'),
         ];
     }
 }

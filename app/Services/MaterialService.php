@@ -11,6 +11,7 @@ use App\Models\Unit;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -22,8 +23,11 @@ class MaterialService
     {
         $course = $this->ownedCourse($teacher, $courseId);
 
-        return $course->topics()
+        return Topic::query()
+            ->where('course_id', $course->id)
             ->withCount('chapters')
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
             ->get()
             ->map(fn (Topic $topic) => $this->formatNamedNode($topic, (int) $topic->chapters_count))
             ->all();
@@ -55,7 +59,15 @@ class MaterialService
 
     public function deleteTopic(Teacher $teacher, int $topicId): void
     {
-        $this->ownedTopic($teacher, $topicId)->delete();
+        $topic = $this->ownedTopic($teacher, $topicId);
+
+        DB::transaction(function () use ($topic): void {
+            $topic->load('chapters.units.knowledgeCards');
+            foreach ($topic->chapters as $chapter) {
+                $this->detachOrDeleteCardsInChapter($chapter);
+            }
+            $topic->delete();
+        });
     }
 
     public function listChapters(Teacher $teacher, int $topicId): array
@@ -93,7 +105,12 @@ class MaterialService
 
     public function deleteChapter(Teacher $teacher, int $chapterId): void
     {
-        $this->ownedChapter($teacher, $chapterId)->delete();
+        $chapter = $this->ownedChapter($teacher, $chapterId);
+
+        DB::transaction(function () use ($chapter): void {
+            $this->detachOrDeleteCardsInChapter($chapter);
+            $chapter->delete();
+        });
     }
 
     public function listUnits(Teacher $teacher, int $chapterId): array
@@ -131,7 +148,12 @@ class MaterialService
 
     public function deleteUnit(Teacher $teacher, int $unitId): void
     {
-        $this->ownedUnit($teacher, $unitId)->delete();
+        $unit = $this->ownedUnit($teacher, $unitId);
+
+        DB::transaction(function () use ($unit): void {
+            $this->detachOrDeleteCardsInUnit($unit);
+            $unit->delete();
+        });
     }
 
     public function listKnowledgeCards(Teacher $teacher, int $unitId): array
@@ -180,7 +202,14 @@ class MaterialService
 
     public function deleteKnowledgeCard(Teacher $teacher, int $cardId): void
     {
-        $this->ownedCard($teacher, $cardId)->delete();
+        $card = $this->ownedCard($teacher, $cardId);
+        if ($card->questions()->exists()) {
+            throw ValidationException::withMessages([
+                'knowledge_card' => ['此知識卡已有題目使用，無法刪除'],
+            ]);
+        }
+
+        $card->delete();
     }
 
     private function ownedCourse(Teacher $teacher, int $courseId): Course
@@ -241,9 +270,14 @@ class MaterialService
 
     private function ownedCard(Teacher $teacher, int $cardId): KnowledgeCard
     {
+        $ownsCourse = fn (Builder $query) => $query->where('teacher_id', $teacher->id);
+
         $card = KnowledgeCard::query()
             ->whereKey($cardId)
-            ->whereHas('unit.chapter.topic.course', fn (Builder $query) => $query->where('teacher_id', $teacher->id))
+            ->where(function (Builder $query) use ($ownsCourse): void {
+                $query->whereHas('unit.chapter.topic.course', $ownsCourse)
+                    ->orWhereHas('questions.course', $ownsCourse);
+            })
             ->first();
 
         if ($card === null) {
@@ -251,6 +285,27 @@ class MaterialService
         }
 
         return $card;
+    }
+
+    private function detachOrDeleteCardsInChapter(Chapter $chapter): void
+    {
+        $chapter->loadMissing('units.knowledgeCards');
+        foreach ($chapter->units as $unit) {
+            $this->detachOrDeleteCardsInUnit($unit);
+        }
+    }
+
+    private function detachOrDeleteCardsInUnit(Unit $unit): void
+    {
+        $unit->loadMissing('knowledgeCards');
+        foreach ($unit->knowledgeCards as $card) {
+            if ($card->questions()->exists()) {
+                $card->update(['unit_id' => null]);
+                continue;
+            }
+
+            $card->delete();
+        }
     }
 
     private function nextSortOrder(Builder $query): int
@@ -281,6 +336,8 @@ class MaterialService
             'name' => $model->getAttribute('name'),
             'sort_order' => $model->getAttribute('sort_order'),
             'item_count' => $itemCount,
+            'created_at' => $model->getAttribute('created_at'),
+            'updated_at' => $model->getAttribute('updated_at'),
         ];
     }
 
@@ -295,6 +352,8 @@ class MaterialService
             'content' => $card->content,
             'example' => $card->example,
             'sort_order' => $card->sort_order,
+            'created_at' => $card->created_at,
+            'updated_at' => $card->updated_at,
         ];
     }
 

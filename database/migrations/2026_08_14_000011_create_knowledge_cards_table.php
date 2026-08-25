@@ -13,7 +13,11 @@ return new class extends Migration
     {
         Schema::create('knowledge_cards', function (Blueprint $table) {
             $table->id()->comment('知識卡 ID');
-            $table->foreignId('unit_id')->constrained('units')->cascadeOnDelete()->comment('所屬單元 ID');
+            $table->foreignId('unit_id')
+                ->nullable()
+                ->constrained('units')
+                ->nullOnDelete()
+                ->comment('所屬單元 ID；有題目使用而脫離教材樹時可為空');
             $table->string('title')->comment('知識卡標題');
             $table->text('content')->comment('知識卡內容');
             $table->integer('sort_order')->comment('排序順序');

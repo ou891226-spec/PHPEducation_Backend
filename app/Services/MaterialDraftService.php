@@ -8,6 +8,8 @@ use App\Models\MaterialDraft;
 use App\Models\Teacher;
 use App\Models\Topic;
 use App\Models\Unit;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -48,7 +50,7 @@ class MaterialDraftService
             ]);
         }
 
-        // 同一份 Draft 內 Topic 不可重名；該課教材名稱不可與既有 Draft 重複
+        // 同一份 Draft 內 Topic 不可重名；未發布草稿的教材名稱不可重複
         $this->assertUniqueTopicNames($this->topicNames($topics), 'file');
         $this->assertMaterialNameAvailable($courseId, $parsed['name']);
 
@@ -76,7 +78,8 @@ class MaterialDraftService
 
         return MaterialDraft::query()
             ->where('course_id', $courseId)
-            ->orderBy('id')
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
             ->get()
             ->map(fn (MaterialDraft $draft) => $this->formatDraft($draft))
             ->all();
@@ -84,10 +87,11 @@ class MaterialDraftService
 
     /**
      * 從目前已發布教材複製一份新的可編輯 Draft。已發布那份維持 published。
+     * 有傳 topic_id 時只複製那一個主題（對應前端「加入草稿編輯」）。
      *
      * @return array<string, mixed>
      */
-    public function createFromPublished(Teacher $teacher, int $courseId): array
+    public function createFromPublished(Teacher $teacher, int $courseId, ?int $topicId = null): array
     {
         $this->courseService->findForTeacher($teacher, $courseId);
 
@@ -96,22 +100,22 @@ class MaterialDraftService
             ->where('status', MaterialDraft::STATUS_PUBLISHED)
             ->first();
 
-        // 有已發布 Draft 就複製它的 tree；否則從正式表組一份
-        $topics = $published !== null
-            ? $this->tree($published)['topics']
-            : $this->treeFromOfficial($courseId);
+        $topics = $this->treeFromOfficial($courseId, $topicId);
 
         if ($topics === []) {
             throw new ModelNotFoundException();
         }
 
+        $draftName = $topicId !== null
+            ? (string) $topics[0]['name']
+            : ($published !== null && trim((string) $published->name) !== ''
+                ? $published->name
+                : '正式教材');
+
         $draft = MaterialDraft::query()->create([
             'course_id' => $courseId,
             'teacher_id' => $teacher->id,
-            // 小修改沿用同一教材名稱；Excel 匯入才擋同名
-            'name' => $published !== null && trim((string) $published->name) !== ''
-                ? $published->name
-                : '正式教材',
+            'name' => $draftName,
             'status' => MaterialDraft::STATUS_DRAFT,
             'tree' => [
                 'topics' => $topics,
@@ -181,7 +185,12 @@ class MaterialDraftService
         ));
         $this->saveTree($draft, $tree);
 
-        return $this->formatDraft($draft);
+        $payload = $this->formatDraft($draft);
+        if ($tree['topics'] === []) {
+            $draft->delete();
+        }
+
+        return $payload;
     }
 
     /**
@@ -373,8 +382,8 @@ class MaterialDraftService
     }
 
     /**
-     * 發布 Draft：舊 published 改 archived，正式教材整棵換成這份 tree。
-     * 發布前學生仍看舊版。
+     * 發布 Draft：只同步這份 tree 裡的主題，其他已發布主題不動。
+     * 知識卡盡量 update 以保留 id，避免 question_knowledge_cards 斷掉。
      *
      * @return array<string, mixed>
      */
@@ -391,49 +400,14 @@ class MaterialDraftService
         $this->assertUniqueTopicNames($this->topicNames($tree['topics']), 'name');
 
         DB::transaction(function () use ($draft, $tree): void {
-            // 同一門課同時只能有一份 published
             MaterialDraft::query()
                 ->where('course_id', $draft->course_id)
                 ->where('status', MaterialDraft::STATUS_PUBLISHED)
                 ->whereKeyNot($draft->id)
                 ->update(['status' => MaterialDraft::STATUS_ARCHIVED]);
 
-            // cascade 會一併刪掉 chapters / units / knowledge_cards
-            Topic::query()->where('course_id', $draft->course_id)->delete();
-
-            // 依這份 Draft 重建正式教材
             foreach ($tree['topics'] as $topicNode) {
-                $topic = Topic::query()->create([
-                    'course_id' => $draft->course_id,
-                    'name' => $topicNode['name'],
-                    'sort_order' => $topicNode['sort_order'] ?? 0,
-                ]);
-
-                foreach ($topicNode['chapters'] ?? [] as $chapterNode) {
-                    $chapter = Chapter::query()->create([
-                        'topic_id' => $topic->id,
-                        'name' => $chapterNode['name'],
-                        'sort_order' => $chapterNode['sort_order'] ?? 0,
-                    ]);
-
-                    foreach ($chapterNode['units'] ?? [] as $unitNode) {
-                        $unit = Unit::query()->create([
-                            'chapter_id' => $chapter->id,
-                            'name' => $unitNode['name'],
-                            'sort_order' => $unitNode['sort_order'] ?? 0,
-                        ]);
-
-                        foreach ($unitNode['knowledge_cards'] ?? [] as $cardNode) {
-                            KnowledgeCard::query()->create([
-                                'unit_id' => $unit->id,
-                                'title' => $cardNode['title'],
-                                'content' => $cardNode['content'],
-                                'example' => $cardNode['example'] ?? null,
-                                'sort_order' => $cardNode['sort_order'] ?? 0,
-                            ]);
-                        }
-                    }
-                }
+                $this->syncOfficialTopic((int) $draft->course_id, $topicNode);
             }
 
             $draft->update([
@@ -462,6 +436,8 @@ class MaterialDraftService
             'name' => $draft->name,
             'status' => $draft->status,
             'topics' => $tree['topics'],
+            'created_at' => $draft->created_at,
+            'updated_at' => $draft->updated_at,
         ];
     }
 
@@ -638,12 +614,13 @@ class MaterialDraftService
         }
     }
 
-    /** Excel 匯入：該課已有相同教材名稱就 422。 */
+    /** Excel 匯入：該課若還有未發布草稿用同一個教材名稱就 422。 */
     private function assertMaterialNameAvailable(int $courseId, string $name): void
     {
         $exists = MaterialDraft::query()
             ->where('course_id', $courseId)
             ->where('name', $name)
+            ->where('status', MaterialDraft::STATUS_DRAFT)
             ->exists();
 
         if ($exists) {
@@ -654,17 +631,235 @@ class MaterialDraftService
     }
 
     /**
-     * 沒有已發布 Draft 時，從正式表組成一份可編輯的 tree。
+     * 把 Draft 裡的一個主題同步到正式表：同名或同 id 則更新，否則新增。
+     *
+     * @param  array<string, mixed>  $topicNode
+     */
+    private function syncOfficialTopic(int $courseId, array $topicNode): void
+    {
+        $topic = $this->findOfficialNode(
+            Topic::query()->where('course_id', $courseId),
+            $topicNode,
+            'name',
+        );
+
+        $payload = [
+            'name' => trim((string) $topicNode['name']),
+            'sort_order' => $topicNode['sort_order'] ?? 0,
+        ];
+
+        if ($topic === null) {
+            $topic = Topic::query()->create([
+                'course_id' => $courseId,
+                ...$payload,
+            ]);
+        } else {
+            $topic->update($payload);
+        }
+
+        $keptChapterIds = [];
+        foreach ($topicNode['chapters'] ?? [] as $chapterNode) {
+            $keptChapterIds[] = $this->syncOfficialChapter($topic, $chapterNode);
+        }
+
+        $topic->load('chapters');
+        foreach ($topic->chapters as $chapter) {
+            if (! in_array($chapter->id, $keptChapterIds, true)) {
+                $this->tryDeleteChapter($chapter);
+            }
+        }
+
+        $topic->touch();
+    }
+
+    /**
+     * @param  array<string, mixed>  $chapterNode
+     */
+    private function syncOfficialChapter(Topic $topic, array $chapterNode): int
+    {
+        $chapter = $this->findOfficialNode(
+            Chapter::query()->where('topic_id', $topic->id),
+            $chapterNode,
+            'name',
+        );
+
+        $payload = [
+            'name' => trim((string) $chapterNode['name']),
+            'sort_order' => $chapterNode['sort_order'] ?? 0,
+        ];
+
+        if ($chapter === null) {
+            $chapter = Chapter::query()->create([
+                'topic_id' => $topic->id,
+                ...$payload,
+            ]);
+        } else {
+            $chapter->update($payload);
+        }
+
+        $keptUnitIds = [];
+        foreach ($chapterNode['units'] ?? [] as $unitNode) {
+            $keptUnitIds[] = $this->syncOfficialUnit($chapter, $unitNode);
+        }
+
+        $chapter->load('units');
+        foreach ($chapter->units as $unit) {
+            if (! in_array($unit->id, $keptUnitIds, true)) {
+                $this->tryDeleteUnit($unit);
+            }
+        }
+
+        return (int) $chapter->id;
+    }
+
+    /**
+     * @param  array<string, mixed>  $unitNode
+     */
+    private function syncOfficialUnit(Chapter $chapter, array $unitNode): int
+    {
+        $unit = $this->findOfficialNode(
+            Unit::query()->where('chapter_id', $chapter->id),
+            $unitNode,
+            'name',
+        );
+
+        $payload = [
+            'name' => trim((string) $unitNode['name']),
+            'sort_order' => $unitNode['sort_order'] ?? 0,
+        ];
+
+        if ($unit === null) {
+            $unit = Unit::query()->create([
+                'chapter_id' => $chapter->id,
+                ...$payload,
+            ]);
+        } else {
+            $unit->update($payload);
+        }
+
+        $keptCardIds = [];
+        foreach ($unitNode['knowledge_cards'] ?? [] as $cardNode) {
+            $keptCardIds[] = $this->syncOfficialCard($unit, $cardNode);
+        }
+
+        $unit->load('knowledgeCards');
+        foreach ($unit->knowledgeCards as $card) {
+            if (! in_array($card->id, $keptCardIds, true)) {
+                $this->tryDeleteCard($card);
+            }
+        }
+
+        return (int) $unit->id;
+    }
+
+    /**
+     * @param  array<string, mixed>  $cardNode
+     */
+    private function syncOfficialCard(Unit $unit, array $cardNode): int
+    {
+        $card = $this->findOfficialNode(
+            KnowledgeCard::query()->where('unit_id', $unit->id),
+            $cardNode,
+            'title',
+        );
+
+        $payload = [
+            'title' => (string) $cardNode['title'],
+            'content' => (string) $cardNode['content'],
+            'example' => $cardNode['example'] ?? null,
+            'sort_order' => $cardNode['sort_order'] ?? 0,
+        ];
+
+        if ($card === null) {
+            $card = KnowledgeCard::query()->create([
+                'unit_id' => $unit->id,
+                ...$payload,
+            ]);
+        } else {
+            $card->update($payload);
+        }
+
+        return (int) $card->id;
+    }
+
+    /**
+     * 先用正式表 id（從已發布複製的 Draft），否則用名稱／標題對。
+     *
+     * @param  Builder<Model>  $query
+     * @param  array<string, mixed>  $node
+     */
+    private function findOfficialNode(Builder $query, array $node, string $nameColumn): ?Model
+    {
+        $id = $node['id'] ?? null;
+        if (is_int($id) || (is_string($id) && preg_match('/^[1-9][0-9]*$/', $id) === 1)) {
+            $found = (clone $query)->whereKey((int) $id)->first();
+            if ($found !== null) {
+                return $found;
+            }
+        }
+
+        $name = trim((string) ($node[$nameColumn] ?? ''));
+        if ($name === '') {
+            return null;
+        }
+
+        return (clone $query)->where($nameColumn, $name)->first();
+    }
+
+    private function tryDeleteChapter(Chapter $chapter): void
+    {
+        $chapter->load('units.knowledgeCards');
+        foreach ($chapter->units as $unit) {
+            $this->tryDeleteUnit($unit);
+        }
+
+        if ($chapter->units()->exists()) {
+            return;
+        }
+
+        $chapter->delete();
+    }
+
+    private function tryDeleteUnit(Unit $unit): void
+    {
+        $unit->load('knowledgeCards');
+        foreach ($unit->knowledgeCards as $card) {
+            $this->tryDeleteCard($card);
+        }
+
+        if ($unit->knowledgeCards()->exists()) {
+            return;
+        }
+
+        $unit->delete();
+    }
+
+    private function tryDeleteCard(KnowledgeCard $card): void
+    {
+        if ($card->questions()->exists()) {
+            return;
+        }
+
+        $card->delete();
+    }
+
+    /**
+     * 從正式表組成一份可編輯的 tree；節點 id 用正式表 id，發布時才能對到原列。
      *
      * @return list<array<string, mixed>>
      */
-    private function treeFromOfficial(int $courseId): array
+    private function treeFromOfficial(int $courseId, ?int $topicId = null): array
     {
-        $topics = Topic::query()
+        $query = Topic::query()
             ->where('course_id', $courseId)
             ->with(['chapters.units.knowledgeCards'])
-            ->orderBy('sort_order')
-            ->get();
+            ->orderBy('sort_order');
+
+        if ($topicId !== null) {
+            $query->whereKey($topicId);
+        }
+
+        $topics = $query->get();
 
         $tree = [];
         foreach ($topics as $topic) {
@@ -675,7 +870,7 @@ class MaterialDraftService
                     $cards = [];
                     foreach ($unit->knowledgeCards as $card) {
                         $cards[] = [
-                            'id' => (string) Str::ulid(),
+                            'id' => (string) $card->id,
                             'title' => $card->title,
                             'content' => $card->content,
                             'example' => $card->example,
@@ -683,21 +878,21 @@ class MaterialDraftService
                         ];
                     }
                     $units[] = [
-                        'id' => (string) Str::ulid(),
+                        'id' => (string) $unit->id,
                         'name' => $unit->name,
                         'sort_order' => $unit->sort_order,
                         'knowledge_cards' => $cards,
                     ];
                 }
                 $chapters[] = [
-                    'id' => (string) Str::ulid(),
+                    'id' => (string) $chapter->id,
                     'name' => $chapter->name,
                     'sort_order' => $chapter->sort_order,
                     'units' => $units,
                 ];
             }
             $tree[] = [
-                'id' => (string) Str::ulid(),
+                'id' => (string) $topic->id,
                 'name' => $topic->name,
                 'sort_order' => $topic->sort_order,
                 'chapters' => $chapters,

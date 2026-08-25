@@ -25,8 +25,14 @@ class MaterialDraftController extends Controller
 
     public function storeFromPublished(Request $request, int $courseId): JsonResponse
     {
+        $topicId = $request->input('topic_id');
+
         return response()->json([
-            'draft' => $this->materialDraftService->createFromPublished($this->teacher($request), $courseId),
+            'draft' => $this->materialDraftService->createFromPublished(
+                $this->teacher($request),
+                $courseId,
+                $topicId !== null && $topicId !== '' ? (int) $topicId : null,
+            ),
         ], 201);
     }
 

@@ -248,14 +248,14 @@ students ── enrollments ── courses
 Seeder 已讓王小明選修「網際系統設計 (資應)」。
 
 ### material_drafts 教材匯入草稿
-一門課可有多份草稿（用 `id` 區分）。同一門課同時只能有一份 `published`；舊的發布版會變成 `archived`，不刪列。學生只看目前 `published` 寫進正式表的內容。
+一門課可有多份草稿（用 `id` 區分）。同一門課同時只能有一份 `published` Draft 列（舊的改 `archived`），但**正式教材可以同時有多個主題**。發布只同步這份 Draft 裡的主題，不會砍掉其他已發布主題。學生看正式表（`topics` 等），不是看 Draft 列。
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
 | id | bigint | 草稿 ID（PK） |
 | course_id | bigint | 所屬課程 ID（FK → courses.id） |
 | teacher_id | bigint | 匯入教師 ID（FK → teachers.id） |
-| name | string | 教材名稱。Excel 匯入時不可與該課既有 Draft 同名；小修改複製 Draft 可沿用同名 |
+| name | string | 教材名稱。Excel 匯入時不可與該課**未發布**草稿同名；已發布／已封存／已刪空的名稱可重用 |
 | status | string | `draft`、`published` 或 `archived` |
 | tree | json | 主題／章節／單元／知識卡樹 |
 | created_at | timestamp | 建立時間 |
@@ -309,7 +309,7 @@ Seeder 已讓王小明選修「網際系統設計 (資應)」。
 | 欄位 | 型別 | 說明 |
 |------|------|------|
 | id | bigint | 知識卡 ID（PK） |
-| unit_id | bigint | 所屬單元 ID（FK → units.id） |
+| unit_id | bigint（可空） | 所屬單元 ID（FK → units.id）。有題目使用而從教材樹刪除時改為空，知識卡列會保留 |
 | title | string | 知識卡標題 |
 | content | text | 知識卡內容 |
 | example | text | 知識卡範例（可空） |
@@ -328,7 +328,7 @@ questions ↔ knowledge_cards（question_knowledge_cards）
 ```
 
 畫面採一層一層點進去（鑽層）：課程 → 主題 → 章節 → 單元 → 知識卡。  
-列表的 `item_count` 代表下一層有幾筆（對應畫面上的「N 項」）。知識卡沒有下一層，回傳 `title`、`content`、`example`。刪除上層時，下層會一併刪除。
+列表的 `item_count` 代表下一層有幾筆（對應畫面上的「N 項」）。知識卡沒有下一層，回傳 `title`、`content`、`example`。刪除主題／章節／單元時，沒有題目使用的知識卡會一併刪除；**已掛在 `question_knowledge_cards` 的知識卡會保留**（`unit_id` 改為空，脫離教材樹），題目關聯不斷。直接刪單張知識卡若已有題目使用會 **422**。
 
 ### questions 題目資料
 
@@ -357,7 +357,7 @@ questions ↔ knowledge_cards（question_knowledge_cards）
 | created_at | timestamp | 建立時間 |
 | updated_at | timestamp | 更新時間 |
 
-同一題對同一張知識卡不可重複（`question_id` + `knowledge_card_id` unique）。刪題目或知識卡時，對應關聯會一併刪除。
+同一題對同一張知識卡不可重複（`question_id` + `knowledge_card_id` unique）。刪題目時，對應關聯會一併刪除。刪知識卡時若仍有題目使用則拒絕；從教材樹刪除主題／章節／單元時，有題目使用的知識卡會保留（關聯不斷）。
 
 ### personal_access_tokens
 
@@ -950,24 +950,25 @@ Authorization: Bearer {token}
   → Laravel 接收、驗證 topic / file、確認是該課教師
   → ExcelMaterialParser 解析（主題用表單欄位；欄位列的下一列範本整列不讀，「範例」欄寫進知識卡 example）
   → 整份 Excel 掛在同一個 Topic 下，組成 Chapter → Unit → Knowledge Card
-  → 教材名稱與該課既有 Draft 重複則 422
+  → 教材名稱與該課未發布 Draft 重複則 422
   → 存成 Material Draft
   → API 回傳 Draft JSON
   → 前端 Vue 畫樹（不要在瀏覽器解析 Excel）
   → 教師增刪改，打 Draft API 存回
   → 發布
-  → 寫入正式教材
+  → 只同步這份 Draft 的主題到正式教材（其他主題不動）
   → 已選課學生查看正式教材
 
 正式教材之後：
-  少量修改 → POST 從已發布教材開新 Draft（沿用同一教材名稱）→ 改完再發布
-  整份 Excel 再上傳 → 另建 Draft（教材名稱與現有 Draft 重複則 422）
-  發布新 Draft → 舊 published 改 archived，正式表換成新的
+  少量修改 → 對單一主題「加入草稿編輯」（POST 帶 `topic_id`）→ 改完再發布
+  不帶 `topic_id` 則複製該課全部已發布主題
+  整份 Excel 再上傳 → 另建 Draft（教材名稱只與未發布 Draft 重複才 422）
+  發布新 Draft → 舊 published 列改 archived；正式表做主題級合併，不整課刪掉重建
 ```
 
 一份 Excel 只對應一個主題，主題名稱來自表單 `topic`，不從 Excel 讀。空白的 chapter／unit 會沿用上一列。Excel 列規則：第 1 列可寫 `教材名稱：…`、第 2 列說明、第 3 列欄位標題（`chapters (章節)` / `units (單元)` / `knowledge_card (知識卡)` / `範例`）、第 4 列範本示範整列不讀、第 5 列起才是教師內容。「範例」欄存成知識卡 `example`，可空。知識卡沒有獨立標題欄，標題取內容前約 80 字。有寫 `教材名稱：…` 就當教材名稱；沒寫則用表單的主題名稱。
 
-整份 Excel 再上傳期間，學生仍看已發布的正式教材，直到第 2 份也發布。從已發布教材開新 Draft 修改時，學生也仍看上一版，直到新 Draft 發布。
+整份 Excel 再上傳期間，學生仍看已發布的正式教材，直到第 2 份也發布。從已發布教材開新 Draft 修改時，學生也仍看上一版，直到新 Draft 發布。第二份若是**不同主題**，發布後兩個主題會並存；若是**同名主題**，只更新那一棵樹，知識卡 id 會盡量保留（避免 `question_knowledge_cards` 斷掉）。草稿列表、已發布主題列表皆**新到舊**，並回傳 `created_at` / `updated_at`。草稿最後一個主題刪掉時，整份 Draft 會一併刪除，教材名稱可重用。
 
 ### 教材匯入範本
 
@@ -1000,7 +1001,7 @@ public/templates/material_import_template.xlsx
 |--------|-----|------|
 | POST | `/api/v1/teacher/courses/{courseId}/materials/import` | 後端解析 Excel，新增一份草稿（前端不要自己解析） |
 | GET | `/api/v1/teacher/courses/{courseId}/material-drafts` | 列出該課所有草稿 |
-| POST | `/api/v1/teacher/courses/{courseId}/material-drafts` | 從目前已發布教材複製一份新 Draft |
+| POST | `/api/v1/teacher/courses/{courseId}/material-drafts` | 從正式教材複製一份新 Draft；可帶 `topic_id` 只複製那一個主題 |
 | POST | `/api/v1/teacher/material-drafts/{draftId}/topics` | 草稿新增主題 |
 | PUT | `/api/v1/teacher/material-drafts/{draftId}/topics/{nodeId}` | 草稿修改主題 |
 | DELETE | `/api/v1/teacher/material-drafts/{draftId}/topics/{nodeId}` | 草稿刪除主題 |
@@ -1017,9 +1018,9 @@ public/templates/material_import_template.xlsx
 
 草稿節點 Request 與正式教材相同：主題／章節／單元用 `name`、`sort_order`；知識卡用 `title`、`content`、`example`、`sort_order`。成功匯入／新增為 **201**。
 
-只上傳範本裡的範例列會 **422**（沒有可匯入的教材列）。沒填 `topic` 會 **422**。找不到教材名稱會 **422**。不是該課教師 **404**。已發布或已封存的 Draft 不能直接改／再發布，會 **422**。同一份 Draft 裡主題名稱重複會 **422**。Excel 教材名稱與該課既有 Draft 重複會 **422**。
+只上傳範本裡的範例列會 **422**（沒有可匯入的教材列）。沒填 `topic` 會 **422**。找不到教材名稱會 **422**。不是該課教師 **404**。已發布或已封存的 Draft 不能直接改／再發布，會 **422**。同一份 Draft 裡主題名稱重複會 **422**。Excel 教材名稱與該課**未發布** Draft 重複會 **422**。
 
-發布在 transaction 裡：把同課其他 `published` 改成 `archived`，用這份 `tree` **整棵覆寫**正式教材，再把這份設成 `published`。舊 Draft 列保留。再上傳 Excel 會另建一筆 `draft`。
+發布在 transaction 裡：把同課其他 `published` Draft 改成 `archived`，再對這份 `tree` 做**主題級同步**（同名或同正式 id 則 update，否則 insert）。其他主題完全不動。知識卡若已有題目關聯就不會刪。草稿列表依 `updated_at` 新到舊，並含時間欄位。
 
 ### 學生教材（已發布、已選課）
 
@@ -1032,9 +1033,10 @@ public/templates/material_import_template.xlsx
 | GET | `/api/v1/student/chapters/{chapterId}/units` | 列出該章節單元 |
 | GET | `/api/v1/student/units/{unitId}/knowledge-cards` | 列出該單元知識卡 |
 
-一層一層往下點，格式與教師列表相同（含 `item_count`）。
+一層一層往下點，格式與教師列表相同（含 `item_count`、`created_at`、`updated_at`）。主題列表依最後更新時間新到舊。
 
 ### 學生作答（一題一答）
+① 取得題目 → ② 選擇題單題作答 → ③ 除錯題單題作答 → ④ 實作題送出 → ⑤ AI 批改 → ⑥ 老師覆核 
 
 闖關範圍（單元或章節）尚未定，入口先依**課程**取題。可選 `?knowledge_card_id=` 只看某張知識卡關聯的題。未選課 **404**。非學生 **403**。
 
@@ -1073,7 +1075,7 @@ public/templates/material_import_template.xlsx
 
 ### 教師覆核作答
 
-只能看自己課程的紀錄。非該課教師 **404**。不做 AI 批改。
+只能看自己課程的紀錄。非該課教師 **404**。還未做 AI 批改。
 
 | Method | URL | 說明 |
 |--------|-----|------|
@@ -1082,14 +1084,14 @@ public/templates/material_import_template.xlsx
 
 ### topics 主題
 
-這段是**正式教材**的鑽層 API（`MaterialService`），給已發布內容或教師手動建正式表用。Excel 匯入與老師改第一版樹請用上面的 **Draft API**，不要走這組。
+這段是**正式教材**的鑽層 API（`MaterialService`），給已發布內容或教師手動建正式表用。Excel 匯入與老師改第一版樹請用上面的 **Draft API**。
 
 | Method | URL | 說明 |
 |--------|-----|------|
 | GET | `/api/v1/teacher/courses/{courseId}/topics` | 列出該課程的主題 |
 | POST | `/api/v1/teacher/courses/{courseId}/topics` | 新增主題 |
 | PUT | `/api/v1/teacher/topics/{topicId}` | 修改主題 |
-| DELETE | `/api/v1/teacher/topics/{topicId}` | 刪除主題 |
+| DELETE | `/api/v1/teacher/topics/{topicId}` | 刪除主題（有題目使用的知識卡會保留並脫離教材樹） |
 
 Request（新增／修改）：
 
@@ -1102,7 +1104,7 @@ Request（新增／修改）：
 
 `sort_order` 選填；不傳則自動接在最後。
 
-列表／單筆會含 `item_count`（底下章節數量）。
+列表／單筆會含 `item_count`（底下章節數量）以及 `created_at`、`updated_at`。主題列表依最後更新時間新到舊。
 
 ### chapters 章節
 
@@ -1111,7 +1113,7 @@ Request（新增／修改）：
 | GET | `/api/v1/teacher/topics/{topicId}/chapters` | 列出該主題的章節 |
 | POST | `/api/v1/teacher/topics/{topicId}/chapters` | 新增章節 |
 | PUT | `/api/v1/teacher/chapters/{chapterId}` | 修改章節 |
-| DELETE | `/api/v1/teacher/chapters/{chapterId}` | 刪除章節 |
+| DELETE | `/api/v1/teacher/chapters/{chapterId}` | 刪除章節（有題目使用的知識卡會保留並脫離教材樹） |
 
 Request 同主題，欄位為 `name`、`sort_order`。`item_count` 為底下單元數量。
 
@@ -1122,7 +1124,7 @@ Request 同主題，欄位為 `name`、`sort_order`。`item_count` 為底下單�
 | GET | `/api/v1/teacher/chapters/{chapterId}/units` | 列出該章節的單元 |
 | POST | `/api/v1/teacher/chapters/{chapterId}/units` | 新增單元 |
 | PUT | `/api/v1/teacher/units/{unitId}` | 修改單元 |
-| DELETE | `/api/v1/teacher/units/{unitId}` | 刪除單元 |
+| DELETE | `/api/v1/teacher/units/{unitId}` | 刪除單元（有題目使用的知識卡會保留並脫離教材樹） |
 
 Request 同主題。`item_count` 為底下知識卡數量。
 
@@ -1133,7 +1135,7 @@ Request 同主題。`item_count` 為底下知識卡數量。
 | GET | `/api/v1/teacher/units/{unitId}/knowledge-cards` | 列出該單元的知識卡 |
 | POST | `/api/v1/teacher/units/{unitId}/knowledge-cards` | 新增知識卡 |
 | PUT | `/api/v1/teacher/knowledge-cards/{cardId}` | 修改知識卡 |
-| DELETE | `/api/v1/teacher/knowledge-cards/{cardId}` | 刪除知識卡 |
+| DELETE | `/api/v1/teacher/knowledge-cards/{cardId}` | 刪除知識卡（已有題目使用則 422） |
 
 Request（新增／修改）：
 
@@ -1155,6 +1157,8 @@ Request（新增／修改）：
   "message": "知識卡已刪除"
 }
 ```
+
+知識卡已有題目關聯時刪除會 **422**（`knowledge_card`）。請先從題目拿掉該知識卡，或改刪上層主題／章節／單元：有題的卡會保留、沒題的卡會刪，主題本身會從列表消失。
 
 ---
 
@@ -1180,7 +1184,7 @@ Request（新增／修改）：
 | 管理員 | admin@school.edu.tw | Password123! |
 | 教師 | teacher@school.edu.tw | Password123! |
 | 教師 | teacher2@school.edu.tw | Password123! |
-| 學生 | s1411131000 | Password123! |
+| 學生 | 1411131000 | Password123! |
 
 Seeder 已為 `teacher2`（陳老師）建立「網際系統設計 (資應)」「網際系統設計 (資管)」兩門課，並讓王小明選修「網際系統設計 (資應)」。
 
@@ -1192,7 +1196,7 @@ Seeder 已為 `teacher2`（陳老師）建立「網際系統設計 (資應)」�
 
 ```text
 資料庫在這裡
-database/sql/php_education_20260819.sql
+database/sql/php_education.sql
 ```
 
 ```bash

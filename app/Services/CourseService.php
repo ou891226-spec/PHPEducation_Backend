@@ -3,8 +3,11 @@
 namespace App\Services;
 
 use App\Models\Course;
+use App\Models\KnowledgeCard;
 use App\Models\Teacher;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\DB;
 
 class CourseService
 {
@@ -67,7 +70,22 @@ class CourseService
     public function delete(Teacher $teacher, int $courseId): void
     {
         $course = $this->findOwnedCourse($teacher, $courseId);
-        $course->delete();
+
+        DB::transaction(function () use ($course): void {
+            KnowledgeCard::query()
+                ->where(function (Builder $query) use ($course): void {
+                    $query->whereHas(
+                        'unit.chapter.topic',
+                        fn (Builder $topicQuery) => $topicQuery->where('course_id', $course->id),
+                    )->orWhere(function (Builder $detached) use ($course): void {
+                        $detached->whereNull('unit_id')
+                            ->whereHas('questions', fn (Builder $questionQuery) => $questionQuery->where('course_id', $course->id));
+                    });
+                })
+                ->delete();
+
+            $course->delete();
+        });
     }
 
     private function findOwnedCourse(Teacher $teacher, int $courseId): Course
