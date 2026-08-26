@@ -654,16 +654,22 @@ Request（`multipart/form-data`）：
 
 ### POST `/api/v1/teacher/courses/{courseId}/student-applications`
 
-功能：該課教師單筆補學生。需要教師 Token。欄位與 Excel 相同（學號、姓名），班級取自課程，送出後仍是待開通。
+功能：該課教師補學生，可一次多筆。需要教師 Token。欄位與 Excel 相同（學號、姓名），班級取自課程，送出後仍是待開通。一次最多 100 人。
 
-Request（JSON）：
+Request（JSON，建議）：
 
-| 欄位 | 必填 | 說明 |
-|------|------|------|
-| student_no | ✓ | 學號（可帶 `s` 前綴，後端會去掉） |
-| name | ✓ | 姓名 |
+```json
+{
+  "students": [
+    { "student_no": "1411131001", "name": "王小明" },
+    { "student_no": "1411131002", "name": "陳小華" }
+  ]
+}
+```
 
-成功回應 **201**，格式與上傳 Excel 相同。該課已有相同學號、或不是自己的課會 **422** / **404**。
+也可只傳一筆：`student_no`、`name`（不必加 `s`）。
+
+成功回應 **201**，格式與上傳 Excel 相同。該課已有相同學號、學號重複、超過 100 人、或不是自己的課會 **422** / **404**。
 
 ### GET `/api/v1/courses`
 

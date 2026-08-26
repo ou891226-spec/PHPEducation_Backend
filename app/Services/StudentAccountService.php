@@ -75,7 +75,21 @@ class StudentAccountService
                 ]);
             }
 
+            if (count($data['students']) > 100) {
+                throw ValidationException::withMessages([
+                    'file' => ['一次最多匯入 100 位學生'],
+                    'students' => ['一次最多匯入 100 位學生'],
+                ]);
+            }
+
             $studentNos = array_column($data['students'], 'student_no');
+            if (count($studentNos) !== count(array_unique($studentNos))) {
+                throw ValidationException::withMessages([
+                    'file' => ['學號重複'],
+                    'students' => ['學號重複'],
+                ]);
+            }
+
             $exists = StudentApplicationItems::query()
                 ->whereIn('student_no', $studentNos)
                 ->whereHas(
@@ -88,6 +102,7 @@ class StudentAccountService
                 throw ValidationException::withMessages([
                     'file' => ['該課已有相同學號'],
                     'student_no' => ['該課已有相同學號'],
+                    'students' => ['該課已有相同學號'],
                 ]);
             }
 

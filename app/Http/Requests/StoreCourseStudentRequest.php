@@ -5,7 +5,7 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * 教師單筆補學生（學號、姓名）。班級取自課程。
+ * 教師補學生（可一次多筆）。班級取自課程。
  */
 class StoreCourseStudentRequest extends FormRequest
 {
@@ -17,21 +17,58 @@ class StoreCourseStudentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'student_no' => ['required', 'string', 'max:50'],
-            'name' => ['required', 'string', 'max:255'],
+            'students' => ['required', 'array', 'min:1', 'max:100'],
+            'students.*.student_no' => ['required', 'string', 'max:50'],
+            'students.*.name' => ['required', 'string', 'max:255'],
         ];
     }
 
     protected function prepareForValidation(): void
     {
-        $studentNo = preg_replace('/\s+/u', '', (string) $this->input('student_no')) ?? '';
-        if (preg_match('/^[sS](\d+)$/', $studentNo, $matches) === 1) {
-            $studentNo = $matches[1];
+        $rows = $this->input('students');
+
+        if (! is_array($rows) || $rows === []) {
+            $studentNo = $this->input('student_no');
+            $name = $this->input('name');
+            if ($studentNo !== null || $name !== null) {
+                $rows = [[
+                    'student_no' => $studentNo,
+                    'name' => $name,
+                ]];
+            } else {
+                $rows = [];
+            }
         }
 
-        $this->merge([
-            'student_no' => $studentNo,
-            'name' => trim((string) $this->input('name')),
-        ]);
+        $students = [];
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            $studentNo = $this->normalizeStudentNo((string) ($row['student_no'] ?? $row['studentNo'] ?? ''));
+            $name = trim((string) ($row['name'] ?? ''));
+
+            if ($studentNo === '' && $name === '') {
+                continue;
+            }
+
+            $students[] = [
+                'student_no' => $studentNo,
+                'name' => $name,
+            ];
+        }
+
+        $this->merge(['students' => $students]);
+    }
+
+    private function normalizeStudentNo(string $value): string
+    {
+        $studentNo = preg_replace('/\s+/u', '', $value) ?? '';
+        if (preg_match('/^[sS](\d+)$/', $studentNo, $matches) === 1) {
+            return $matches[1];
+        }
+
+        return $studentNo;
     }
 }

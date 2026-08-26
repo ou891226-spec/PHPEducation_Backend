@@ -100,7 +100,7 @@ class StudentAccountApplicationController extends Controller
     }
 
     /**
-     * 該課教師單筆補學生。班級取自課程，仍須管理員開通。
+     * 該課教師補學生（可一次多筆）。班級取自課程，仍須管理員開通。
      */
     public function storeOneForCourse(StoreCourseStudentRequest $request, int $courseId): JsonResponse
     {
@@ -111,10 +111,7 @@ class StudentAccountApplicationController extends Controller
 
         $application = $this->studentAccountService->createApplication((string) $user->id, [
             'course_id' => $courseId,
-            'students' => [[
-                'student_no' => $validated['student_no'],
-                'name' => $validated['name'],
-            ]],
+            'students' => $validated['students'],
         ]);
 
         return response()->json([

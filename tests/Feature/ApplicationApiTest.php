@@ -310,6 +310,32 @@ class ApplicationApiTest extends TestCase
         ]);
     }
 
+    public function test_teacher_can_add_multiple_students_for_own_course(): void
+    {
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
+        $token = $this->loginToken('teacher2@school.edu.tw');
+
+        $this->withToken($token)
+            ->postJson("/api/v1/teacher/courses/{$course->id}/student-applications", [
+                'students' => [
+                    ['student_no' => '1411138801', 'name' => '甲生'],
+                    ['student_no' => 's1411138802', 'name' => '乙生'],
+                ],
+            ])
+            ->assertCreated();
+
+        $this->assertDatabaseHas('student_application_items', [
+            'student_no' => '1411138801',
+            'name' => '甲生',
+            'status' => 'pending',
+        ]);
+        $this->assertDatabaseHas('student_application_items', [
+            'student_no' => '1411138802',
+            'name' => '乙生',
+            'status' => 'pending',
+        ]);
+    }
+
     public function test_teacher_cannot_add_duplicate_student_for_course(): void
     {
         $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
