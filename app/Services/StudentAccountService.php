@@ -9,6 +9,7 @@ use App\Models\Enrollment;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 
 /**
  * Class StudentAccountService
@@ -16,11 +17,48 @@ use Illuminate\Validation\ValidationException;
  */
 class StudentAccountService
 {
+    public function __construct(
+        private readonly ExcelStudentRosterParser $rosterParser,
+    ) {}
+
+    /**
+     * 解析 Excel 名冊並建立學生帳號申請單（含明細）。
+     * 班級取自課程，不從 Excel 讀。
+     *
+     * @param  array{course_id: int}  $data
+     */
+    public function createApplicationFromExcel(string $tid, array $data, string $path): StudentApplications
+    {
+        try {
+            $students = $this->rosterParser->parse($path);
+        } catch (InvalidArgumentException $exception) {
+            throw ValidationException::withMessages([
+                'file' => [$exception->getMessage()],
+            ]);
+        }
+
+        if ($students === []) {
+            throw ValidationException::withMessages([
+                'file' => ['沒有可匯入的學生列（第 3 列範本不讀）'],
+            ]);
+        }
+
+        if (count($students) > 100) {
+            throw ValidationException::withMessages([
+                'file' => ['一次最多匯入 100 位學生'],
+            ]);
+        }
+
+        return $this->createApplication($tid, [
+            'course_id' => $data['course_id'],
+            'students' => $students,
+        ]);
+    }
+
     /**
      * 建立學生帳號申請單（含明細項目）
      *
-     * @param string $tid 提出申請的教師 ID
-     * @param array $data 包含 course_id、class_name 與 students 陣列名冊
+     * @param  array{course_id: int, students: list<array{student_no: string, name: string}>}  $data
      */
     public function createApplication(string $tid, array $data): StudentApplications
     {
@@ -30,10 +68,33 @@ class StudentAccountService
                 ->where('teacher_id', $tid)
                 ->firstOrFail();
 
+            $className = trim((string) $course->class_name);
+            if ($className === '') {
+                throw ValidationException::withMessages([
+                    'course_id' => ['請先在課程填寫班級'],
+                ]);
+            }
+
+            $studentNos = array_column($data['students'], 'student_no');
+            $exists = StudentApplicationItems::query()
+                ->whereIn('student_no', $studentNos)
+                ->whereHas(
+                    'application',
+                    fn ($query) => $query->where('course_id', $course->id),
+                )
+                ->exists();
+
+            if ($exists) {
+                throw ValidationException::withMessages([
+                    'file' => ['該課已有相同學號'],
+                    'student_no' => ['該課已有相同學號'],
+                ]);
+            }
+
             $application = StudentApplications::create([
                 'tid' => $tid,
                 'course_id' => $course->id,
-                'class_name' => $data['class_name'],
+                'class_name' => $className,
                 'status' => 'pending',
             ]);
 

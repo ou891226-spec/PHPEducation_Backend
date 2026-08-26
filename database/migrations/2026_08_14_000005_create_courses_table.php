@@ -17,6 +17,7 @@ return new class extends Migration
             $table->string('name')->comment('課程名稱');
             $table->text('description')->nullable()->comment('課程介紹');
             $table->string('semester')->comment('開課學期');
+            $table->string('class_name')->nullable()->comment('開課班級');
             $table->foreignId('teacher_id')->constrained('teachers')->cascadeOnDelete()->comment('授課教師 ID');
             $table->timestamp('created_at')->nullable()->comment('建立時間');
             $table->timestamp('updated_at')->nullable()->comment('更新時間');

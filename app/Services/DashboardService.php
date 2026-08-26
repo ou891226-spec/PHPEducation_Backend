@@ -66,6 +66,7 @@ class DashboardService
                 'name' => $course->name,
                 'description' => $course->description,
                 'semester' => $course->semester,
+                'class_name' => $course->class_name,
                 'teacher_id' => $course->teacher_id,
             ];
         }

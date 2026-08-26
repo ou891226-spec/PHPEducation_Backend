@@ -97,11 +97,13 @@ class AuthApiTest extends TestCase
             'name' => 'PHP 程式設計',
             'description' => '從基礎語法到實作練習',
             'semester' => '115-1',
+            'class_name' => '資應二甲',
         ]);
 
         $create->assertCreated()
             ->assertJsonPath('course.name', 'PHP 程式設計')
-            ->assertJsonPath('course.description', '從基礎語法到實作練習');
+            ->assertJsonPath('course.description', '從基礎語法到實作練習')
+            ->assertJsonPath('course.class_name', '資應二甲');
 
         $courseId = $create->json('course.id');
 
@@ -120,10 +122,12 @@ class AuthApiTest extends TestCase
                 'name' => 'PHP 進階',
                 'description' => '進階主題與專案實作',
                 'semester' => '115-1',
+                'class_name' => '資應二甲',
             ])
             ->assertOk()
             ->assertJsonPath('course.name', 'PHP 進階')
-            ->assertJsonPath('course.description', '進階主題與專案實作');
+            ->assertJsonPath('course.description', '進階主題與專案實作')
+            ->assertJsonPath('course.class_name', '資應二甲');
 
         $this->withToken($token)
             ->deleteJson("/api/v1/teacher/courses/{$courseId}")
@@ -159,6 +163,7 @@ class AuthApiTest extends TestCase
                 'name' => '非法修改',
                 'description' => '非法修改',
                 'semester' => '115-1',
+                'class_name' => '非法班級',
             ])
             ->assertNotFound();
 

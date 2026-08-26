@@ -13,6 +13,7 @@ class Course extends Model
         'name',
         'description',
         'semester',
+        'class_name',
         'teacher_id',
     ];
 

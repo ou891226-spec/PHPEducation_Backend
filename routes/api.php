@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\V1\Teacher\KnowledgeCardController;
 use App\Http\Controllers\Api\V1\Teacher\MaterialDraftController;
 use App\Http\Controllers\Api\V1\Teacher\MaterialImportController;
 use App\Http\Controllers\Api\V1\Teacher\MaterialTemplateController;
+use App\Http\Controllers\Api\V1\Teacher\StudentRosterTemplateController;
 use App\Http\Controllers\Api\V1\Teacher\QuestionRecordController;
 use App\Http\Controllers\Api\V1\Teacher\TopicController;
 use App\Http\Controllers\Api\V1\Teacher\UnitController;
@@ -50,9 +51,11 @@ Route::prefix('v1')->group(function () {
             ]);
 
             Route::get('materials/template', [MaterialTemplateController::class, 'download']);
+            Route::get('student-applications/template', [StudentRosterTemplateController::class, 'download']);
             Route::post('courses/{courseId}/materials/import', [MaterialImportController::class, 'store']);
             Route::get('courses/{courseId}/material-drafts', [MaterialDraftController::class, 'indexForCourse']);
             Route::get('courses/{courseId}/student-applications', [StudentAccountApplicationController::class, 'indexForCourse']);
+            Route::post('courses/{courseId}/student-applications', [StudentAccountApplicationController::class, 'storeOneForCourse']);
             Route::post('courses/{courseId}/material-drafts', [MaterialDraftController::class, 'storeFromPublished']);
 
             Route::post('material-drafts/{draftId}/topics', [MaterialDraftController::class, 'storeTopic']);

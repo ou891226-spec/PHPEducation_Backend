@@ -19,6 +19,7 @@ class MaterialApiTest extends TestCase
             'name' => 'PHP 程式設計',
             'description' => '從基礎語法到實作練習',
             'semester' => '115-1',
+            'class_name' => '資應二甲',
         ])->json('course.id');
 
         $topic = $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/topics", [
@@ -193,6 +194,7 @@ class MaterialApiTest extends TestCase
             'name' => 'PHP 程式設計',
             'description' => '從基礎語法到實作練習',
             'semester' => '115-1',
+            'class_name' => '資應二甲',
         ])->json('course.id');
 
         $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/topics", [
@@ -215,6 +217,7 @@ class MaterialApiTest extends TestCase
             'name' => '知識卡刪除測試',
             'description' => '保留有題目關聯的知識卡',
             'semester' => '115-1',
+            'class_name' => '資應二甲',
         ])->json('course.id');
 
         $topicId = $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/topics", [

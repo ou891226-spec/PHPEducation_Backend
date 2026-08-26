@@ -12,6 +12,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasTable('question_knowledge_cards')) {
+            return;
+        }
+
         Schema::create('question_knowledge_cards', function (Blueprint $table) {
             $table->id()->comment('流水號');
             $table->foreignId('question_id')->constrained('questions')->cascadeOnDelete()->comment('題目編號');

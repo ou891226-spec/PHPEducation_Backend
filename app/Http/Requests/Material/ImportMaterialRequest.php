@@ -15,7 +15,7 @@ class ImportMaterialRequest extends FormRequest
     {
         return [
             'topic' => ['required', 'string', 'max:255'],
-            'file' => ['required', 'file', 'max:10240'],
+            'file' => ['required', 'file'],
         ];
     }
 

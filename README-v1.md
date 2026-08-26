@@ -20,7 +20,7 @@ teacher_applications → 教師帳號申請（核准後寫入 teachers）
 student_applications → 學生帳號申請（tid → teachers, course_id → courses）
 student_application_items → 學生申請明細（一筆申請多位學生，核准後寫入 students）
 
-courses    → 課程（teacher_id → teachers）
+courses    → 課程（teacher_id → teachers，含 class_name 班級）
 enrollments → 選課（students ↔ courses）
 
 教材部分
@@ -59,6 +59,7 @@ app/
 │  │  └─ Teacher/
 │  │     ├─ CourseController.php
 │  │     ├─ MaterialTemplateController.php
+│  │     ├─ StudentRosterTemplateController.php
 │  │     ├─ MaterialImportController.php
 │  │     ├─ MaterialDraftController.php
 │  │     ├─ TopicController.php
@@ -70,7 +71,9 @@ app/
 │  └─ Requests/
 │     ├─ Auth/
 │     ├─ Course/
-│     └─ Material/
+│     ├─ Material/
+│     ├─ StoreStudentAccountApplicationRequest.php
+│     └─ StoreCourseStudentRequest.php
 │
 ├─ Models/
 │  └─ Admin、Teacher、Student、Course、Enrollment、
@@ -84,15 +87,18 @@ app/
    ├─ CourseService.php
    ├─ MaterialService.php
    ├─ ExcelMaterialParser.php
+   ├─ ExcelStudentRosterParser.php
    ├─ MaterialDraftService.php
    ├─ StudentMaterialService.php
+   ├─ StudentAccountService.php
    ├─ DashboardService.php
    └─ UserFormatterService.php
 
 bootstrap/          → 應用程式啟動與 Middleware 註冊
 config/             → 設定檔（auth、cors、sanctum、database 等）
 public/templates/
-└─ material_import_template.xlsx  → 教師教材匯入 Excel 範本
+├─ material_import_template.xlsx   → 教師教材匯入 Excel 範本
+└─ student_import_template.xlsx    → 教師學生名冊 Excel 範本
 database/
 ├─ migrations/      → 資料表結構
 └─ seeders/         → 測試帳號與示範資料
@@ -173,7 +179,7 @@ tests/
 | created_at | timestamp | 建立時間 |
 | updated_at | timestamp | 更新時間 |
 
-> 學生登入時，前端 Request 的 `account` 填學號（可含前綴 `s`），例如 `s1411131000`。後端組成並比對 `students.email`（`s1411131000@nutc.edu.tw`）。學號存在 `student_no`。若開通時只填學號，系統組成 `s{學號}@nutc.edu.tw`。
+> 學生登入時，前端 Request 的 `account` 填學號即可，例如 `1411131000`，**不必加 `s`**。後端組成並比對 `students.email`（`s1411131000@nutc.edu.tw`）。若誤加 `s` 也可以。學號存在 `student_no`。若開通時只填學號，系統組成 `s{學號}@nutc.edu.tw`。
 
 ### student_applications 學生帳號申請
 
@@ -185,7 +191,7 @@ tests/
 | id | bigint | 申請 ID（PK） |
 | tid | bigint | 教師 ID（FK → teachers.id，刪除教師時一併刪除） |
 | course_id | bigint | 課程 ID（規格的 Cid；FK → courses.id，刪除課程時一併刪除） |
-| class_name | string | 申請班級 |
+| class_name | string | 申請班級（由課程 `class_name` 寫入） |
 | status | string | 申請狀態：`pending`（待審核）、`approved`（已通過），預設 `pending` |
 | created_at | timestamp | 建立時間 |
 | updated_at | timestamp | 更新時間 |
@@ -226,6 +232,7 @@ teachers.id / courses.id
 | name | string | 課程名稱 |
 | description | text | 課程介紹 |
 | semester | string | 開課學期 |
+| class_name | string | 開課班級（可空；新開課必填） |
 | teacher_id | bigint | 授課教師 ID（FK → teachers.id） |
 | created_at | timestamp | 建立時間 |
 | updated_at | timestamp | 更新時間 |
@@ -245,7 +252,7 @@ students ── enrollments ── courses
 ```
 
 學生 Dashboard 的「已修課程」透過 `enrollments` 關聯查詢（`Student` ↔ `Course` many-to-many）。
-Seeder 已讓王小明選修「網際系統設計 (資應)」。
+Seeder 已讓王小明選修「網際系統設計」（班級資應）。
 
 ### material_drafts 教材匯入草稿
 一門課可有多份草稿（用 `id` 區分）。同一門課同時只能有一份 `published` Draft 列（舊的改 `archived`），但**正式教材可以同時有多個主題**。發布只同步這份 Draft 裡的主題，不會砍掉其他已發布主題。學生看正式表（`topics` 等），不是看 Draft 列。
@@ -405,7 +412,7 @@ Laravel Sanctum 預設 Token 資料表（表名固定為 `personal_access_tokens
 
 ```json
 {
-  "account": "s1411131000",
+  "account": "1411131000",
   "password": "Password123!"
 }
 ```
@@ -598,7 +605,9 @@ Authorization: Bearer {token}
 資料表 `student_applications`、`student_application_items` 已建立。
 
 ```text
+GET  /teacher/student-applications/template
 POST /teacher/student-applications
+POST /teacher/courses/{courseId}/student-applications
 GET  /courses
 GET  /teacher/courses/{courseId}/student-applications
 GET  /student-applications
@@ -606,40 +615,25 @@ POST /student-applications/approve
 POST /teacher/student-applications/{id}/approve
 ```
 
-流程：教師送出班級與多名學生（body 帶 `tid`、`course_id`，學生名冊僅需學號與姓名）→ 管理員審核開通。沒帳號就建 `students`（以學號自動產生校園信箱）並寫 `enrollments`；已有帳號只寫選課。可勾選指定學生開通或整單一鍵開通。
+流程：教師選課程並上傳 Excel 名冊，或單筆補漏掉的學生（僅學號、姓名；班級取自該門課）→ 管理員審核開通。沒帳號就建 `students`（以學號自動產生校園信箱）並寫 `enrollments`；已有帳號只寫選課。可勾選指定學生開通或整單一鍵開通。
+
+### GET `/api/v1/teacher/student-applications/template`
+
+功能：教師下載學生名冊 Excel 範本。需要教師 Token。
+
+Excel 列規則：第 1 列說明、第 2 列欄位（`學號`、`姓名`）、第 3 列範本示範整列不讀、第 4 列起才是名冊。多出來的欄（性別、備註等）會忽略。
 
 ### POST `/api/v1/teacher/student-applications`
 
-功能：教師送出班級學生帳號申請名冊。**不需要提供學生信箱**。
+功能：教師上傳 Excel 送出學生帳號申請名冊。**不需要提供學生信箱與班級**。班級由 `courses.class_name` 寫入申請單。
 
-Request：
-
-```json
-{
-  "tid": 2,
-  "course_id": 1,
-  "class_name": "資應二甲",
-  "students": [
-    {
-      "student_no": "1411131001",
-      "name": "李小華"
-    },
-    {
-      "student_no": "1411131002",
-      "name": "張小明"
-    }
-  ]
-}
-```
+Request（`multipart/form-data`）：
 
 | 欄位 | 必填 | 說明 |
 |------|------|------|
 | tid | ✓ | 教師 ID（FK → teachers.id） |
 | course_id | ✓ | 課程 ID（FK → courses.id，必須為該教師所開課程） |
-| class_name | ✓ | 班級名稱 |
-| students | ✓ | 學生名冊陣列（1～50 筆） |
-| students.*.student_no | ✓ | 學生學號 |
-| students.*.name | ✓ | 學生姓名 |
+| file | ✓ | xlsx 名冊（學號、姓名） |
 
 成功回應 **201**：
 
@@ -656,13 +650,28 @@ Request：
 }
 ```
 
+課程尚未填班級、只上傳範本示範列、檔內學號重複、該課已有相同學號、或一次超過 100 人會 **422**。
+
+### POST `/api/v1/teacher/courses/{courseId}/student-applications`
+
+功能：該課教師單筆補學生。需要教師 Token。欄位與 Excel 相同（學號、姓名），班級取自課程，送出後仍是待開通。
+
+Request（JSON）：
+
+| 欄位 | 必填 | 說明 |
+|------|------|------|
+| student_no | ✓ | 學號（可帶 `s` 前綴，後端會去掉） |
+| name | ✓ | 姓名 |
+
+成功回應 **201**，格式與上傳 Excel 相同。該課已有相同學號、或不是自己的課會 **422** / **404**。
+
 ### GET `/api/v1/courses`
 
-管理員開通頁的課程下拉。需要管理員 Token。
+管理員開通頁的課程下拉。需要管理員 Token。每筆含 `name`、`class_name`、`semester`；畫面上可顯示成「課程名稱 (班級)」。
 
 ### GET `/api/v1/teacher/courses/{courseId}/student-applications`
 
-該課教師取得這門課的待開通名單（每人一列）。預設只回 `pending`，可加 `?status=approved`。別人的課 **404**。
+該課教師取得這門課的名冊（每人一列）。預設回待開通＋已開通，依學號由小到大。可加 `?status=pending` 或 `?status=approved`。別人的課 **404**。
 
 ### GET `/api/v1/student-applications`
 
@@ -758,7 +767,7 @@ Request：
 
 非管理員 **403**。未登入 **401**。
 
-登入時學生只填學號（例如 `s1411131000`），後端對應學校信箱 `s{學號}@nutc.edu.tw`（`students.email`）。
+登入時學生只填學號（例如 `1411131000`，不必加 `s`），後端對應學校信箱 `s{學號}@nutc.edu.tw`（`students.email`）。
 
 ---
 
@@ -830,8 +839,8 @@ Authorization: Bearer {token}
 
 | 角色 | 回傳 | 資料來源 |
 |------|------|----------|
-| 教師 | `user` + `courses` | `courses.teacher_id = 目前教師 id` |
-| 學生 | `user` + `courses` | `enrollments` 關聯（student_id ↔ course_id） |
+| 教師 | `user` + `courses` | `courses.teacher_id = 目前教師 id`（課程含 `class_name`） |
+| 學生 | `user` + `courses` | `enrollments` 關聯（student_id ↔ course_id，課程含 `class_name`） |
 | 管理員 | `user` + `pending_count` | `pending_count` 目前固定為 0 |
 
 ---
@@ -856,7 +865,7 @@ Authorization: Bearer {token}
 
 ### GET `/api/v1/teacher/courses`
 
-功能：取得目前教師自己的課程列表。依開課學期由新到舊排序
+功能：取得目前教師自己的課程列表。依開課學期由新到舊排序。每筆含 `class_name`；畫面上可顯示成「課程名稱 (班級)」。
 
 ### POST `/api/v1/teacher/courses`
 
@@ -868,11 +877,13 @@ Request：
 {
   "name": "PHP 程式設計",
   "description": "從基礎語法到實作練習",
-  "semester": "115-1"
+  "semester": "115-1",
+  "class_name": "資應二甲"
 }
 ```
 
 `description` 為必填，最多 2000 字。  
+`class_name` 為必填（開課班級）。  
 `teacher_id` 不需要由前端傳送，後端會從登入 Token 判斷目前教師。
 
 成功回應 **201**。
@@ -891,11 +902,13 @@ Request：
 {
   "name": "PHP 進階",
   "description": "進階主題與專案實作",
-  "semester": "115-1"
+  "semester": "115-1",
+  "class_name": "資應二甲"
 }
 ```
 
-`description` 為必填，最多 2000 字。
+`description` 為必填，最多 2000 字。  
+`class_name` 為必填。
 
 ### DELETE `/api/v1/teacher/courses/{id}`
 
@@ -943,32 +956,14 @@ Authorization: Bearer {token}
 | 發布教材 | `POST /api/v1/teacher/material-drafts/{draftId}/publish` | 該課教師 |
 | 學生查看正式教材 | `/api/v1/student/courses/{courseId}/topics` 等 | 修課學生 |
 
-第一版流程：
+流程（前端不要自己解析 Excel）：
 
-```text
-前端填主題名稱 + 教師 Excel
-  → Laravel 接收、驗證 topic / file、確認是該課教師
-  → ExcelMaterialParser 解析（主題用表單欄位；欄位列的下一列範本整列不讀，「範例」欄寫進知識卡 example）
-  → 整份 Excel 掛在同一個 Topic 下，組成 Chapter → Unit → Knowledge Card
-  → 教材名稱與該課未發布 Draft 重複則 422
-  → 存成 Material Draft
-  → API 回傳 Draft JSON
-  → 前端 Vue 畫樹（不要在瀏覽器解析 Excel）
-  → 教師增刪改，打 Draft API 存回
-  → 發布
-  → 只同步這份 Draft 的主題到正式教材（其他主題不動）
-  → 已選課學生查看正式教材
+1. 填主題名稱 `topic` + 上傳 xlsx → 後端建成 Draft 樹（章節→單元→知識卡）→ 前端畫樹、用 Draft API 增刪改 → 發布後學生才看得到。
+2. 之後要改：對單一主題「加入草稿編輯」（POST 帶 `topic_id`）；不帶則複製該課全部已發布主題。再上傳 Excel 會另建一份 Draft。
+3. 未發布前學生仍看上一版。發布只合併這份 Draft 的主題：不同名並存，同名則更新那棵樹（知識卡 id 盡量保留）。舊 published 改 archived。
+4. 教材名稱只跟**未發布** Draft 重複才 422。草稿最後一個主題刪掉，整份 Draft 一併刪除，名稱可重用。列表皆新到舊，含 `created_at` / `updated_at`。
 
-正式教材之後：
-  少量修改 → 對單一主題「加入草稿編輯」（POST 帶 `topic_id`）→ 改完再發布
-  不帶 `topic_id` 則複製該課全部已發布主題
-  整份 Excel 再上傳 → 另建 Draft（教材名稱只與未發布 Draft 重複才 422）
-  發布新 Draft → 舊 published 列改 archived；正式表做主題級合併，不整課刪掉重建
-```
-
-一份 Excel 只對應一個主題，主題名稱來自表單 `topic`，不從 Excel 讀。空白的 chapter／unit 會沿用上一列。Excel 列規則：第 1 列可寫 `教材名稱：…`、第 2 列說明、第 3 列欄位標題（`chapters (章節)` / `units (單元)` / `knowledge_card (知識卡)` / `範例`）、第 4 列範本示範整列不讀、第 5 列起才是教師內容。「範例」欄存成知識卡 `example`，可空。知識卡沒有獨立標題欄，標題取內容前約 80 字。有寫 `教材名稱：…` 就當教材名稱；沒寫則用表單的主題名稱。
-
-整份 Excel 再上傳期間，學生仍看已發布的正式教材，直到第 2 份也發布。從已發布教材開新 Draft 修改時，學生也仍看上一版，直到新 Draft 發布。第二份若是**不同主題**，發布後兩個主題會並存；若是**同名主題**，只更新那一棵樹，知識卡 id 會盡量保留（避免 `question_knowledge_cards` 斷掉）。草稿列表、已發布主題列表皆**新到舊**，並回傳 `created_at` / `updated_at`。草稿最後一個主題刪掉時，整份 Draft 會一併刪除，教材名稱可重用。
+Excel：一份檔一個主題（名稱用表單 `topic`）。第 1 列可寫 `教材名稱：…`（沒寫就用 `topic`）、第 2 列說明、第 3 列欄位、第 4 列範本不讀、第 5 列起才是內容。空白章節／單元沿用上一列。「範例」→ 知識卡 `example`（可空）；知識卡標題取內容前約 80 字。
 
 ### 教材匯入範本
 
@@ -993,7 +988,7 @@ public/templates/material_import_template.xlsx
 | 欄位 | 必填 | 說明 |
 |------|------|------|
 | topic | 是 | 主題名稱。一份檔只掛這一個主題 |
-| file | 是 | `.xlsx`，最大 10MB |
+| file | 是 | `.xlsx` |
 
 沒帶 `topic`（空字串也不行）會 **422**。副檔名必須是 `.xlsx`。
 
@@ -1016,11 +1011,17 @@ public/templates/material_import_template.xlsx
 | DELETE | `/api/v1/teacher/material-drafts/{draftId}/knowledge-cards/{nodeId}` | 草稿刪除知識卡 |
 | POST | `/api/v1/teacher/material-drafts/{draftId}/publish` | 發布為正式教材 |
 
-草稿節點 Request 與正式教材相同：主題／章節／單元用 `name`、`sort_order`；知識卡用 `title`、`content`、`example`、`sort_order`。成功匯入／新增為 **201**。
+草稿欄位與正式教材相同。主題／章節／單元：`name`、`sort_order`。知識卡：`title`、`content`、`example`、`sort_order`。匯入／新增成功為 **201**。草稿列表依 `updated_at` 新到舊，並含時間欄位。
 
-只上傳範本裡的範例列會 **422**（沒有可匯入的教材列）。沒填 `topic` 會 **422**。找不到教材名稱會 **422**。不是該課教師 **404**。已發布或已封存的 Draft 不能直接改／再發布，會 **422**。同一份 Draft 裡主題名稱重複會 **422**。Excel 教材名稱與該課**未發布** Draft 重複會 **422**。
+| 情況 | 狀態 |
+|------|------|
+| 只上傳範本示範列、沒填 `topic`、找不到教材名稱 | 422 |
+| 同一份 Draft 主題名稱重複 | 422 |
+| Excel 教材名稱與該課**未發布** Draft 重複 | 422 |
+| 已發布或已封存的 Draft 再改／再發布 | 422 |
+| 不是該課教師 | 404 |
 
-發布在 transaction 裡：把同課其他 `published` Draft 改成 `archived`，再對這份 `tree` 做**主題級同步**（同名或同正式 id 則 update，否則 insert）。其他主題完全不動。知識卡若已有題目關聯就不會刪。草稿列表依 `updated_at` 新到舊，並含時間欄位。
+發布時：同課其他 `published` Draft 改成 `archived`，只同步這份樹裡的主題（同名或同正式 id 就更新，否則新增）。其他主題不動。已有題目關聯的知識卡不會刪。
 
 ### 學生教材（已發布、已選課）
 
@@ -1186,7 +1187,7 @@ Request（新增／修改）：
 | 教師 | teacher2@school.edu.tw | Password123! |
 | 學生 | 1411131000 | Password123! |
 
-Seeder 已為 `teacher2`（陳老師）建立「網際系統設計 (資應)」「網際系統設計 (資管)」兩門課，並讓王小明選修「網際系統設計 (資應)」。
+Seeder 已為 `teacher2`（陳老師）建立兩門「網際系統設計」（班級分別為資應、資管），並讓王小明選修資應那門。
 
 ---
 

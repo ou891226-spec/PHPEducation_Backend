@@ -10,7 +10,9 @@ use App\Models\StudentApplications;
 use App\Models\Teacher;
 use App\Models\TeacherApplication;
 use Database\Seeders\DatabaseSeeder;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Mail;
+use Tests\Support\SimpleXlsx;
 use Tests\TestCase;
 
 class ApplicationApiTest extends TestCase
@@ -139,12 +141,12 @@ class ApplicationApiTest extends TestCase
     public function test_admin_can_list_student_application_items(): void
     {
         $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
-        $course = Course::query()->where('name', '網際系統設計 (資應)')->firstOrFail();
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
 
         $application = StudentApplications::query()->create([
             'tid' => $teacher->id,
             'course_id' => $course->id,
-            'class_name' => '資應二甲',
+            'class_name' => '資應',
             'status' => 'pending',
         ]);
 
@@ -180,12 +182,12 @@ class ApplicationApiTest extends TestCase
     public function test_teacher_can_list_pending_students_for_own_course(): void
     {
         $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
-        $course = Course::query()->where('name', '網際系統設計 (資應)')->firstOrFail();
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
 
         $application = StudentApplications::query()->create([
             'tid' => $teacher->id,
             'course_id' => $course->id,
-            'class_name' => '資應二甲',
+            'class_name' => '資應',
             'status' => 'pending',
         ]);
 
@@ -206,13 +208,148 @@ class ApplicationApiTest extends TestCase
             ->assertJsonPath('items.0.application_id', $application->id);
     }
 
+    public function test_teacher_list_includes_approved_students(): void
+    {
+        $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
+
+        $application = StudentApplications::query()->create([
+            'tid' => $teacher->id,
+            'course_id' => $course->id,
+            'class_name' => '資應',
+            'status' => 'pending',
+        ]);
+
+        StudentApplicationItems::query()->create([
+            'application_id' => $application->id,
+            'student_no' => '1411131001',
+            'name' => '李小華',
+            'status' => 'approved',
+        ]);
+
+        StudentApplicationItems::query()->create([
+            'application_id' => $application->id,
+            'student_no' => '1411131002',
+            'name' => '陳小名',
+            'status' => 'pending',
+        ]);
+
+        $token = $this->loginToken('teacher2@school.edu.tw');
+
+        $this->withToken($token)
+            ->getJson("/api/v1/teacher/courses/{$course->id}/student-applications")
+            ->assertOk()
+            ->assertJsonCount(2, 'items')
+            ->assertJsonPath('items.0.status', 'approved')
+            ->assertJsonPath('items.1.status', 'pending');
+    }
+
+    public function test_teacher_list_is_sorted_by_student_no(): void
+    {
+        $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
+
+        $application = StudentApplications::query()->create([
+            'tid' => $teacher->id,
+            'course_id' => $course->id,
+            'class_name' => '資應',
+            'status' => 'pending',
+        ]);
+
+        StudentApplicationItems::query()->create([
+            'application_id' => $application->id,
+            'student_no' => '1411131021',
+            'name' => '先匯入',
+            'status' => 'pending',
+        ]);
+
+        StudentApplicationItems::query()->create([
+            'application_id' => $application->id,
+            'student_no' => '1411131015',
+            'name' => '後新增',
+            'status' => 'pending',
+        ]);
+
+        $token = $this->loginToken('teacher2@school.edu.tw');
+
+        $this->withToken($token)
+            ->getJson("/api/v1/teacher/courses/{$course->id}/student-applications")
+            ->assertOk()
+            ->assertJsonPath('items.0.student_no', '1411131015')
+            ->assertJsonPath('items.1.student_no', '1411131021');
+    }
+
     public function test_teacher_cannot_list_other_teachers_course_applications(): void
     {
-        $course = Course::query()->where('name', '網際系統設計 (資應)')->firstOrFail();
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
         $token = $this->loginToken('teacher@school.edu.tw');
 
         $this->withToken($token)
             ->getJson("/api/v1/teacher/courses/{$course->id}/student-applications")
+            ->assertNotFound();
+    }
+
+    public function test_teacher_can_add_one_student_for_own_course(): void
+    {
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
+        $token = $this->loginToken('teacher2@school.edu.tw');
+
+        $this->withToken($token)
+            ->postJson("/api/v1/teacher/courses/{$course->id}/student-applications", [
+                'student_no' => 's1411138888',
+                'name' => '補漏學生',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.class_name', '資應')
+            ->assertJsonPath('data.course_id', $course->id);
+
+        $this->assertDatabaseHas('student_application_items', [
+            'student_no' => '1411138888',
+            'name' => '補漏學生',
+            'status' => 'pending',
+        ]);
+    }
+
+    public function test_teacher_cannot_add_duplicate_student_for_course(): void
+    {
+        $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
+
+        $application = StudentApplications::query()->create([
+            'tid' => $teacher->id,
+            'course_id' => $course->id,
+            'class_name' => '資應',
+            'status' => 'pending',
+        ]);
+
+        StudentApplicationItems::query()->create([
+            'application_id' => $application->id,
+            'student_no' => '1411138888',
+            'name' => '已在名冊',
+            'status' => 'approved',
+        ]);
+
+        $token = $this->loginToken('teacher2@school.edu.tw');
+
+        $this->withToken($token)
+            ->postJson("/api/v1/teacher/courses/{$course->id}/student-applications", [
+                'student_no' => '1411138888',
+                'name' => '再加一次',
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.student_no.0', '該課已有相同學號');
+    }
+
+    public function test_teacher_cannot_add_student_to_other_teachers_course(): void
+    {
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
+        $token = $this->loginToken('teacher@school.edu.tw');
+
+        $this->withToken($token)
+            ->postJson("/api/v1/teacher/courses/{$course->id}/student-applications", [
+                'student_no' => '1411137777',
+                'name' => '不該成功',
+            ])
             ->assertNotFound();
     }
 
@@ -221,12 +358,12 @@ class ApplicationApiTest extends TestCase
         Mail::fake();
 
         $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
-        $course = Course::query()->where('name', '網際系統設計 (資應)')->firstOrFail();
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
 
         $application = StudentApplications::query()->create([
             'tid' => $teacher->id,
             'course_id' => $course->id,
-            'class_name' => '資應二甲',
+            'class_name' => '資應',
             'status' => 'pending',
         ]);
 
@@ -264,13 +401,13 @@ class ApplicationApiTest extends TestCase
         Mail::fake();
 
         $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
-        $course = Course::query()->where('name', '網際系統設計 (資應)')->firstOrFail();
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
         $existing = Student::query()->where('student_no', '1411131000')->firstOrFail();
 
         $application = StudentApplications::query()->create([
             'tid' => $teacher->id,
             'course_id' => $course->id,
-            'class_name' => '資應二甲',
+            'class_name' => '資應',
             'status' => 'pending',
         ]);
 
@@ -307,12 +444,12 @@ class ApplicationApiTest extends TestCase
         Mail::fake();
 
         $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
-        $course = Course::query()->where('name', '網際系統設計 (資應)')->firstOrFail();
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
 
         $application = StudentApplications::query()->create([
             'tid' => $teacher->id,
             'course_id' => $course->id,
-            'class_name' => '資應二甲',
+            'class_name' => '資應',
             'status' => 'pending',
         ]);
 
@@ -346,7 +483,7 @@ class ApplicationApiTest extends TestCase
 
     public function test_teacher_cannot_approve_selected_students(): void
     {
-        $course = Course::query()->where('name', '網際系統設計 (資應)')->firstOrFail();
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
         $token = $this->loginToken('teacher2@school.edu.tw');
 
         $this->withToken($token)
@@ -362,23 +499,21 @@ class ApplicationApiTest extends TestCase
         Mail::fake();
 
         $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
-        $course = Course::query()->where('name', '網際系統設計 (資應)')->firstOrFail();
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
 
-        // 1. 教師提交名單（只有 student_no 和 name，沒有 email）
-        $storeResponse = $this->postJson('/api/v1/teacher/student-applications', [
-            'tid' => $teacher->id,
-            'course_id' => $course->id,
-            'class_name' => '資應二甲',
-            'students' => [
-                [
-                    'student_no' => '1411139001',
-                    'name' => '王小明',
-                ],
-            ],
+        $path = $this->rosterXlsxPath([
+            ['學號', '姓名'],
+            ['1411139001', '王小明'],
         ]);
 
+        $storeResponse = $this->post('/api/v1/teacher/student-applications', [
+            'tid' => $teacher->id,
+            'course_id' => $course->id,
+            'file' => $this->upload($path),
+        ], ['Accept' => 'application/json']);
+
         $storeResponse->assertCreated()
-            ->assertJsonPath('data.class_name', '資應二甲');
+            ->assertJsonPath('data.class_name', '資應');
 
         $appId = $storeResponse->json('data.id');
 
@@ -405,12 +540,12 @@ class ApplicationApiTest extends TestCase
     public function test_non_admin_cannot_approve_student_application_batch(): void
     {
         $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
-        $course = Course::query()->where('name', '網際系統設計 (資應)')->firstOrFail();
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
 
         $application = StudentApplications::query()->create([
             'tid' => $teacher->id,
             'course_id' => $course->id,
-            'class_name' => '資應二甲',
+            'class_name' => '資應',
             'status' => 'pending',
         ]);
 
@@ -436,6 +571,57 @@ class ApplicationApiTest extends TestCase
         $this->withToken($studentToken)
             ->postJson("/api/v1/teacher/student-applications/{$application->id}/approve")
             ->assertForbidden();
+    }
+
+    public function test_teacher_can_download_student_roster_template(): void
+    {
+        $token = $this->loginToken('teacher2@school.edu.tw');
+
+        $this->withToken($token)
+            ->get('/api/v1/teacher/student-applications/template')
+            ->assertOk()
+            ->assertDownload('student_import_template.xlsx');
+    }
+
+    public function test_template_only_roster_rows_are_rejected(): void
+    {
+        $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
+
+        $this->post('/api/v1/teacher/student-applications', [
+            'tid' => $teacher->id,
+            'course_id' => $course->id,
+            'file' => $this->upload(public_path('templates/student_import_template.xlsx')),
+        ], ['Accept' => 'application/json'])->assertStatus(422);
+    }
+
+    /**
+     * @param  list<list<string>>  $rows
+     */
+    private function rosterXlsxPath(array $rows, bool $insertTemplateExample = true): string
+    {
+        array_unshift($rows, ['從學校名冊複製學號與姓名，貼在欄位列下方空白列。']);
+
+        if ($insertTemplateExample) {
+            foreach ($rows as $index => $row) {
+                $hasNo = in_array('學號', $row, true);
+                $hasName = in_array('姓名', $row, true);
+                if ($hasNo && $hasName) {
+                    array_splice($rows, $index + 1, 0, [['1411130000', '範例學生（不會匯入）']]);
+                    break;
+                }
+            }
+        }
+
+        $path = tempnam(sys_get_temp_dir(), 'xlsx').'.xlsx';
+        SimpleXlsx::write($path, $rows);
+
+        return $path;
+    }
+
+    private function upload(string $path): UploadedFile
+    {
+        return new UploadedFile($path, 'roster.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', null, true);
     }
 
     private function loginToken(string $account): string

@@ -42,6 +42,7 @@ class CourseService
             'name' => $data['name'],
             'description' => $data['description'],
             'semester' => $data['semester'],
+            'class_name' => $data['class_name'],
         ]);
 
         return $this->formatCourse($course);
@@ -62,6 +63,7 @@ class CourseService
             'name' => $data['name'],
             'description' => $data['description'],
             'semester' => $data['semester'],
+            'class_name' => $data['class_name'],
         ]);
 
         return $this->formatCourse($course->fresh());
@@ -109,6 +111,7 @@ class CourseService
             'name' => $course->name,
             'description' => $course->description,
             'semester' => $course->semester,
+            'class_name' => $course->class_name,
             'teacher_id' => $course->teacher_id,
         ];
     }

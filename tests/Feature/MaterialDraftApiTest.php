@@ -634,8 +634,8 @@ class MaterialDraftApiTest extends TestCase
 
     public function test_student_cannot_read_unenrolled_course_materials(): void
     {
-        $course = Course::query()->where('name', '網際系統設計 (資管)')->firstOrFail();
-        $token = $this->loginToken('s1411131000');
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資管')->firstOrFail();
+        $token = $this->loginToken('1411131000');
 
         $this->withToken($token)
             ->getJson("/api/v1/student/courses/{$course->id}/topics")
@@ -705,7 +705,7 @@ class MaterialDraftApiTest extends TestCase
 
     private function yingCourse(): Course
     {
-        return Course::query()->where('name', '網際系統設計 (資應)')->firstOrFail();
+        return Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
     }
 
     private function loginToken(string $account): string

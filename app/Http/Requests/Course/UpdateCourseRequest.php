@@ -17,6 +17,7 @@ class UpdateCourseRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'description' => ['required', 'string', 'max:2000'],
             'semester' => ['required', 'string', 'max:50'],
+            'class_name' => ['required', 'string', 'max:255'],
         ];
     }
 }

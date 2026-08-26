@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreCourseStudentRequest;
 use App\Http\Requests\StoreStudentAccountApplicationRequest;
 use App\Models\Student;
 use App\Models\StudentApplicationItems;
@@ -51,6 +52,7 @@ class StudentAccountApplicationController extends Controller
                         ->orWhere('name', 'like', '%'.$keyword.'%');
                 }),
             )
+            ->orderBy('student_no')
             ->orderBy('id')
             ->get();
 
@@ -70,7 +72,7 @@ class StudentAccountApplicationController extends Controller
     }
 
     /**
-     * 該課教師：依課程取得待開通名單。預設 pending；別人的課 404。
+     * 該課教師：依課程取得名冊（待開通＋已開通）。可加 ?status=pending|approved；別人的課 404。
      */
     public function indexForCourse(Request $request, int $courseId): JsonResponse
     {
@@ -79,7 +81,7 @@ class StudentAccountApplicationController extends Controller
 
         $this->courseService->findForTeacher($user, $courseId);
 
-        $status = $request->query('status', 'pending');
+        $status = $request->query('status');
 
         $items = StudentApplicationItems::query()
             ->with(['application.teacher'])
@@ -88,6 +90,7 @@ class StudentAccountApplicationController extends Controller
                 is_string($status) && $status !== '',
                 fn ($query) => $query->where('status', $status),
             )
+            ->orderBy('student_no')
             ->orderBy('id')
             ->get();
 
@@ -97,15 +100,41 @@ class StudentAccountApplicationController extends Controller
     }
 
     /**
-     * 教師送出整班學生申請。要帶 course_id。
+     * 該課教師單筆補學生。班級取自課程，仍須管理員開通。
+     */
+    public function storeOneForCourse(StoreCourseStudentRequest $request, int $courseId): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user instanceof Teacher, 403, 'Forbidden');
+
+        $validated = $request->validated();
+
+        $application = $this->studentAccountService->createApplication((string) $user->id, [
+            'course_id' => $courseId,
+            'students' => [[
+                'student_no' => $validated['student_no'],
+                'name' => $validated['name'],
+            ]],
+        ]);
+
+        return response()->json([
+            'message' => 'Student account application submitted successfully.',
+            'data' => $application,
+        ], 201);
+    }
+
+    /**
+     * 教師以 Excel 送出整班學生申請。班級取自課程。
      */
     public function store(StoreStudentAccountApplicationRequest $request): JsonResponse
     {
         $validatedData = $request->validated();
+        $path = $request->file('file')->getRealPath();
 
-        $application = $this->studentAccountService->createApplication(
-            $validatedData['tid'],
-            $validatedData,
+        $application = $this->studentAccountService->createApplicationFromExcel(
+            (string) $validatedData['tid'],
+            ['course_id' => (int) $validatedData['course_id']],
+            $path,
         );
 
         return response()->json([

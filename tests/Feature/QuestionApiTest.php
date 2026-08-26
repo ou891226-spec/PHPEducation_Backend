@@ -43,7 +43,7 @@ class QuestionApiTest extends TestCase
 
     public function test_unenrolled_student_cannot_get_questions(): void
     {
-        $course = Course::query()->where('name', '網際系統設計 (資管)')->firstOrFail();
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資管')->firstOrFail();
         $this->makeChoiceQuestion($course);
 
         $this->withToken($this->studentToken())
@@ -150,7 +150,7 @@ class QuestionApiTest extends TestCase
 
     private function yingCourse(): Course
     {
-        return Course::query()->where('name', '網際系統設計 (資應)')->firstOrFail();
+        return Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
     }
 
     private function makeChoiceQuestion(Course $course): Question

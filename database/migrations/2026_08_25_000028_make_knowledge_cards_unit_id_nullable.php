@@ -11,6 +11,13 @@ return new class extends Migration
      */
     public function up(): void
     {
+        $unitId = collect(Schema::getColumns('knowledge_cards'))
+            ->firstWhere('name', 'unit_id');
+
+        if (($unitId['nullable'] ?? false) === true) {
+            return;
+        }
+
         Schema::table('knowledge_cards', function (Blueprint $table) {
             $table->dropForeign(['unit_id']);
         });

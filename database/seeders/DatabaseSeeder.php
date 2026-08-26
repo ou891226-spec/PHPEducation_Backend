@@ -40,22 +40,24 @@ class DatabaseSeeder extends Seeder
             'password' => $password,
             'student_no' => '1411131000',
             'name' => '王小明',
-            'class_name' => '資應二甲',
+            'class_name' => '資應',
             'email' => Student::emailFromStudentNo('1411131000'),
         ]);
 
         $courseYing = Course::query()->create([
             'teacher_id' => $teacherB->id,
-            'name' => '網際系統設計 (資應)',
+            'name' => '網際系統設計',
             'description' => '資應班網際系統設計課程',
             'semester' => '115-1',
+            'class_name' => '資應',
         ]);
 
         Course::query()->create([
             'teacher_id' => $teacherB->id,
-            'name' => '網際系統設計 (資管)',
+            'name' => '網際系統設計',
             'description' => '資管班網際系統設計課程',
             'semester' => '115-1',
+            'class_name' => '資管',
         ]);
 
         $student->courses()->attach($courseYing->id);

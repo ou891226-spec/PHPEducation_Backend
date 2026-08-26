@@ -2,36 +2,34 @@
 
 namespace App\Http\Requests;
 
-use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * 驗證教師提交學生帳號申請的請求資料
+ * 教師以 Excel 送出學生名冊（學號、姓名）。
  */
 class StoreStudentAccountApplicationRequest extends FormRequest
 {
-   
     public function authorize(): bool
     {
         return true;
     }
 
-    
     public function rules(): array
     {
         return [
-            //
             'tid' => ['required', 'integer', 'exists:teachers,id'],
-
             'course_id' => ['required', 'integer', 'exists:courses,id'],
-
-            'class_name' => ['required', 'string', 'max:255'],
-
-            'students' => ['required', 'array', 'min:1', 'max:50'],
-
-            'students.*.student_no' => ['required', 'string'],
-
-            'students.*.name' => ['required', 'string'],
+            'file' => ['required', 'file'],
         ];
+    }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator): void {
+            $file = $this->file('file');
+            if ($file !== null && strtolower($file->getClientOriginalExtension()) !== 'xlsx') {
+                $validator->errors()->add('file', '請上傳 xlsx 檔');
+            }
+        });
     }
 }
