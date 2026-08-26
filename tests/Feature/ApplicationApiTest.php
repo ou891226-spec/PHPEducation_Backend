@@ -379,6 +379,105 @@ class ApplicationApiTest extends TestCase
             ->assertNotFound();
     }
 
+    public function test_teacher_can_remove_pending_student_from_own_course(): void
+    {
+        $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
+
+        $application = StudentApplications::query()->create([
+            'tid' => $teacher->id,
+            'course_id' => $course->id,
+            'class_name' => '資應',
+            'status' => 'pending',
+        ]);
+
+        $item = StudentApplicationItems::query()->create([
+            'application_id' => $application->id,
+            'student_no' => '1411137701',
+            'name' => '待移除',
+            'status' => 'pending',
+        ]);
+
+        $token = $this->loginToken('teacher2@school.edu.tw');
+
+        $this->withToken($token)
+            ->deleteJson("/api/v1/teacher/courses/{$course->id}/student-applications/{$item->id}")
+            ->assertOk()
+            ->assertJsonPath('message', '已從課程移除');
+
+        $this->assertDatabaseMissing('student_application_items', ['id' => $item->id]);
+        $this->assertDatabaseMissing('student_applications', ['id' => $application->id]);
+    }
+
+    public function test_teacher_can_remove_approved_student_without_deleting_account(): void
+    {
+        $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
+        $student = Student::query()->where('student_no', '1411131000')->firstOrFail();
+
+        Enrollment::query()->firstOrCreate([
+            'student_id' => $student->id,
+            'course_id' => $course->id,
+        ]);
+
+        $application = StudentApplications::query()->create([
+            'tid' => $teacher->id,
+            'course_id' => $course->id,
+            'class_name' => '資應',
+            'status' => 'approved',
+        ]);
+
+        $item = StudentApplicationItems::query()->create([
+            'application_id' => $application->id,
+            'student_no' => $student->student_no,
+            'name' => $student->name,
+            'status' => 'approved',
+        ]);
+
+        $token = $this->loginToken('teacher2@school.edu.tw');
+
+        $this->withToken($token)
+            ->deleteJson("/api/v1/teacher/courses/{$course->id}/student-applications/{$item->id}")
+            ->assertOk();
+
+        $this->assertDatabaseMissing('student_application_items', ['id' => $item->id]);
+        $this->assertFalse(
+            Enrollment::query()
+                ->where('student_id', $student->id)
+                ->where('course_id', $course->id)
+                ->exists(),
+        );
+        $this->assertNotNull(Student::query()->whereKey($student->id)->first());
+    }
+
+    public function test_teacher_cannot_remove_student_from_other_teachers_course(): void
+    {
+        $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
+
+        $application = StudentApplications::query()->create([
+            'tid' => $teacher->id,
+            'course_id' => $course->id,
+            'class_name' => '資應',
+            'status' => 'pending',
+        ]);
+
+        $item = StudentApplicationItems::query()->create([
+            'application_id' => $application->id,
+            'student_no' => '1411137702',
+            'name' => '不該被刪',
+            'status' => 'pending',
+        ]);
+
+        $token = $this->loginToken('teacher@school.edu.tw');
+
+        $this->withToken($token)
+            ->deleteJson("/api/v1/teacher/courses/{$course->id}/student-applications/{$item->id}")
+            ->assertNotFound();
+
+        $this->assertDatabaseHas('student_application_items', ['id' => $item->id]);
+    }
+
     public function test_admin_can_approve_selected_new_student(): void
     {
         Mail::fake();

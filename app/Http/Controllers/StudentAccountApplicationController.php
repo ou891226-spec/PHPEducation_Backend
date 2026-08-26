@@ -121,6 +121,21 @@ class StudentAccountApplicationController extends Controller
     }
 
     /**
+     * 該課教師從名冊移除學生。
+     */
+    public function destroyForCourse(Request $request, int $courseId, int $itemId): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user instanceof Teacher, 403, 'Forbidden');
+
+        $this->studentAccountService->removeItemForCourse($user, $courseId, $itemId);
+
+        return response()->json([
+            'message' => '已從課程移除',
+        ]);
+    }
+
+    /**
      * 教師以 Excel 送出整班學生申請。班級取自課程。
      */
     public function store(StoreStudentAccountApplicationRequest $request): JsonResponse

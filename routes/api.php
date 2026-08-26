@@ -56,6 +56,7 @@ Route::prefix('v1')->group(function () {
             Route::get('courses/{courseId}/material-drafts', [MaterialDraftController::class, 'indexForCourse']);
             Route::get('courses/{courseId}/student-applications', [StudentAccountApplicationController::class, 'indexForCourse']);
             Route::post('courses/{courseId}/student-applications', [StudentAccountApplicationController::class, 'storeOneForCourse']);
+            Route::delete('courses/{courseId}/student-applications/{itemId}', [StudentAccountApplicationController::class, 'destroyForCourse']);
             Route::post('courses/{courseId}/material-drafts', [MaterialDraftController::class, 'storeFromPublished']);
 
             Route::post('material-drafts/{draftId}/topics', [MaterialDraftController::class, 'storeTopic']);

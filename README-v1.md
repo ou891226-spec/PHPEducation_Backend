@@ -608,6 +608,7 @@ Authorization: Bearer {token}
 GET  /teacher/student-applications/template
 POST /teacher/student-applications
 POST /teacher/courses/{courseId}/student-applications
+DELETE /teacher/courses/{courseId}/student-applications/{itemId}
 GET  /courses
 GET  /teacher/courses/{courseId}/student-applications
 GET  /student-applications
@@ -670,6 +671,16 @@ Request（JSON，建議）：
 也可只傳一筆：`student_no`、`name`（不必加 `s`）。
 
 成功回應 **201**，格式與上傳 Excel 相同。該課已有相同學號、學號重複、超過 100 人、或不是自己的課會 **422** / **404**。
+
+### DELETE `/api/v1/teacher/courses/{courseId}/student-applications/{itemId}`
+
+功能：該課教師從名冊移除一位學生。需要教師 Token。`itemId` 為名冊列的 `id`（`GET` 名冊回傳的 `items[].id`）。
+
+- 待開通：刪掉申請列
+- 已開通：取消這門課的選課，**帳號保留**（其他課不受影響）
+- 移除後同一學號可再加回這門課
+
+成功 **200**：`{ "message": "已從課程移除" }`。不是自己的課、或這列不屬於這門課 **404**。
 
 ### GET `/api/v1/courses`
 

@@ -5,6 +5,7 @@ use App\Models\StudentApplicationItems;
 use App\Models\Student;
 use App\Models\Course;
 use App\Models\Enrollment;
+use App\Models\Teacher;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -123,6 +124,55 @@ class StudentAccountService
             }
 
             return $application;
+        });
+    }
+
+    /**
+     * 該課教師從名冊移除學生。待開通刪申請列；已開通取消選課，帳號保留。
+     */
+    public function removeItemForCourse(Teacher $teacher, int $courseId, int $itemId): void
+    {
+        DB::transaction(function () use ($teacher, $courseId, $itemId) {
+            $course = Course::query()
+                ->whereKey($courseId)
+                ->where('teacher_id', $teacher->id)
+                ->firstOrFail();
+
+            $item = StudentApplicationItems::query()
+                ->with('application')
+                ->whereKey($itemId)
+                ->whereHas(
+                    'application',
+                    fn ($query) => $query->where('course_id', $course->id),
+                )
+                ->firstOrFail();
+
+            if ($item->status === 'approved') {
+                $student = Student::query()->where('student_no', $item->student_no)->first();
+                if ($student !== null) {
+                    Enrollment::query()
+                        ->where('student_id', $student->id)
+                        ->where('course_id', $course->id)
+                        ->delete();
+                }
+            }
+
+            $application = $item->application;
+            $item->delete();
+
+            if ($application === null) {
+                return;
+            }
+
+            if ($application->items()->doesntExist()) {
+                $application->delete();
+
+                return;
+            }
+
+            if (! $application->items()->where('status', 'pending')->exists()) {
+                $application->update(['status' => 'approved']);
+            }
         });
     }
 
