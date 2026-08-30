@@ -29,8 +29,13 @@ topics          → 主題（course_id → courses）
 chapters        → 章節（topic_id → topics）
 units           → 單元（chapter_id → chapters）
 knowledge_cards → 知識卡（unit_id → units）
-questions       → 題目（course_id → courses，teacher_id → teachers）
+questions       → 題目
+question_options → 選擇／是非選項
+question_sub_answers → 填空／除錯／解讀正解
 question_knowledge_cards → 題目 ↔ 知識卡
+question_records → 學生作答總表
+question_record_subs → 填空／除錯／解讀每一格作答
+bloom           → Bloom 編碼（出題 B11–B63）
 ```
 
 三者各自獨立儲存帳號與密碼，由 `AuthService` 依固定順序查詢並判斷 `role`。
@@ -54,10 +59,14 @@ app/
 │  ├─ Controllers/Api/V1/
 │  │  ├─ AuthController.php
 │  │  ├─ DashboardController.php
+│  │  ├─ StatsController.php
 │  │  ├─ Student/
-│  │  │  └─ MaterialController.php
+│  │  │  ├─ MaterialController.php
+│  │  │  └─ QuestionController.php
 │  │  └─ Teacher/
 │  │     ├─ CourseController.php
+│  │     ├─ QuestionController.php
+│  │     ├─ QuestionRecordController.php
 │  │     ├─ MaterialTemplateController.php
 │  │     ├─ StudentRosterTemplateController.php
 │  │     ├─ MaterialImportController.php
@@ -77,7 +86,8 @@ app/
 │
 ├─ Models/
 │  └─ Admin、Teacher、Student、Course、Enrollment、
-│     MaterialDraft、Topic、Chapter、Unit、KnowledgeCard
+│     MaterialDraft、Topic、Chapter、Unit、KnowledgeCard、
+│     Question、QuestionOption、QuestionSubAnswer、QuestionRecord、Bloom
 │
 ├─ Providers/
 │  └─ 服務提供者
@@ -90,6 +100,9 @@ app/
    ├─ ExcelStudentRosterParser.php
    ├─ MaterialDraftService.php
    ├─ StudentMaterialService.php
+   ├─ StudentQuestionService.php
+   ├─ TeacherQuestionService.php
+   ├─ TeacherQuestionRecordService.php
    ├─ StudentAccountService.php
    ├─ DashboardService.php
    └─ UserFormatterService.php
@@ -190,7 +203,7 @@ tests/
 |------|------|------|
 | id | bigint | 申請 ID（PK） |
 | tid | bigint | 教師 ID（FK → teachers.id，刪除教師時一併刪除） |
-| course_id | bigint | 課程 ID（規格的 Cid；FK → courses.id，刪除課程時一併刪除） |
+| course_id | bigint | 課程 ID（FK → courses.id，刪除課程時一併刪除） |
 | class_name | string | 申請班級（由課程 `class_name` 寫入） |
 | status | string | 申請狀態：`pending`（待審核）、`approved`（已通過），預設 `pending` |
 | created_at | timestamp | 建立時間 |
@@ -317,14 +330,14 @@ Seeder 已讓王小明選修「網際系統設計」（班級資應）。
 |------|------|------|
 | id | bigint | 知識卡 ID（PK） |
 | unit_id | bigint（可空） | 所屬單元 ID（FK → units.id）。有題目使用而從教材樹刪除時改為空，知識卡列會保留 |
-| title | string | 知識卡標題 |
+| title | string | 知識點名稱（例如 `變數`、`define()`） |
 | content | text | 知識卡內容 |
 | example | text | 知識卡範例（可空） |
 | sort_order | integer | 排序順序 |
 | created_at | timestamp | 建立時間 |
 | updated_at | timestamp | 更新時間 |
 
-例如：單元「1-1 PHP 是什麼」→ PHP 的定義、PHP 的用途、PHP 的特色。
+例如：單元「變數」→ 知識卡「變數」（內容與 `example` 程式範例）。出題下拉依教材**主題**分組，顯示知識點名稱，不顯示「說明」課文或 `實作變數01`。
 
 教材資料關聯：
 
@@ -347,10 +360,40 @@ questions ↔ knowledge_cards（question_knowledge_cards）
 | course_id | bigint | 所屬課程 ID（FK → courses.id） |
 | teacher_id | bigint | 建立教師 ID（FK → teachers.id） |
 | title | string | 題目標題 |
-| type | string | `choice`、`debug` 或 `coding` |
-| question_content | text | 題目內容 |
+| type | string | `choice`、`true_false`、`fill`、`debug`、`interpret`、`coding` |
+| question_content | text | 題目內容（填空用 `（1）`、`（2）` 標格子） |
+| bloom_id | string | 出題 Bloom（FK → bloom.id，可空） |
+| description | text | 要考學生什麼（可空） |
 | created_at | timestamp | 建立時間 |
 | updated_at | timestamp | 更新時間 |
+
+### bloom Bloom 編碼
+
+表名 `bloom`。出題下拉用 `B11`–`B63`（第一碼 Bloom 層級 1–6，第二碼 SOLO 1–3）。舊碼 `B1`–`B6` 仍留在表裡，給已存在的題。
+
+### question_options 選擇／是非
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 選項編號 |
+| question_id | bigint | 題目（FK → questions.id） |
+| title | string | 選項文字 |
+| description | text | 選項說明（nullable） |
+| is_answer | boolean | 是否正解 |
+| solo | tinyint | 正解 `2`、其餘 `1`（老師填正解即可，其餘自動帶 1） |
+
+### question_sub_answers 填空／除錯／解讀正解
+
+對應填空／除錯／解讀的每一格正解。填空：題幹 `（1）` ↔ `sub_id = 1`。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 子題正解編號 |
+| question_id | bigint | 題目（FK → questions.id） |
+| sub_id | int | 格子編號或行號 |
+| answer | text | 這一格的標準答案 |
+| description | text | 說明（nullable） |
+| solo | tinyint | 出題配分，預設 2 |
 
 ### question_knowledge_cards 題目與知識卡
 
@@ -365,6 +408,14 @@ questions ↔ knowledge_cards（question_knowledge_cards）
 | updated_at | timestamp | 更新時間 |
 
 同一題對同一張知識卡不可重複（`question_id` + `knowledge_card_id` unique）。刪題目時，對應關聯會一併刪除。刪知識卡時若仍有題目使用則拒絕；從教材樹刪除主題／章節／單元時，有題目使用的知識卡會保留（關聯不斷）。
+
+### question_records / question_record_subs 作答
+
+A 類（選擇／是非）只寫總表；B 類（填空／除錯／解讀）總表 + 每一格子表。
+
+`question_records.solo`：A 類錯 `1`、對 `2`。B 類總表全錯 `1`、部分對 `2`、全對 `3`（`result` 記 `correct`／`total`）。逐格答對抄 `question_sub_answers.solo`，答錯為 `1`。實作題由老師寫 `bloom_id` 再判定。
+
+`question_record_subs`：`question_record_id`、`sub_id`、`answer`（學生這格）、`is_right`、`solo`（對了抄正解，錯了為 1）。
 
 ### personal_access_tokens
 
@@ -482,8 +533,6 @@ Authorization: Bearer {token}
 
 ## 教師帳號申請
 
-資料表 `teacher_applications` 已建立。
-
 ```text
 POST /teacher-applications
 GET  /teacher-applications
@@ -596,13 +645,9 @@ Authorization: Bearer {token}
 | 404 | 申請不存在 |
 | 422 | 已處理完畢，或無法建立帳號 |
 
-前端使用者管理有「拒絕」，目前資料表沒有 `rejected` 狀態，拒絕 API 尚未定義。
-
 ---
 
 ## 學生帳號申請
-
-資料表 `student_applications`、`student_application_items` 已建立。
 
 ```text
 GET  /teacher/student-applications/template
@@ -980,7 +1025,9 @@ Authorization: Bearer {token}
 3. 未發布前學生仍看上一版。發布只合併這份 Draft 的主題：不同名並存，同名則更新那棵樹（知識卡 id 盡量保留）。舊 published 改 archived。
 4. 教材名稱只跟**未發布** Draft 重複才 422。草稿最後一個主題刪掉，整份 Draft 一併刪除，名稱可重用。列表皆新到舊，含 `created_at` / `updated_at`。
 
-Excel：一份檔一個主題（名稱用表單 `topic`）。第 1 列可寫 `教材名稱：…`（沒寫就用 `topic`）、第 2 列說明、第 3 列欄位、第 4 列範本不讀、第 5 列起才是內容。空白章節／單元沿用上一列。「範例」→ 知識卡 `example`（可空）；知識卡標題取內容前約 80 字。
+Excel：一份檔一個主題（名稱用表單 `topic`）。第 1 列可寫 `教材名稱：…`（沒寫就用 `topic`）、第 2 列說明、第 3 列欄位、第 4 列範本不讀、第 5 列起才是內容。空白章節／單元沿用上一列。
+
+知識卡是**知識點名稱**（例如 `變數命名原則`、`define()`），不是章名、也不是 `實作變數01`。`units` 請填知識點；`chapters` 只用來分組。Excel 若仍用「說明」當單元、用「實作變數01」當列名，匯入時會把說明當內容、把實作列併進同章知識卡的 `example`，知識卡標題收斂成知識點（例如 `變數`）。可另加 `知識點`／`知識卡標題` 欄覆寫名稱。「範例」→ 知識卡 `example`（可空）。
 
 ### 教材匯入範本
 
@@ -1038,7 +1085,7 @@ public/templates/material_import_template.xlsx
 | 已發布或已封存的 Draft 再改／再發布 | 422 |
 | 不是該課教師 | 404 |
 
-發布時：同課其他 `published` Draft 改成 `archived`，只同步這份樹裡的主題（同名或同正式 id 就更新，否則新增）。其他主題不動。已有題目關聯的知識卡不會刪。
+發布時：同課其他 `published` Draft 改成 `archived`，只同步這份樹裡的主題（同名或同正式 id 就更新，否則新增）。其他主題不動。草稿裡刪掉的章／單元會從正式樹拿掉；已有題目關聯的知識卡不會刪，改為脫離教材樹（`unit_id` 設為 null），與正式刪除相同。
 
 ### 學生教材（已發布、已選課）
 
@@ -1053,12 +1100,64 @@ public/templates/material_import_template.xlsx
 
 一層一層往下點，格式與教師列表相同（含 `item_count`、`created_at`、`updated_at`）。主題列表依最後更新時間新到舊。
 
-### 學生作答（一題一答）
-① 取得題目 → ② 選擇題單題作答 → ③ 除錯題單題作答 → ④ 實作題送出 → ⑤ AI 批改 → ⑥ 老師覆核 
+### 教師出題
 
-闖關範圍（單元或章節）尚未定，入口先依**課程**取題。可選 `?knowledge_card_id=` 只看某張知識卡關聯的題。未選課 **404**。非學生 **403**。
+題目掛在課程，再透過知識卡對教材。一題可掛多張卡。實作批改由老師輸入 Bloom，沒有自動 AI 批改。
 
-取題**不回傳正解**：選擇題沒有 `is_answer`；除錯題不給 `code_line`／`answer`；實作題不給 `ref_answer`／`ref_output`。
+| Method | URL | 說明 |
+|--------|-----|------|
+| GET | `/api/v1/teacher/blooms` | Bloom 對照（出題用 B11–B63） |
+| GET | `/api/v1/teacher/courses/{courseId}/knowledge-cards` | 該課知識點（依主題分組、去重；出題下拉） |
+| GET | `/api/v1/teacher/courses/{courseId}/questions` | 列出該課題目（含正解） |
+| POST | `/api/v1/teacher/courses/{courseId}/questions` | 新增題目 |
+| GET | `/api/v1/teacher/questions/{questionId}` | 單題（含正解） |
+| PUT | `/api/v1/teacher/questions/{questionId}` | 整題覆寫（含子項與知識卡） |
+| DELETE | `/api/v1/teacher/questions/{questionId}` | 刪題；已有作答紀錄則 **422** |
+
+不是該課教師 **404**。非教師 **403**。知識卡必須屬於此課（或已脫離教材樹但仍掛在此課題目上），否則 **422**。
+
+列表回傳 `questions`；單題 `question` 底下是 `options`、`sub_answers`、`knowledge_card_ids` / `knowledge_cards`。
+
+共通 Request：
+
+```json
+{
+  "title": "php註解",
+  "type": "choice",
+  "question_content": "PHP網頁的多行註解是用哪一個符號？",
+  "bloom_id": "B11",
+  "description": "可空",
+  "knowledge_card_ids": [4, 11]
+}
+```
+
+`type`：`choice`（選擇）、`true_false`（是非）、`fill`（填空）、`debug`（除錯）、`interpret`（解讀）、`coding`（實作）。`bloom_id` 用 `B11`–`B63`（大小寫皆可，`b11`＝`B11`）。舊碼 `B1`–`B6` 僅相容已存在的題。
+
+選擇／是非另帶 `options`（是非剛好 2 個，必須剛好一個 `is_answer: true`）。正解自動 `solo=2`，其餘 `solo=1`，前端不用傳 `solo`。
+
+```json
+{
+  "options": [
+    { "title": "/* */", "is_answer": true },
+    { "title": "//", "is_answer": false }
+  ]
+}
+```
+
+填空／除錯／解讀另帶 `sub_answers`。填空 `sub_id` 對題幹 `（1）（2）`。
+
+```json
+{
+  "sub_answers": [
+    { "sub_id": 1, "answer": "define" },
+    { "sub_id": 2, "answer": "PI" }
+  ]
+}
+```
+
+實作只建主檔與知識卡。學生交程式後，老師覆核時輸入 Bloom 編碼。
+
+學生取題依**課程**。未選課 **404**。非學生 **403**。取題不回正解。
 
 | Method | URL | 說明 |
 |--------|-----|------|
@@ -1066,39 +1165,18 @@ public/templates/material_import_template.xlsx
 | GET | `/api/v1/student/questions/{questionId}` | 取得單題 |
 | POST | `/api/v1/student/questions/{questionId}/submit` | 交卷 |
 
-選擇題 Request：`{ "option_id": 1 }`  
-成功時 `system_status` 為 `correct` 或 `wrong`，`explanation` 為正解選項的 `description`。`result` 存選項 ID。
-
-除錯題 Request：至少要有 `code_line` 或 `answer`（可同時傳）。後端比對 `debug_sub_info`，回傳 `system_status` 與 `description`。
-
-實作題 Request：`{ "code": "..." }`。只建紀錄，不批改。
-
-```json
-{
-  "message": "已提交",
-  "system_status": "pending",
-  "record": {
-    "id": 1,
-    "student_id": 1,
-    "question_id": 3,
-    "result": "<?php echo \"hi\";",
-    "question_mapping_id": 1,
-    "system_status": "pending",
-    "teacher_status": "pending"
-  }
-}
-```
-
-每次交卷都**新增**一筆 `question_records`（可重交）。Bloom/SOLO 使用該題第一筆映射；沒有映射會 **422**。`teacher_status` 交卷時一律 `pending`。
+選擇／是非：`{ "option_id": 1 }`  
+填空／除錯／解讀：`{ "answers": { "1": "define", "2": "PI" } }`（除錯也可 `code_line` + `answer`）  
+實作：`{ "code": "..." }`，`system_status` 為 `pending`，等老師輸入 `bloom_id`。
 
 ### 教師覆核作答
 
-只能看自己課程的紀錄。非該課教師 **404**。還未做 AI 批改。
+實作題：學生交程式後，老師選 Bloom（`{ "bloom_id": "B42" }`，大小寫皆可）。後端比對第一碼（Bloom 1–6）：老師給的 ≥ 出題 Bloom → `solo=2` 對，否則 `solo=1` 錯。只能看自己課程的紀錄，非該課教師 **404**。
 
 | Method | URL | 說明 |
 |--------|-----|------|
-| GET | `/api/v1/teacher/courses/{courseId}/question-records` | 列出該課學生作答 |
-| PUT | `/api/v1/teacher/question-records/{recordId}` | 覆核 `teacher_status`：`correct` 或 `wrong` |
+| GET | `/api/v1/teacher/courses/{courseId}/question-records` | 列出該課學生作答（`records`，含子項 `subs`） |
+| PUT | `/api/v1/teacher/question-records/{recordId}` | 實作：`bloom_id`；其餘：`solo` 1 錯／2 對 |
 
 ### topics 主題
 
@@ -1150,6 +1228,7 @@ Request 同主題。`item_count` 為底下知識卡數量。
 
 | Method | URL | 說明 |
 |--------|-----|------|
+| GET | `/api/v1/teacher/courses/{courseId}/knowledge-cards` | 該課出題用知識點（依主題去重） |
 | GET | `/api/v1/teacher/units/{unitId}/knowledge-cards` | 列出該單元的知識卡 |
 | POST | `/api/v1/teacher/units/{unitId}/knowledge-cards` | 新增知識卡 |
 | PUT | `/api/v1/teacher/knowledge-cards/{cardId}` | 修改知識卡 |
@@ -1159,7 +1238,7 @@ Request（新增／修改）：
 
 ```json
 {
-  "title": "PHP 變數介紹",
+  "title": "變數",
   "content": "變數是用來儲存資料的容器，PHP 使用 $ 符號宣告變數。",
   "example": "$name = \"PHP\";",
   "sort_order": 1
@@ -1212,24 +1291,21 @@ Seeder 已為 `teacher2`（陳老師）建立兩門「網際系統設計」（�
 
 開發環境使用 MySQL。請先確認 MySQL 已啟動，並建立資料庫 `php_education`。
 
-```text
-資料庫在這裡
-database/sql/php_education.sql
-```
-
 ```bash
 composer install
 copy .env.example .env
 php artisan key:generate
 ```
 
-接著記得編輯 `.env` 的資料庫帳密（`DB_USERNAME`、`DB_PASSWORD`），再執行：
+接著編輯 `.env` 的資料庫帳密（`DB_USERNAME`、`DB_PASSWORD`），再執行：
 
 ```bash
+php artisan migrate
+php artisan db:seed
 php artisan serve
 ```
 
-SQL 裡已經有資料表和測試帳號
+測試帳號見上方。
 
 API 網址：
 

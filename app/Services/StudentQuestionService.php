@@ -5,9 +5,11 @@ namespace App\Services;
 use App\Models\Question;
 use App\Models\QuestionOption;
 use App\Models\QuestionRecord;
+use App\Models\QuestionSubAnswer;
 use App\Models\Student;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class StudentQuestionService
@@ -21,7 +23,7 @@ class StudentQuestionService
 
         $query = Question::query()
             ->where('course_id', $courseId)
-            ->with(['options', 'knowledgeCards:id'])
+            ->with(['options', 'subAnswers', 'knowledgeCards:id,title,example'])
             ->orderBy('id');
 
         if ($knowledgeCardId !== null) {
@@ -38,9 +40,7 @@ class StudentQuestionService
      */
     public function findForStudent(Student $student, int $questionId): array
     {
-        $question = $this->enrolledQuestion($student, $questionId);
-
-        return $this->formatQuestionForStudent($question);
+        return $this->formatQuestionForStudent($this->enrolledQuestion($student, $questionId));
     }
 
     /**
@@ -50,12 +50,11 @@ class StudentQuestionService
     public function submit(Student $student, int $questionId, array $data): array
     {
         $question = $this->enrolledQuestion($student, $questionId);
-        $mappingId = $this->mappingId($question);
 
         return match ($question->type) {
-            Question::TYPE_CHOICE => $this->submitChoice($student, $question, $mappingId, $data),
-            Question::TYPE_DEBUG => $this->submitDebug($student, $question, $mappingId, $data),
-            Question::TYPE_CODING => $this->submitCoding($student, $question, $mappingId, $data),
+            Question::TYPE_CHOICE, Question::TYPE_TRUE_FALSE => $this->submitChoice($student, $question, $data),
+            Question::TYPE_FILL, Question::TYPE_DEBUG, Question::TYPE_INTERPRET => $this->submitSubAnswers($student, $question, $data),
+            Question::TYPE_CODING => $this->submitCoding($student, $question, $data),
             default => throw ValidationException::withMessages([
                 'type' => ['不支援的題型。'],
             ]),
@@ -66,12 +65,12 @@ class StudentQuestionService
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
-    private function submitChoice(Student $student, Question $question, int $mappingId, array $data): array
+    private function submitChoice(Student $student, Question $question, array $data): array
     {
         $optionId = $data['option_id'] ?? null;
         if ($optionId === null) {
             throw ValidationException::withMessages([
-                'option_id' => ['選擇題請傳送 option_id。'],
+                'option_id' => ['選擇／是非題請傳送 option_id。'],
             ]);
         }
 
@@ -90,7 +89,6 @@ class StudentQuestionService
         $record = $this->storeRecord(
             $student,
             $question,
-            $mappingId,
             (string) $option->id,
             $correct ? QuestionRecord::STATUS_CORRECT : QuestionRecord::STATUS_WRONG,
         );
@@ -109,57 +107,107 @@ class StudentQuestionService
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
-    private function submitDebug(Student $student, Question $question, int $mappingId, array $data): array
+    private function submitSubAnswers(Student $student, Question $question, array $data): array
     {
-        $hasLine = array_key_exists('code_line', $data) && $data['code_line'] !== null && $data['code_line'] !== '';
-        $hasAnswer = array_key_exists('answer', $data) && $data['answer'] !== null && $data['answer'] !== '';
-
-        if (! $hasLine && ! $hasAnswer) {
+        $submitted = $this->submittedSubAnswers($data);
+        if ($submitted === []) {
             throw ValidationException::withMessages([
-                'code_line' => ['除錯題請傳送 code_line 或 answer。'],
+                'answers' => ['請傳送 answers，或 code_line／answer。'],
             ]);
         }
 
-        $subInfo = $question->debugSubInfo;
-        if ($subInfo === null) {
+        $keys = $question->subAnswers;
+        if ($keys->isEmpty()) {
             throw ValidationException::withMessages([
-                'question_id' => ['此題尚未設定除錯資訊。'],
+                'question_id' => ['此題尚未設定子題答案。'],
             ]);
         }
 
-        $lineOk = ! $hasLine || (int) $data['code_line'] === (int) $subInfo->code_line;
-        $answerOk = ! $hasAnswer || trim((string) $data['answer']) === trim((string) $subInfo->answer);
-        $correct = $lineOk && $answerOk;
+        $record = DB::transaction(function () use ($student, $question, $submitted, $keys): QuestionRecord {
+            $correctCount = 0;
+            $rows = [];
 
-        $payload = [];
-        if ($hasLine) {
-            $payload['code_line'] = (int) $data['code_line'];
-        }
-        if ($hasAnswer) {
-            $payload['answer'] = (string) $data['answer'];
-        }
+            foreach ($keys as $key) {
+                $studentAnswer = $submitted[$key->sub_id] ?? '';
+                $isRight = $studentAnswer !== '' && trim($studentAnswer) === trim((string) $key->answer);
+                if ($isRight) {
+                    $correctCount++;
+                }
 
-        $record = $this->storeRecord(
-            $student,
-            $question,
-            $mappingId,
-            json_encode($payload, JSON_UNESCAPED_UNICODE),
-            $correct ? QuestionRecord::STATUS_CORRECT : QuestionRecord::STATUS_WRONG,
-        );
+                $rows[] = [
+                    'sub_id' => $key->sub_id,
+                    'answer' => $studentAnswer,
+                    'is_right' => $isRight,
+                    'solo' => $isRight ? (int) $key->solo : QuestionSubAnswer::SOLO_WRONG,
+                ];
+            }
+
+            $total = $keys->count();
+            $allCorrect = $correctCount === $total;
+            $parentSolo = $correctCount === 0
+                ? QuestionRecord::SOLO_WRONG
+                : ($allCorrect ? QuestionRecord::SOLO_ALL_CORRECT : QuestionRecord::SOLO_PARTIAL);
+
+            $record = $this->storeRecord(
+                $student,
+                $question,
+                json_encode([
+                    'correct' => $correctCount,
+                    'total' => $total,
+                    'answers' => $submitted,
+                ], JSON_UNESCAPED_UNICODE),
+                $allCorrect ? QuestionRecord::STATUS_CORRECT : QuestionRecord::STATUS_WRONG,
+                $parentSolo,
+            );
+            $record->subs()->createMany($rows);
+
+            return $record->load('subs');
+        });
 
         return [
-            'message' => $correct ? '正確' : '錯誤',
+            'message' => $record->system_status === QuestionRecord::STATUS_CORRECT ? '正確' : '錯誤',
             'record' => $this->formatRecord($record),
             'system_status' => $record->system_status,
-            'description' => $subInfo->description,
+            'description' => $keys->first()?->description,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<int, string>
+     */
+    private function submittedSubAnswers(array $data): array
+    {
+        $submitted = [];
+
+        if (isset($data['answers']) && is_array($data['answers'])) {
+            foreach ($data['answers'] as $subId => $answer) {
+                if (is_array($answer)) {
+                    $subId = $answer['sub_id'] ?? null;
+                    $answer = $answer['answer'] ?? null;
+                }
+                if ($subId === null || $answer === null || $answer === '') {
+                    continue;
+                }
+                $submitted[(int) $subId] = (string) $answer;
+            }
+        }
+
+        $hasLine = array_key_exists('code_line', $data) && $data['code_line'] !== null && $data['code_line'] !== '';
+        $hasAnswer = array_key_exists('answer', $data) && $data['answer'] !== null && $data['answer'] !== '';
+        if ($hasLine || $hasAnswer) {
+            $subId = $hasLine ? (int) $data['code_line'] : 1;
+            $submitted[$subId] = $hasAnswer ? (string) $data['answer'] : '';
+        }
+
+        return $submitted;
     }
 
     /**
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
-    private function submitCoding(Student $student, Question $question, int $mappingId, array $data): array
+    private function submitCoding(Student $student, Question $question, array $data): array
     {
         $code = $data['code'] ?? null;
         if (! is_string($code) || trim($code) === '') {
@@ -171,10 +219,11 @@ class StudentQuestionService
         $record = $this->storeRecord(
             $student,
             $question,
-            $mappingId,
             $code,
             QuestionRecord::STATUS_PENDING,
         );
+
+        $this->gradeCodingByAi($question, $record);
 
         return [
             'message' => '已提交',
@@ -183,39 +232,38 @@ class StudentQuestionService
         ];
     }
 
+    /**
+     * 實作題 AI 批改預留。尚未提供題目範例，目前不執行；先由老師輸入 Bloom 判定。
+     */
+    private function gradeCodingByAi(Question $question, QuestionRecord $record): void
+    {
+        //
+    }
+
     private function storeRecord(
         Student $student,
         Question $question,
-        int $mappingId,
         string $result,
         string $systemStatus,
+        ?int $solo = null,
     ): QuestionRecord {
         return QuestionRecord::query()->create([
             'student_id' => $student->id,
             'question_id' => $question->id,
             'result' => $result,
-            'question_mapping_id' => $mappingId,
             'system_status' => $systemStatus,
             'teacher_status' => QuestionRecord::STATUS_PENDING,
+            'solo' => $solo ?? match ($systemStatus) {
+                QuestionRecord::STATUS_CORRECT => QuestionRecord::SOLO_CORRECT,
+                QuestionRecord::STATUS_WRONG => QuestionRecord::SOLO_WRONG,
+                default => null,
+            },
         ]);
-    }
-
-    private function mappingId(Question $question): int
-    {
-        $mapping = $question->bloomSoloMappings()->orderBy('id')->first();
-        if ($mapping === null) {
-            throw ValidationException::withMessages([
-                'question_id' => ['此題尚未設定 Bloom/SOLO。'],
-            ]);
-        }
-
-        return (int) $mapping->id;
     }
 
     private function enrolledCourseId(Student $student, int $courseId): int
     {
-        $enrolled = $student->courses()->where('courses.id', $courseId)->exists();
-        if (! $enrolled) {
+        if (! $student->courses()->where('courses.id', $courseId)->exists()) {
             throw new ModelNotFoundException();
         }
 
@@ -225,7 +273,7 @@ class StudentQuestionService
     private function enrolledQuestion(Student $student, int $questionId): Question
     {
         $question = Question::query()
-            ->with(['options', 'debugSubInfo', 'knowledgeCards:id'])
+            ->with(['options', 'subAnswers', 'knowledgeCards:id,title,example'])
             ->whereKey($questionId)
             ->first();
 
@@ -249,10 +297,18 @@ class StudentQuestionService
             'title' => $question->title,
             'type' => $question->type,
             'question_content' => $question->question_content,
+            'bloom_id' => $question->bloom_id,
+            'description' => $question->description,
             'knowledge_card_ids' => $question->knowledgeCards->pluck('id')->values()->all(),
+            'examples' => $question->knowledgeCards
+                ->pluck('example')
+                ->filter(fn ($example) => is_string($example) && $example !== '')
+                ->unique()
+                ->values()
+                ->all(),
         ];
 
-        if ($question->type === Question::TYPE_CHOICE) {
+        if ($question->usesOptions()) {
             $payload['options'] = $question->options
                 ->map(fn (QuestionOption $option) => [
                     'id' => $option->id,
@@ -261,6 +317,10 @@ class StudentQuestionService
                 ])
                 ->values()
                 ->all();
+        }
+
+        if ($question->usesSubAnswers()) {
+            $payload['sub_ids'] = $question->subAnswers->pluck('sub_id')->values()->all();
         }
 
         return $payload;
@@ -275,10 +335,35 @@ class StudentQuestionService
             'id' => $record->id,
             'student_id' => $record->student_id,
             'question_id' => $record->question_id,
-            'result' => $record->result,
-            'question_mapping_id' => $record->question_mapping_id,
+            'result' => $this->formatStoredResult($record->result),
+            'solo' => $record->solo,
             'system_status' => $record->system_status,
             'teacher_status' => $record->teacher_status,
+            'subs' => $record->subs
+                ->map(fn ($sub) => [
+                    'id' => $sub->id,
+                    'sub_id' => $sub->sub_id,
+                    'answer' => $sub->answer,
+                    'is_right' => (bool) $sub->is_right,
+                    'solo' => (int) $sub->solo,
+                ])
+                ->values()
+                ->all(),
         ];
+    }
+
+    private function formatStoredResult(?string $result): mixed
+    {
+        if ($result === null || $result === '') {
+            return $result;
+        }
+
+        if (! str_starts_with(ltrim($result), '{') && ! str_starts_with(ltrim($result), '[')) {
+            return $result;
+        }
+
+        $decoded = json_decode($result, true);
+
+        return json_last_error() === JSON_ERROR_NONE ? $decoded : $result;
     }
 }

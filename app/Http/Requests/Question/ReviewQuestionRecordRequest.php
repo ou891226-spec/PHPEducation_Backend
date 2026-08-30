@@ -13,13 +13,24 @@ class ReviewQuestionRecordRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $bloomId = $this->input('bloom_id');
+        if (is_string($bloomId)) {
+            $this->merge([
+                'bloom_id' => strtoupper(trim($bloomId)),
+            ]);
+        }
+    }
+
     public function rules(): array
     {
         return [
-            'teacher_status' => ['required', 'string', Rule::in([
-                QuestionRecord::STATUS_CORRECT,
-                QuestionRecord::STATUS_WRONG,
+            'solo' => ['nullable', 'integer', Rule::in([
+                QuestionRecord::SOLO_WRONG,
+                QuestionRecord::SOLO_CORRECT,
             ])],
+            'bloom_id' => ['nullable', 'string', 'exists:bloom,id'],
         ];
     }
 }

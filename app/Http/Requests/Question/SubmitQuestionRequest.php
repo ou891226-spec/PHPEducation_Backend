@@ -17,6 +17,7 @@ class SubmitQuestionRequest extends FormRequest
             'option_id' => ['sometimes', 'nullable', 'integer'],
             'code_line' => ['sometimes', 'nullable', 'integer'],
             'answer' => ['sometimes', 'nullable', 'string'],
+            'answers' => ['sometimes', 'nullable', 'array'],
             'code' => ['sometimes', 'nullable', 'string'],
         ];
     }

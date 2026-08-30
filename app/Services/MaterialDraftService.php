@@ -837,6 +837,8 @@ class MaterialDraftService
     private function tryDeleteCard(KnowledgeCard $card): void
     {
         if ($card->questions()->exists()) {
+            $card->update(['unit_id' => null]);
+
             return;
         }
 

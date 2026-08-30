@@ -40,8 +40,41 @@ class MaterialDraftApiTest extends TestCase
             ->assertJsonPath('draft.topics.0.name', 'PHP 基礎')
             ->assertJsonCount(1, 'draft.topics')
             ->assertJsonPath('draft.topics.0.chapters.0.units.0.name', '變數')
+            ->assertJsonPath('draft.topics.0.chapters.0.units.0.knowledge_cards.0.title', '變數')
             ->assertJsonPath('draft.topics.0.chapters.0.units.0.knowledge_cards.0.example', '$name = "PHP";')
             ->assertJsonCount(2, 'draft.topics.0.chapters.0.units');
+    }
+
+    public function test_import_folds_instruction_and_practice_rows_into_concept_cards(): void
+    {
+        $path = $this->xlsxPath([
+            ['chapters', 'units', 'knowledge_card', '範例'],
+            ['第一章 PHP 簡介', '說明', '變數是用來儲存資料的容器。', ''],
+            ['第一章 PHP 簡介', '實作變數01', '', '$name = "小明";'],
+            ['第一章 PHP 簡介', '實作變數02', '', '$age = 21;'],
+            ['第二章 運算子', '說明', '比較運算子用來比大小。', ''],
+            ['第二章 運算子', '實作比較01', '', '1 == "1";'],
+        ]);
+
+        $token = $this->loginToken('teacher2@school.edu.tw');
+        $course = $this->yingCourse();
+
+        $response = $this->withToken($token)
+            ->withHeader('Accept', 'application/json')
+            ->post(
+                "/api/v1/teacher/courses/{$course->id}/materials/import",
+                ['topic' => 'PHP 基礎', 'file' => $this->upload($path)],
+            );
+
+        $response->assertCreated()
+            ->assertJsonCount(2, 'draft.topics.0.chapters')
+            ->assertJsonCount(1, 'draft.topics.0.chapters.0.units')
+            ->assertJsonPath('draft.topics.0.chapters.0.units.0.name', '變數')
+            ->assertJsonPath('draft.topics.0.chapters.0.units.0.knowledge_cards.0.title', '變數')
+            ->assertJsonPath('draft.topics.0.chapters.0.units.0.knowledge_cards.0.content', '變數是用來儲存資料的容器。')
+            ->assertJsonPath('draft.topics.0.chapters.0.units.0.knowledge_cards.0.example', '$name = "小明";'."\n\n".'$age = 21;')
+            ->assertJsonPath('draft.topics.0.chapters.1.units.0.name', '比較')
+            ->assertJsonPath('draft.topics.0.chapters.1.units.0.knowledge_cards.0.title', '比較');
     }
 
     public function test_template_only_example_rows_are_rejected(): void
@@ -570,6 +603,75 @@ class MaterialDraftApiTest extends TestCase
         $this->assertSame('變數是容器（已改）。', KnowledgeCard::query()->value('content'));
         $this->assertTrue($question->knowledgeCards()->whereKey($card->id)->exists());
         $this->assertSame(1, Topic::query()->where('course_id', $course->id)->count());
+    }
+
+    public function test_publish_removing_chapter_detaches_question_linked_cards(): void
+    {
+        $path = $this->xlsxPath([
+            ['chapters', 'units', 'knowledge_card', '範例'],
+            ['第一章 留下', '變數', '留下的內容', ''],
+            ['第二章 會刪', '比較', '會刪的內容', ''],
+        ]);
+
+        $teacherToken = $this->loginToken('teacher2@school.edu.tw');
+        $course = $this->yingCourse();
+
+        $draft = $this->withToken($teacherToken)
+            ->withHeader('Accept', 'application/json')
+            ->post(
+                "/api/v1/teacher/courses/{$course->id}/materials/import",
+                ['topic' => 'PHP 基礎', 'file' => $this->upload($path)],
+            )->json('draft');
+
+        $this->withToken($teacherToken)
+            ->postJson("/api/v1/teacher/material-drafts/{$draft['id']}/publish")
+            ->assertOk();
+
+        $topic = Topic::query()
+            ->where('course_id', $course->id)
+            ->where('name', 'PHP 基礎')
+            ->with('chapters.units.knowledgeCards')
+            ->firstOrFail();
+        $this->assertCount(2, $topic->chapters);
+
+        $keptChapter = $topic->chapters->firstWhere('name', '第一章 留下');
+        $removedChapter = $topic->chapters->firstWhere('name', '第二章 會刪');
+        $this->assertNotNull($keptChapter);
+        $this->assertNotNull($removedChapter);
+        $removedCard = $removedChapter->units->first()->knowledgeCards->first();
+
+        $question = Question::query()->create([
+            'course_id' => $course->id,
+            'teacher_id' => $course->teacher_id,
+            'title' => '比較題',
+            'type' => Question::TYPE_CHOICE,
+            'question_content' => '題幹',
+        ]);
+        $question->knowledgeCards()->attach($removedCard->id);
+
+        $next = $this->withToken($teacherToken)
+            ->postJson("/api/v1/teacher/courses/{$course->id}/material-drafts", [
+                'topic_id' => $topic->id,
+            ])
+            ->assertCreated()
+            ->json('draft');
+
+        $chapterToDelete = collect($next['topics'][0]['chapters'])->firstWhere('name', '第二章 會刪');
+        $this->withToken($teacherToken)
+            ->deleteJson("/api/v1/teacher/material-drafts/{$next['id']}/chapters/{$chapterToDelete['id']}")
+            ->assertOk();
+
+        $this->withToken($teacherToken)
+            ->postJson("/api/v1/teacher/material-drafts/{$next['id']}/publish")
+            ->assertOk();
+
+        $this->assertDatabaseMissing('chapters', ['id' => $removedChapter->id]);
+        $this->assertDatabaseHas('chapters', ['id' => $keptChapter->id]);
+        $this->assertDatabaseHas('knowledge_cards', [
+            'id' => $removedCard->id,
+            'unit_id' => null,
+        ]);
+        $this->assertTrue($question->knowledgeCards()->whereKey($removedCard->id)->exists());
     }
 
     public function test_draft_list_returns_newest_first_with_timestamps(): void

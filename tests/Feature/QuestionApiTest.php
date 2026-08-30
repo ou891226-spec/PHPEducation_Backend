@@ -3,12 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\Course;
-use App\Models\DebugSubInfo;
 use App\Models\KnowledgeCard;
 use App\Models\Question;
-use App\Models\QuestionBloomSoloMapping;
 use App\Models\QuestionOption;
 use App\Models\QuestionRecord;
+use App\Models\QuestionSubAnswer;
 use App\Models\Teacher;
 use App\Models\Unit;
 use Database\Seeders\DatabaseSeeder;
@@ -31,14 +30,16 @@ class QuestionApiTest extends TestCase
         $response->assertOk()
             ->assertJsonCount(3, 'questions')
             ->assertJsonMissingPath('questions.0.options.0.is_answer')
-            ->assertJsonMissing(['code_line', 'ref_answer', 'ref_output']);
+            ->assertJsonMissing(['answer', 'solo']);
 
         $show = $this->withToken($this->studentToken())
             ->getJson("/api/v1/student/questions/{$choice->id}");
 
         $show->assertOk()
             ->assertJsonPath('question.type', Question::TYPE_CHOICE)
-            ->assertJsonMissingPath('question.options.0.is_answer');
+            ->assertJsonMissingPath('question.options.0.is_answer')
+            ->assertJsonPath('question.examples.0', '$name = "PHP";')
+            ->assertJsonPath('question.description', '能否辨識 PHP 變數');
     }
 
     public function test_unenrolled_student_cannot_get_questions(): void
@@ -87,7 +88,56 @@ class QuestionApiTest extends TestCase
             ])
             ->assertOk()
             ->assertJsonPath('system_status', QuestionRecord::STATUS_CORRECT)
-            ->assertJsonPath('description', '漏了錢字號');
+            ->assertJsonPath('description', '漏了錢字號')
+            ->assertJsonPath('record.subs.0.sub_id', 3)
+            ->assertJsonPath('record.subs.0.is_right', true)
+            ->assertJsonPath('record.solo', QuestionRecord::SOLO_ALL_CORRECT);
+
+        $this->assertDatabaseHas('question_record_subs', [
+            'sub_id' => 3,
+            'answer' => '$name = "Ada";',
+            'is_right' => 1,
+        ]);
+    }
+
+    public function test_fill_parent_solo_is_wrong_partial_or_all_correct(): void
+    {
+        $question = $this->makeQuestion($this->yingCourse(), Question::TYPE_FILL, 'PI常數');
+        QuestionSubAnswer::query()->create([
+            'question_id' => $question->id,
+            'sub_id' => 1,
+            'answer' => 'define',
+            'solo' => QuestionSubAnswer::SOLO_CORRECT,
+        ]);
+        QuestionSubAnswer::query()->create([
+            'question_id' => $question->id,
+            'sub_id' => 2,
+            'answer' => 'PI',
+            'solo' => QuestionSubAnswer::SOLO_CORRECT,
+        ]);
+
+        $this->withToken($this->studentToken())
+            ->postJson("/api/v1/student/questions/{$question->id}/submit", [
+                'answers' => ['1' => 'x', '2' => 'y'],
+            ])
+            ->assertOk()
+            ->assertJsonPath('record.solo', QuestionRecord::SOLO_WRONG);
+
+        $this->withToken($this->studentToken())
+            ->postJson("/api/v1/student/questions/{$question->id}/submit", [
+                'answers' => ['1' => 'define', '2' => 'y'],
+            ])
+            ->assertOk()
+            ->assertJsonPath('record.solo', QuestionRecord::SOLO_PARTIAL)
+            ->assertJsonPath('record.result.correct', 1)
+            ->assertJsonPath('record.result.total', 2);
+
+        $this->withToken($this->studentToken())
+            ->postJson("/api/v1/student/questions/{$question->id}/submit", [
+                'answers' => ['1' => 'define', '2' => 'PI'],
+            ])
+            ->assertOk()
+            ->assertJsonPath('record.solo', QuestionRecord::SOLO_ALL_CORRECT);
     }
 
     public function test_student_can_submit_coding_question_as_pending(): void
@@ -127,10 +177,10 @@ class QuestionApiTest extends TestCase
 
         $this->withToken($teacherToken)
             ->putJson("/api/v1/teacher/question-records/{$recordId}", [
-                'teacher_status' => QuestionRecord::STATUS_WRONG,
+                'solo' => QuestionRecord::SOLO_WRONG,
             ])
             ->assertOk()
-            ->assertJsonPath('record.teacher_status', QuestionRecord::STATUS_WRONG);
+            ->assertJsonPath('record.solo', QuestionRecord::SOLO_WRONG);
 
         $this->withToken($this->loginToken('teacher@school.edu.tw'))
             ->getJson("/api/v1/teacher/courses/{$course->id}/question-records")
@@ -161,12 +211,14 @@ class QuestionApiTest extends TestCase
             'title' => 'A',
             'description' => '變數用來存放資料',
             'is_answer' => true,
+            'solo' => QuestionOption::SOLO_CORRECT,
         ]);
         QuestionOption::query()->create([
             'question_id' => $question->id,
             'title' => 'B',
             'description' => '這不是正解',
             'is_answer' => false,
+            'solo' => QuestionOption::SOLO_WRONG,
         ]);
 
         return $question->load('options');
@@ -175,25 +227,20 @@ class QuestionApiTest extends TestCase
     private function makeDebugQuestion(Course $course): Question
     {
         $question = $this->makeQuestion($course, Question::TYPE_DEBUG, '找出語法錯誤');
-        DebugSubInfo::query()->create([
+        QuestionSubAnswer::query()->create([
             'question_id' => $question->id,
-            'code_line' => 3,
+            'sub_id' => 3,
             'answer' => '$name = "Ada";',
             'description' => '漏了錢字號',
+            'solo' => QuestionSubAnswer::SOLO_CORRECT,
         ]);
 
-        return $question->load('debugSubInfo');
+        return $question->load('subAnswers');
     }
 
     private function makeCodingQuestion(Course $course): Question
     {
-        $question = $this->makeQuestion($course, Question::TYPE_CODING, '輸出 hello');
-        $question->codingSubInfo()->create([
-            'ref_answer' => 'echo "hello";',
-            'ref_output' => 'hello',
-        ]);
-
-        return $question;
+        return $this->makeQuestion($course, Question::TYPE_CODING, '輸出 hello');
     }
 
     private function makeQuestion(Course $course, string $type, string $title): Question
@@ -205,18 +252,15 @@ class QuestionApiTest extends TestCase
             'title' => $title,
             'type' => $type,
             'question_content' => $title.' 的題幹',
-        ]);
-
-        QuestionBloomSoloMapping::query()->create([
-            'question_id' => $question->id,
             'bloom_id' => 'B1',
-            'solo_id' => 'S2',
+            'description' => '能否辨識 PHP 變數',
         ]);
 
         $card = KnowledgeCard::query()->create([
             'unit_id' => $this->ensureUnit($course)->id,
             'title' => '卡片 '.$title,
             'content' => '內容',
+            'example' => '$name = "PHP";',
             'sort_order' => 1,
         ]);
         $question->knowledgeCards()->attach($card->id);
@@ -255,7 +299,7 @@ class QuestionApiTest extends TestCase
 
     private function studentToken(): string
     {
-        return $this->loginToken('s1411131000');
+        return $this->loginToken('1411131000');
     }
 
     private function loginToken(string $account): string

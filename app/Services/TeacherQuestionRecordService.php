@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Question;
 use App\Models\QuestionRecord;
 use App\Models\Teacher;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -17,7 +18,7 @@ class TeacherQuestionRecordService
         $this->ownedCourse($teacher, $courseId);
 
         return QuestionRecord::query()
-            ->with(['student', 'question', 'mapping'])
+            ->with(['student', 'question', 'subs'])
             ->whereHas('question', fn ($query) => $query->where('course_id', $courseId))
             ->orderByDesc('id')
             ->get()
@@ -26,18 +27,13 @@ class TeacherQuestionRecordService
     }
 
     /**
+     * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
-    public function review(Teacher $teacher, int $recordId, string $teacherStatus): array
+    public function review(Teacher $teacher, int $recordId, array $data): array
     {
-        if (! in_array($teacherStatus, [QuestionRecord::STATUS_CORRECT, QuestionRecord::STATUS_WRONG], true)) {
-            throw ValidationException::withMessages([
-                'teacher_status' => ['只能為 correct 或 wrong。'],
-            ]);
-        }
-
         $record = QuestionRecord::query()
-            ->with(['student', 'question', 'mapping'])
+            ->with(['student', 'question', 'subs'])
             ->whereKey($recordId)
             ->whereHas('question.course', fn ($query) => $query->where('teacher_id', $teacher->id))
             ->first();
@@ -46,9 +42,38 @@ class TeacherQuestionRecordService
             throw new ModelNotFoundException();
         }
 
-        $record->update(['teacher_status' => $teacherStatus]);
+        if ($record->question?->type === Question::TYPE_CODING) {
+            $bloomId = $data['bloom_id'] ?? null;
+            if (! is_string($bloomId) || $bloomId === '') {
+                throw ValidationException::withMessages([
+                    'bloom_id' => ['實作題請輸入 Bloom 編碼。'],
+                ]);
+            }
 
-        return $this->formatRecord($record->fresh(['student', 'question', 'mapping']));
+            $passed = $this->bloomMeetsRequirement($bloomId, $record->question?->bloom_id);
+            $record->update([
+                'bloom_id' => $bloomId,
+                'solo' => $passed ? QuestionRecord::SOLO_CORRECT : QuestionRecord::SOLO_WRONG,
+                'system_status' => $passed ? QuestionRecord::STATUS_CORRECT : QuestionRecord::STATUS_WRONG,
+                'teacher_status' => $passed ? QuestionRecord::STATUS_CORRECT : QuestionRecord::STATUS_WRONG,
+            ]);
+        } else {
+            $solo = $data['solo'] ?? null;
+            if (! in_array($solo, [QuestionRecord::SOLO_WRONG, QuestionRecord::SOLO_CORRECT], true)) {
+                throw ValidationException::withMessages([
+                    'solo' => ['請輸入 1（錯）或 2（對）。'],
+                ]);
+            }
+
+            $record->update([
+                'solo' => $solo,
+                'teacher_status' => $solo === QuestionRecord::SOLO_CORRECT
+                    ? QuestionRecord::STATUS_CORRECT
+                    : QuestionRecord::STATUS_WRONG,
+            ]);
+        }
+
+        return $this->formatRecord($record->fresh(['student', 'question', 'subs']));
     }
 
     private function ownedCourse(Teacher $teacher, int $courseId): void
@@ -57,6 +82,29 @@ class TeacherQuestionRecordService
         if (! $owned) {
             throw new ModelNotFoundException();
         }
+    }
+
+    private function bloomMeetsRequirement(string $gradedBloomId, ?string $requiredBloomId): bool
+    {
+        $graded = $this->bloomLevel($gradedBloomId);
+        $required = $this->bloomLevel($requiredBloomId);
+
+        if ($graded === null || $required === null) {
+            throw ValidationException::withMessages([
+                'bloom_id' => ['Bloom 編碼無法判定。'],
+            ]);
+        }
+
+        return $graded >= $required;
+    }
+
+    private function bloomLevel(?string $bloomId): ?int
+    {
+        if ($bloomId === null || ! preg_match('/^B([1-6])([1-3])?$/i', $bloomId, $matches)) {
+            return null;
+        }
+
+        return (int) $matches[1];
     }
 
     /**
@@ -72,13 +120,38 @@ class TeacherQuestionRecordService
             'question_id' => $record->question_id,
             'question_title' => $record->question?->title,
             'question_type' => $record->question?->type,
-            'result' => $record->result,
-            'question_mapping_id' => $record->question_mapping_id,
-            'bloom_id' => $record->mapping?->bloom_id,
-            'solo_id' => $record->mapping?->solo_id,
+            'result' => $this->formatStoredResult($record->result),
+            'solo' => $record->solo,
+            'bloom_id' => $record->bloom_id,
+            'question_bloom_id' => $record->question?->bloom_id,
             'system_status' => $record->system_status,
             'teacher_status' => $record->teacher_status,
+            'subs' => $record->subs
+                ->map(fn ($sub) => [
+                    'id' => $sub->id,
+                    'sub_id' => $sub->sub_id,
+                    'answer' => $sub->answer,
+                    'is_right' => (bool) $sub->is_right,
+                    'solo' => (int) $sub->solo,
+                ])
+                ->values()
+                ->all(),
             'created_at' => $record->created_at,
         ];
+    }
+
+    private function formatStoredResult(?string $result): mixed
+    {
+        if ($result === null || $result === '') {
+            return $result;
+        }
+
+        if (! str_starts_with(ltrim($result), '{') && ! str_starts_with(ltrim($result), '[')) {
+            return $result;
+        }
+
+        $decoded = json_decode($result, true);
+
+        return json_last_error() === JSON_ERROR_NONE ? $decoded : $result;
     }
 }

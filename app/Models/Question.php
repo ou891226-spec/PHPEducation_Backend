@@ -6,15 +6,40 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Question extends Model
 {
     public const TYPE_CHOICE = 'choice';
 
+    public const TYPE_TRUE_FALSE = 'true_false';
+
+    public const TYPE_FILL = 'fill';
+
     public const TYPE_DEBUG = 'debug';
 
+    public const TYPE_INTERPRET = 'interpret';
+
     public const TYPE_CODING = 'coding';
+
+    public const TYPES = [
+        self::TYPE_CHOICE,
+        self::TYPE_TRUE_FALSE,
+        self::TYPE_FILL,
+        self::TYPE_DEBUG,
+        self::TYPE_INTERPRET,
+        self::TYPE_CODING,
+    ];
+
+    public const OPTION_TYPES = [
+        self::TYPE_CHOICE,
+        self::TYPE_TRUE_FALSE,
+    ];
+
+    public const SUB_ANSWER_TYPES = [
+        self::TYPE_FILL,
+        self::TYPE_DEBUG,
+        self::TYPE_INTERPRET,
+    ];
 
     protected $fillable = [
         'course_id',
@@ -22,6 +47,8 @@ class Question extends Model
         'title',
         'type',
         'question_content',
+        'bloom_id',
+        'description',
     ];
 
     public function course(): BelongsTo
@@ -40,24 +67,29 @@ class Question extends Model
             ->withTimestamps();
     }
 
+    public function bloom(): BelongsTo
+    {
+        return $this->belongsTo(Bloom::class, 'bloom_id');
+    }
+
     public function options(): HasMany
     {
         return $this->hasMany(QuestionOption::class);
     }
 
-    public function debugSubInfo(): HasOne
+    public function subAnswers(): HasMany
     {
-        return $this->hasOne(DebugSubInfo::class);
+        return $this->hasMany(QuestionSubAnswer::class)->orderBy('sub_id');
     }
 
-    public function codingSubInfo(): HasOne
+    public function usesOptions(): bool
     {
-        return $this->hasOne(CodingSubInfo::class);
+        return in_array($this->type, self::OPTION_TYPES, true);
     }
 
-    public function bloomSoloMappings(): HasMany
+    public function usesSubAnswers(): bool
     {
-        return $this->hasMany(QuestionBloomSoloMapping::class);
+        return in_array($this->type, self::SUB_ANSWER_TYPES, true);
     }
 
     public function records(): HasMany

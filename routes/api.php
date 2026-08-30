@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\Teacher\MaterialDraftController;
 use App\Http\Controllers\Api\V1\Teacher\MaterialImportController;
 use App\Http\Controllers\Api\V1\Teacher\MaterialTemplateController;
 use App\Http\Controllers\Api\V1\Teacher\StudentRosterTemplateController;
+use App\Http\Controllers\Api\V1\Teacher\QuestionController as TeacherQuestionController;
 use App\Http\Controllers\Api\V1\Teacher\QuestionRecordController;
 use App\Http\Controllers\Api\V1\Teacher\TopicController;
 use App\Http\Controllers\Api\V1\Teacher\UnitController;
@@ -78,6 +79,7 @@ Route::prefix('v1')->group(function () {
             Route::post('material-drafts/{draftId}/publish', [MaterialDraftController::class, 'publish']);
 
             Route::get('courses/{courseId}/topics', [TopicController::class, 'index']);
+            Route::get('courses/{courseId}/knowledge-cards', [KnowledgeCardController::class, 'indexForCourse']);
             Route::post('courses/{courseId}/topics', [TopicController::class, 'store']);
             Route::put('topics/{topicId}', [TopicController::class, 'update']);
             Route::delete('topics/{topicId}', [TopicController::class, 'destroy']);
@@ -96,6 +98,13 @@ Route::prefix('v1')->group(function () {
             Route::post('units/{unitId}/knowledge-cards', [KnowledgeCardController::class, 'store']);
             Route::put('knowledge-cards/{cardId}', [KnowledgeCardController::class, 'update']);
             Route::delete('knowledge-cards/{cardId}', [KnowledgeCardController::class, 'destroy']);
+
+            Route::get('blooms', [TeacherQuestionController::class, 'blooms']);
+            Route::get('courses/{courseId}/questions', [TeacherQuestionController::class, 'index']);
+            Route::post('courses/{courseId}/questions', [TeacherQuestionController::class, 'store']);
+            Route::get('questions/{questionId}', [TeacherQuestionController::class, 'show']);
+            Route::put('questions/{questionId}', [TeacherQuestionController::class, 'update']);
+            Route::delete('questions/{questionId}', [TeacherQuestionController::class, 'destroy']);
 
             Route::get('courses/{courseId}/question-records', [QuestionRecordController::class, 'index']);
             Route::put('question-records/{recordId}', [QuestionRecordController::class, 'update']);

@@ -8,6 +8,7 @@ use App\Models\KnowledgeCard;
 use App\Models\Teacher;
 use App\Models\Topic;
 use App\Models\Unit;
+use App\Support\KnowledgeConcept;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -164,6 +165,93 @@ class MaterialService
             ->get()
             ->map(fn (KnowledgeCard $card) => $this->formatCard($card))
             ->all();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listKnowledgeCardsForCourse(Teacher $teacher, int $courseId): array
+    {
+        $course = $this->ownedCourse($teacher, $courseId);
+
+        $fromTree = KnowledgeCard::query()
+            ->with(['unit.chapter.topic', 'unit.chapter.units'])
+            ->whereHas(
+                'unit.chapter.topic',
+                fn (Builder $topics) => $topics->where('course_id', $course->id)
+            )
+            ->orderBy('id')
+            ->get();
+
+        $fromQuestions = KnowledgeCard::query()
+            ->with(['unit.chapter.topic', 'unit.chapter.units'])
+            ->whereHas(
+                'questions',
+                fn (Builder $questions) => $questions->where('course_id', $course->id)
+            )
+            ->whereNotIn('id', $fromTree->modelKeys())
+            ->orderBy('id')
+            ->get();
+
+        $best = [];
+        foreach ($fromTree->concat($fromQuestions) as $card) {
+            $title = KnowledgeConcept::displayTitle($card);
+            if ($title === null) {
+                continue;
+            }
+
+            $topicId = $card->unit?->chapter?->topic?->id;
+            $key = ($topicId ?? 'none')."\0".$title;
+            $item = [
+                'id' => $card->id,
+                'title' => $title,
+                'example' => $card->example,
+                'unit_name' => $card->unit?->name,
+                'chapter_name' => $card->unit?->chapter?->name,
+                'topic_name' => $card->unit?->chapter?->topic?->name,
+                'topic_id' => $topicId,
+                'practice' => KnowledgeConcept::isPracticeSection((string) $card->unit?->name),
+                'content_len' => mb_strlen((string) $card->content),
+            ];
+
+            if (! isset($best[$key])) {
+                $best[$key] = $item;
+
+                continue;
+            }
+
+            $newScore = $this->pickerCardScore($item);
+            $oldScore = $this->pickerCardScore($best[$key]);
+            if ($newScore > $oldScore || ($newScore === $oldScore && $item['id'] < $best[$key]['id'])) {
+                $best[$key] = $item;
+            }
+        }
+
+        return collect($best)
+            ->sortBy([
+                ['topic_id', 'asc'],
+                ['title', 'asc'],
+            ])
+            ->map(fn (array $item) => [
+                'id' => $item['id'],
+                'title' => $item['title'],
+                'example' => $item['example'],
+                'unit_name' => $item['unit_name'],
+                'chapter_name' => $item['chapter_name'],
+                'topic_name' => $item['topic_name'],
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array{practice: bool, example: mixed, content_len: int}  $item
+     */
+    private function pickerCardScore(array $item): int
+    {
+        return ($item['practice'] ? 0 : 8)
+            + ($item['example'] ? 4 : 0)
+            + min(3, intdiv($item['content_len'], 40));
     }
 
     public function createKnowledgeCard(Teacher $teacher, int $unitId, array $data): array

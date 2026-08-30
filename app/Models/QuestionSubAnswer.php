@@ -5,21 +5,25 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class DebugSubInfo extends Model
+class QuestionSubAnswer extends Model
 {
-    protected $table = 'debug_sub_info';
+    public const SOLO_CORRECT = 2;
+
+    public const SOLO_WRONG = 1;
 
     protected $fillable = [
         'question_id',
-        'code_line',
+        'sub_id',
         'answer',
         'description',
+        'solo',
     ];
 
     protected function casts(): array
     {
         return [
-            'code_line' => 'integer',
+            'sub_id' => 'integer',
+            'solo' => 'integer',
         ];
     }
 

@@ -7,17 +7,23 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class QuestionOption extends Model
 {
+    public const SOLO_CORRECT = 2;
+
+    public const SOLO_WRONG = 1;
+
     protected $fillable = [
         'question_id',
         'title',
         'description',
         'is_answer',
+        'solo',
     ];
 
     protected function casts(): array
     {
         return [
             'is_answer' => 'boolean',
+            'solo' => 'integer',
         ];
     }
 

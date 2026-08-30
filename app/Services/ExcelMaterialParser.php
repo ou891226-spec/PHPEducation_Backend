@@ -2,13 +2,15 @@
 
 namespace App\Services;
 
+use App\Support\KnowledgeConcept;
 use InvalidArgumentException;
 use ZipArchive;
 
 /**
- * 依 Excel 欄位組成教材樹：Chapter → Unit → Knowledge Card + example。
+ * 依 Excel 欄位組成教材樹：Chapter → Unit（知識點）→ Knowledge Card + example。
  * 主題由網頁匯入時一次填寫，不從 Excel 讀 topics 欄。
  * 欄位列的下一列是範本示範，整列不讀；再下一列起才是正式資料。
+ * 「說明」列是內容，「實作變數01」列併進同章知識卡的 example，不單獨當知識點。
  */
 class ExcelMaterialParser
 {
@@ -37,6 +39,7 @@ class ExcelMaterialParser
         $topics = [];
         $lastChapter = '';
         $lastUnit = '';
+        $pending = [];
 
         // 欄位列的下一列是範本示範，整列不讀；再下一列起 knowledge_card + example
         for ($i = $headerIndex + 2, $count = count($rows); $i < $count; $i++) {
@@ -45,6 +48,7 @@ class ExcelMaterialParser
             $chapter = $this->cell($row, $map['chapters'] ?? null);
             $unit = $this->cell($row, $map['units'] ?? null);
             $content = $this->cell($row, $map['knowledge_card'] ?? null);
+            $titleOverride = $this->cell($row, $map['title'] ?? null);
 
             if ($chapter !== '') {
                 $lastChapter = $chapter;
@@ -58,12 +62,20 @@ class ExcelMaterialParser
                 $unit = $lastUnit;
             }
 
-            if ($chapter === '' || $unit === '' || $content === '') {
+            if ($chapter === '' || $unit === '' || ($content === '' && $example === '' && $titleOverride === '')) {
                 continue;
             }
 
-            $this->appendCard($topics, $topicName, $chapter, $unit, $content, $example);
+            $pending[] = [
+                'chapter' => $chapter,
+                'unit' => $unit,
+                'content' => $content,
+                'example' => $example,
+                'title' => $titleOverride,
+            ];
         }
+
+        $this->appendNormalizedCards($topics, $topicName, $pending);
 
         $topics = $this->finalizeTopics($topics);
         if ($name === '' && $topics !== []) {
@@ -112,9 +124,97 @@ class ExcelMaterialParser
 
     /**
      * @param  array<string, array<string, mixed>>  $topics
+     * @param  list<array{chapter: string, unit: string, content: string, example: string, title: string}>  $pending
      */
-    private function appendCard(array &$topics, string $topic, string $chapter, string $unit, string $content, string $example = ''): void
+    private function appendNormalizedCards(array &$topics, string $topicName, array $pending): void
     {
+        $byChapter = [];
+        foreach ($pending as $row) {
+            $byChapter[$row['chapter']][] = $row;
+        }
+
+        foreach ($byChapter as $chapterName => $rows) {
+            $fallback = $this->fallbackConcept($rows);
+
+            foreach ($rows as $row) {
+                $concept = trim($row['title'])
+                    ?: KnowledgeConcept::fromUnitName($row['unit'])
+                    ?: $fallback
+                    ?: $this->titleFromContent($row['content'] !== '' ? $row['content'] : $row['example']);
+
+                if ($concept === '') {
+                    continue;
+                }
+
+                $content = $row['content'];
+                $example = $row['example'];
+                if (KnowledgeConcept::isPracticeSection($row['unit'])) {
+                    if ($example === '') {
+                        $example = $content;
+                        $content = '';
+                    } elseif ($this->looksLikeCode($content)) {
+                        $content = '';
+                    }
+                }
+
+                $this->appendCard($topics, $topicName, $chapterName, $concept, $content, $example, $concept);
+            }
+        }
+    }
+
+    /**
+     * @param  list<array{chapter: string, unit: string, content: string, example: string, title: string}>  $rows
+     */
+    private function fallbackConcept(array $rows): ?string
+    {
+        $named = [];
+        $practice = [];
+
+        foreach ($rows as $row) {
+            $fromUnit = KnowledgeConcept::fromUnitName($row['unit']);
+            if ($fromUnit === null) {
+                continue;
+            }
+            if (KnowledgeConcept::isPracticeSection($row['unit'])) {
+                $practice[$fromUnit] = true;
+            } else {
+                $named[$fromUnit] = true;
+            }
+        }
+
+        $namedList = array_keys($named);
+        $practiceList = array_keys($practice);
+
+        if (count($namedList) === 1) {
+            return $namedList[0];
+        }
+        if (count($practiceList) === 1) {
+            return $practiceList[0];
+        }
+        if (count($practiceList) > 1) {
+            return $practiceList[0];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $topics
+     */
+    private function appendCard(
+        array &$topics,
+        string $topic,
+        string $chapter,
+        string $unit,
+        string $content,
+        string $example = '',
+        ?string $title = null,
+    ): void {
+        $title = trim((string) ($title ?? $unit));
+        if ($title === '') {
+            return;
+        }
+
         if (! isset($topics[$topic])) {
             $topics[$topic] = $this->namedNode($topic, 'chapters');
         }
@@ -129,13 +229,41 @@ class ExcelMaterialParser
             $units[$unit] = $this->namedNode($unit, 'knowledge_cards');
         }
 
+        foreach ($units[$unit]['knowledge_cards'] as &$existing) {
+            if (($existing['title'] ?? '') !== $title) {
+                continue;
+            }
+            if ($content !== '') {
+                $existing['content'] = trim($existing['content'] === '' ? $content : $existing['content']."\n\n".$content);
+            }
+            if ($example !== '') {
+                $existing['example'] = $existing['example']
+                    ? $existing['example']."\n\n".$example
+                    : $example;
+            }
+
+            return;
+        }
+        unset($existing);
+
         $units[$unit]['knowledge_cards'][] = [
             'id' => $this->newId(),
-            'title' => $this->titleFromContent($content),
-            'content' => $content,
+            'title' => $title,
+            'content' => $content !== '' ? $content : $title,
             'example' => $example !== '' ? $example : null,
             'sort_order' => count($units[$unit]['knowledge_cards']) + 1,
         ];
+    }
+
+    private function looksLikeCode(string $text): bool
+    {
+        $trim = ltrim($text);
+
+        return str_starts_with($trim, '<?')
+            || str_starts_with($trim, '$')
+            || str_starts_with($trim, '//')
+            || str_starts_with($trim, '/*')
+            || str_starts_with($trim, '#');
     }
 
     /**
@@ -213,7 +341,14 @@ class ExcelMaterialParser
                 $map['chapters'] = $column;
             } elseif (str_starts_with($key, 'units') || $key === '單元') {
                 $map['units'] = $column;
-            } elseif (str_contains($key, 'knowledge_card') || str_contains($key, '知識卡')) {
+            } elseif (
+                $key === 'title'
+                || str_contains($key, '知識點')
+                || str_contains($key, '知識卡標題')
+                || str_contains($key, 'card_title')
+            ) {
+                $map['title'] = $column;
+            } elseif (str_contains($key, 'knowledge_card') || str_starts_with($key, '知識卡')) {
                 $map['knowledge_card'] = $column;
             } elseif ($key === '範例' || str_starts_with($key, '範例')) {
                 $map['example'] = $column;

@@ -31,7 +31,7 @@ class QuestionRecordController extends Controller
             'record' => $this->teacherQuestionRecordService->review(
                 $this->teacher($request),
                 $recordId,
-                $request->validated()['teacher_status'],
+                $request->validated(),
             ),
         ]);
     }

@@ -22,6 +22,16 @@ class KnowledgeCardController extends Controller
         ]);
     }
 
+    public function indexForCourse(Request $request, int $courseId): JsonResponse
+    {
+        return response()->json([
+            'knowledge_cards' => $this->materialService->listKnowledgeCardsForCourse(
+                $this->teacher($request),
+                $courseId,
+            ),
+        ]);
+    }
+
     public function store(KnowledgeCardRequest $request, int $unitId): JsonResponse
     {
         return response()->json([
