@@ -36,6 +36,10 @@ class StoreTeacherQuestionRequest extends FormRequest
             'question_content' => ['required', 'string'],
             'bloom_id' => ['required', 'string', 'exists:bloom,id'],
             'description' => ['nullable', 'string'],
+            'show_example' => ['sometimes', 'boolean'],
+            'starter_code' => ['nullable', 'string'],
+            'expected_output' => ['nullable', 'string'],
+            'reference_answer' => ['nullable', 'string'],
             'knowledge_card_ids' => ['required', 'array', 'min:1'],
             'knowledge_card_ids.*' => ['integer', 'distinct', 'exists:knowledge_cards,id'],
             'options' => array_filter([

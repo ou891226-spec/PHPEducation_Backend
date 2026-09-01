@@ -364,12 +364,16 @@ questions ↔ knowledge_cards（question_knowledge_cards）
 | question_content | text | 題目內容（填空用 `（1）`、`（2）` 標格子） |
 | bloom_id | string | 出題 Bloom（FK → bloom.id，可空） |
 | description | text | 要考學生什麼（可空） |
+| show_example | boolean | 是否把知識卡範例給學生看（預設否） |
+| starter_code | text | 實作題已知條件（給學生看，可空） |
+| expected_output | text | 實作題期望輸出（學生看不到，可空） |
+| reference_answer | text | 實作題參考答案（學生看不到，可空） |
 | created_at | timestamp | 建立時間 |
 | updated_at | timestamp | 更新時間 |
 
 ### bloom Bloom 編碼
 
-表名 `bloom`。出題下拉用 `B11`–`B63`（第一碼 Bloom 層級 1–6，第二碼 SOLO 1–3）。舊碼 `B1`–`B6` 仍留在表裡，給已存在的題。
+表名 `bloom`。出題下拉用 `B11`–`B63`（第一碼 Bloom 層級 1–6，第二碼 SOLO 1–3）。下拉 `title` 只寫 Bloom 層級與用途，不顯示 SOLO。舊碼 `B1`–`B6` 仍留在表裡，給已存在的題。
 
 ### question_options 選擇／是非
 
@@ -384,7 +388,7 @@ questions ↔ knowledge_cards（question_knowledge_cards）
 
 ### question_sub_answers 填空／除錯／解讀正解
 
-對應填空／除錯／解讀的每一格正解。填空：題幹 `（1）` ↔ `sub_id = 1`。
+對應填空／除錯／解讀的每一格正解。填空：題幹 `（1）` ↔ `sub_id = 1`。除錯：只存有錯的行，`sub_id` 為行號，`answer` 為修正後程式。
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
@@ -415,7 +419,7 @@ A 類（選擇／是非）只寫總表；B 類（填空／除錯／解讀）總�
 
 `question_records.solo`：A 類錯 `1`、對 `2`。B 類總表全錯 `1`、部分對 `2`、全對 `3`（`result` 記 `correct`／`total`）。逐格答對抄 `question_sub_answers.solo`，答錯為 `1`。實作題由老師寫 `bloom_id` 再判定。
 
-`question_record_subs`：`question_record_id`、`sub_id`、`answer`（學生這格）、`is_right`、`solo`（對了抄正解，錯了為 1）。
+B 類交卷比對會把全形英數／標點轉半形（`；`＝`;`、`？>`＝`?>`），再去掉前後空白。資料庫仍存學生原字。
 
 ### personal_access_tokens
 
@@ -1127,6 +1131,7 @@ public/templates/material_import_template.xlsx
   "question_content": "PHP網頁的多行註解是用哪一個符號？",
   "bloom_id": "B11",
   "description": "可空",
+  "show_example": false,
   "knowledge_card_ids": [4, 11]
 }
 ```
@@ -1144,7 +1149,7 @@ public/templates/material_import_template.xlsx
 }
 ```
 
-填空／除錯／解讀另帶 `sub_answers`。填空 `sub_id` 對題幹 `（1）（2）`。
+填空／除錯／解讀另帶 `sub_answers`。填空 `sub_id` 對題幹 `（1）（2）`。除錯：題幹放完整有錯程式，`sub_answers` **只填有錯的行**（`sub_id`＝行號、`answer`＝修正後那一行、`description`＝錯誤原因），不要把每一行都建成答案。解讀：提問方式與程式碼分開存（中間 `<!--code-stem-->`），`sub_answers` 為預期輸出（`answer` 答案、`description` 解釋；解釋交卷後才給學生看）。可多個小題。
 
 ```json
 {
@@ -1155,9 +1160,43 @@ public/templates/material_import_template.xlsx
 }
 ```
 
-實作只建主檔與知識卡。學生交程式後，老師覆核時輸入 Bloom 編碼。
+除錯例：題幹為 `<?php` / `$name = "Tom"` / `echo $name;`，只存第 2 行正解：
 
-學生取題依**課程**。未選課 **404**。非學生 **403**。取題不回正解。
+```json
+{
+  "type": "debug",
+  "question_content": "請找出錯誤並修正。\n<?php\n$name = \"Tom\"\necho $name;",
+  "sub_answers": [
+    { "sub_id": 2, "answer": "$name = \"Tom\";", "description": "PHP 敘述結尾缺少分號 ;" }
+  ]
+}
+```
+
+解讀例：提問方式 + 程式碼，答案是執行結果：
+
+```json
+{
+  "type": "interpret",
+  "question_content": "請解讀以下 PHP 程式，說明最後會輸出什麼。\n<!--code-stem-->\n$a = 5;\n$b = 10;\nif ($a < $b) {\n    echo \"A\";\n}",
+  "sub_answers": [
+    { "sub_id": 1, "answer": "A", "description": "$a 為 5、$b 為 10，條件成立所以輸出 A。" }
+  ]
+}
+```
+
+```json
+{
+  "type": "coding",
+  "question_content": "請使用 PHP 撰寫程式，將兩個數字相加後輸出結果。",
+  "starter_code": "$a = 10;\n$b = 20;",
+  "expected_output": "30",
+  "reference_answer": "$a = 10;\n$b = 20;\n$result = $a + $b;\necho $result;"
+}
+```
+
+實作不自動比對。`starter_code` 給學生當已知條件；`expected_output`、`reference_answer` 只回老師（出題與作答紀錄）。AI 批改仍不接，欄位也不存。學生交程式後，老師覆核時輸入 Bloom 編碼。
+
+學生取題依**課程**。未選課 **404**。非學生 **403**。取題不回正解、也不回選項 `description`（說明在交卷後以 `explanation` 回傳）。交卷紀錄不回 `solo`（SOLO 只給老師看）。實作題取題可回 `starter_code`，不回 `expected_output`、`reference_answer`。知識卡 `example` 預設不給學生；老師出題時設 `show_example: true` 才以 `examples` 回傳。
 
 | Method | URL | 說明 |
 |--------|-----|------|
@@ -1166,7 +1205,8 @@ public/templates/material_import_template.xlsx
 | POST | `/api/v1/student/questions/{questionId}/submit` | 交卷 |
 
 選擇／是非：`{ "option_id": 1 }`  
-填空／除錯／解讀：`{ "answers": { "1": "define", "2": "PI" } }`（除錯也可 `code_line` + `answer`）  
+填空／解讀：`{ "answers": { "1": "define", "2": "PI" } }`  
+除錯：`{ "code_line": 2, "answer": "$name = \"Tom\";" }`（多個錯誤用 `answers`；取題只回 `debug_error_count`，不回錯誤行號）  
 實作：`{ "code": "..." }`，`system_status` 為 `pending`，等老師輸入 `bloom_id`。
 
 ### 教師覆核作答

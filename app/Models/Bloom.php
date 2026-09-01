@@ -59,7 +59,7 @@ class Bloom extends Model
 
     public static function teacherChoiceTitle(string $id): string
     {
-        if (preg_match('/^B([1-6])([1-3])$/', $id, $matches) !== 1) {
+        if (preg_match('/^B([1-6])[1-3]$/', $id, $matches) !== 1) {
             return $id;
         }
 
@@ -68,6 +68,6 @@ class Bloom extends Model
             return $id;
         }
 
-        return $info['title'].'（'.$info['usage'].'）／SOLO '.$matches[2];
+        return $info['title'].'（'.$info['usage'].'）';
     }
 }

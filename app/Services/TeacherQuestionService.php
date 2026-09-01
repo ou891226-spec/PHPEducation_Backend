@@ -48,6 +48,10 @@ class TeacherQuestionService
                 'question_content' => $data['question_content'],
                 'bloom_id' => $data['bloom_id'],
                 'description' => $data['description'] ?? null,
+                'show_example' => (bool) ($data['show_example'] ?? false),
+                'starter_code' => $this->codingField($data, 'starter_code'),
+                'expected_output' => $this->codingField($data, 'expected_output'),
+                'reference_answer' => $this->codingField($data, 'reference_answer'),
             ]);
 
             $this->syncChildren($question, $data);
@@ -83,6 +87,10 @@ class TeacherQuestionService
                 'question_content' => $data['question_content'],
                 'bloom_id' => $data['bloom_id'],
                 'description' => $data['description'] ?? null,
+                'show_example' => (bool) ($data['show_example'] ?? false),
+                'starter_code' => $this->codingField($data, 'starter_code'),
+                'expected_output' => $this->codingField($data, 'expected_output'),
+                'reference_answer' => $this->codingField($data, 'reference_answer'),
             ]);
 
             $this->syncChildren($question->fresh(), $data);
@@ -173,6 +181,23 @@ class TeacherQuestionService
         return $ids;
     }
 
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function codingField(array $data, string $key): ?string
+    {
+        if (($data['type'] ?? null) !== Question::TYPE_CODING) {
+            return null;
+        }
+
+        $value = $data[$key] ?? null;
+        if (! is_string($value) || $value === '') {
+            return null;
+        }
+
+        return $value;
+    }
+
     private function ownedCourse(Teacher $teacher, int $courseId): Course
     {
         $course = Course::query()
@@ -223,6 +248,10 @@ class TeacherQuestionService
             'question_content' => $question->question_content,
             'bloom_id' => $question->bloom_id,
             'description' => $question->description,
+            'show_example' => (bool) $question->show_example,
+            'starter_code' => $question->starter_code,
+            'expected_output' => $question->expected_output,
+            'reference_answer' => $question->reference_answer,
             'knowledge_card_ids' => $question->knowledgeCards->pluck('id')->values()->all(),
             'knowledge_cards' => $question->knowledgeCards
                 ->map(fn (KnowledgeCard $card) => [

@@ -7,6 +7,7 @@ use App\Models\QuestionOption;
 use App\Models\QuestionRecord;
 use App\Models\QuestionSubAnswer;
 use App\Models\Student;
+use App\Support\AnswerText;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -129,7 +130,7 @@ class StudentQuestionService
 
             foreach ($keys as $key) {
                 $studentAnswer = $submitted[$key->sub_id] ?? '';
-                $isRight = $studentAnswer !== '' && trim($studentAnswer) === trim((string) $key->answer);
+                $isRight = AnswerText::same($studentAnswer, (string) $key->answer);
                 if ($isRight) {
                     $correctCount++;
                 }
@@ -287,6 +288,25 @@ class StudentQuestionService
     }
 
     /**
+     * 知識卡 example 是教材範例。老師勾 show_example 才給學生看。
+     *
+     * @return list<string>
+     */
+    private function examplesForStudent(Question $question): array
+    {
+        if (! $question->show_example) {
+            return [];
+        }
+
+        return $question->knowledgeCards
+            ->pluck('example')
+            ->filter(fn ($example) => is_string($example) && $example !== '')
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function formatQuestionForStudent(Question $question): array
@@ -300,26 +320,26 @@ class StudentQuestionService
             'bloom_id' => $question->bloom_id,
             'description' => $question->description,
             'knowledge_card_ids' => $question->knowledgeCards->pluck('id')->values()->all(),
-            'examples' => $question->knowledgeCards
-                ->pluck('example')
-                ->filter(fn ($example) => is_string($example) && $example !== '')
-                ->unique()
-                ->values()
-                ->all(),
+            'examples' => $this->examplesForStudent($question),
         ];
+
+        if ($question->type === Question::TYPE_CODING) {
+            $payload['starter_code'] = $question->starter_code;
+        }
 
         if ($question->usesOptions()) {
             $payload['options'] = $question->options
                 ->map(fn (QuestionOption $option) => [
                     'id' => $option->id,
                     'title' => $option->title,
-                    'description' => $option->description,
                 ])
                 ->values()
                 ->all();
         }
 
-        if ($question->usesSubAnswers()) {
+        if ($question->type === Question::TYPE_DEBUG) {
+            $payload['debug_error_count'] = $question->subAnswers->count();
+        } elseif ($question->usesSubAnswers()) {
             $payload['sub_ids'] = $question->subAnswers->pluck('sub_id')->values()->all();
         }
 
@@ -336,7 +356,6 @@ class StudentQuestionService
             'student_id' => $record->student_id,
             'question_id' => $record->question_id,
             'result' => $this->formatStoredResult($record->result),
-            'solo' => $record->solo,
             'system_status' => $record->system_status,
             'teacher_status' => $record->teacher_status,
             'subs' => $record->subs
@@ -345,7 +364,6 @@ class StudentQuestionService
                     'sub_id' => $sub->sub_id,
                     'answer' => $sub->answer,
                     'is_right' => (bool) $sub->is_right,
-                    'solo' => (int) $sub->solo,
                 ])
                 ->values()
                 ->all(),

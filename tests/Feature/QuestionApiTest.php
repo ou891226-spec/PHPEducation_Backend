@@ -38,8 +38,32 @@ class QuestionApiTest extends TestCase
         $show->assertOk()
             ->assertJsonPath('question.type', Question::TYPE_CHOICE)
             ->assertJsonMissingPath('question.options.0.is_answer')
-            ->assertJsonPath('question.examples.0', '$name = "PHP";')
+            ->assertJsonMissingPath('question.options.0.description')
+            ->assertJsonPath('question.examples', [])
             ->assertJsonPath('question.description', '能否辨識 PHP 變數');
+
+        $coding = Question::query()->where('course_id', $course->id)->where('type', Question::TYPE_CODING)->firstOrFail();
+        $this->withToken($this->studentToken())
+            ->getJson("/api/v1/student/questions/{$coding->id}")
+            ->assertOk()
+            ->assertJsonPath('question.examples', [])
+            ->assertJsonPath('question.starter_code', '$a = 10;')
+            ->assertJsonMissingPath('question.expected_output')
+            ->assertJsonMissingPath('question.reference_answer');
+
+        $shown = $this->makeCodingQuestion($course, true);
+        $this->withToken($this->studentToken())
+            ->getJson("/api/v1/student/questions/{$shown->id}")
+            ->assertOk()
+            ->assertJsonPath('question.examples.0', '$name = "PHP";');
+
+        $debug = Question::query()->where('course_id', $course->id)->where('type', Question::TYPE_DEBUG)->firstOrFail();
+        $this->withToken($this->studentToken())
+            ->getJson("/api/v1/student/questions/{$debug->id}")
+            ->assertOk()
+            ->assertJsonPath('question.debug_error_count', 1)
+            ->assertJsonMissingPath('question.sub_ids')
+            ->assertJsonMissing(['answer']);
     }
 
     public function test_unenrolled_student_cannot_get_questions(): void
@@ -77,6 +101,31 @@ class QuestionApiTest extends TestCase
         $this->assertSame(2, QuestionRecord::query()->where('question_id', $question->id)->count());
     }
 
+    public function test_fill_accepts_fullwidth_punctuation_as_halfwidth(): void
+    {
+        $question = $this->makeQuestion($this->yingCourse(), Question::TYPE_FILL, 'PHP結束');
+        QuestionSubAnswer::query()->create([
+            'question_id' => $question->id,
+            'sub_id' => 1,
+            'answer' => ';',
+            'solo' => QuestionSubAnswer::SOLO_CORRECT,
+        ]);
+
+        $this->withToken($this->studentToken())
+            ->postJson("/api/v1/student/questions/{$question->id}/submit", [
+                'answers' => ['1' => '；'],
+            ])
+            ->assertOk()
+            ->assertJsonPath('system_status', QuestionRecord::STATUS_CORRECT)
+            ->assertJsonPath('record.subs.0.is_right', true);
+
+        $this->assertDatabaseHas('question_record_subs', [
+            'sub_id' => 1,
+            'answer' => '；',
+            'is_right' => 1,
+        ]);
+    }
+
     public function test_student_can_submit_debug_question(): void
     {
         $question = $this->makeDebugQuestion($this->yingCourse());
@@ -91,7 +140,8 @@ class QuestionApiTest extends TestCase
             ->assertJsonPath('description', '漏了錢字號')
             ->assertJsonPath('record.subs.0.sub_id', 3)
             ->assertJsonPath('record.subs.0.is_right', true)
-            ->assertJsonPath('record.solo', QuestionRecord::SOLO_ALL_CORRECT);
+            ->assertJsonMissingPath('record.solo')
+            ->assertJsonMissingPath('record.subs.0.solo');
 
         $this->assertDatabaseHas('question_record_subs', [
             'sub_id' => 3,
@@ -121,23 +171,38 @@ class QuestionApiTest extends TestCase
                 'answers' => ['1' => 'x', '2' => 'y'],
             ])
             ->assertOk()
-            ->assertJsonPath('record.solo', QuestionRecord::SOLO_WRONG);
+            ->assertJsonMissingPath('record.solo');
+
+        $this->assertDatabaseHas('question_records', [
+            'question_id' => $question->id,
+            'solo' => QuestionRecord::SOLO_WRONG,
+        ]);
 
         $this->withToken($this->studentToken())
             ->postJson("/api/v1/student/questions/{$question->id}/submit", [
                 'answers' => ['1' => 'define', '2' => 'y'],
             ])
             ->assertOk()
-            ->assertJsonPath('record.solo', QuestionRecord::SOLO_PARTIAL)
+            ->assertJsonMissingPath('record.solo')
             ->assertJsonPath('record.result.correct', 1)
             ->assertJsonPath('record.result.total', 2);
+
+        $this->assertDatabaseHas('question_records', [
+            'question_id' => $question->id,
+            'solo' => QuestionRecord::SOLO_PARTIAL,
+        ]);
 
         $this->withToken($this->studentToken())
             ->postJson("/api/v1/student/questions/{$question->id}/submit", [
                 'answers' => ['1' => 'define', '2' => 'PI'],
             ])
             ->assertOk()
-            ->assertJsonPath('record.solo', QuestionRecord::SOLO_ALL_CORRECT);
+            ->assertJsonMissingPath('record.solo');
+
+        $this->assertDatabaseHas('question_records', [
+            'question_id' => $question->id,
+            'solo' => QuestionRecord::SOLO_ALL_CORRECT,
+        ]);
     }
 
     public function test_student_can_submit_coding_question_as_pending(): void
@@ -238,12 +303,19 @@ class QuestionApiTest extends TestCase
         return $question->load('subAnswers');
     }
 
-    private function makeCodingQuestion(Course $course): Question
+    private function makeCodingQuestion(Course $course, bool $showExample = false): Question
     {
-        return $this->makeQuestion($course, Question::TYPE_CODING, '輸出 hello');
+        $question = $this->makeQuestion($course, Question::TYPE_CODING, '輸出 hello', $showExample);
+        $question->update([
+            'starter_code' => '$a = 10;',
+            'expected_output' => '30',
+            'reference_answer' => 'echo $a + $b;',
+        ]);
+
+        return $question->fresh();
     }
 
-    private function makeQuestion(Course $course, string $type, string $title): Question
+    private function makeQuestion(Course $course, string $type, string $title, bool $showExample = false): Question
     {
         $teacher = Teacher::query()->findOrFail($course->teacher_id);
         $question = Question::query()->create([
@@ -254,6 +326,7 @@ class QuestionApiTest extends TestCase
             'question_content' => $title.' 的題幹',
             'bloom_id' => 'B1',
             'description' => '能否辨識 PHP 變數',
+            'show_example' => $showExample,
         ]);
 
         $card = KnowledgeCard::query()->create([

@@ -49,7 +49,18 @@ class Question extends Model
         'question_content',
         'bloom_id',
         'description',
+        'show_example',
+        'starter_code',
+        'expected_output',
+        'reference_answer',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'show_example' => 'boolean',
+        ];
+    }
 
     public function course(): BelongsTo
     {

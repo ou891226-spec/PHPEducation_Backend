@@ -124,6 +124,9 @@ class TeacherQuestionRecordService
             'solo' => $record->solo,
             'bloom_id' => $record->bloom_id,
             'question_bloom_id' => $record->question?->bloom_id,
+            'starter_code' => $record->question?->starter_code,
+            'expected_output' => $record->question?->expected_output,
+            'reference_answer' => $record->question?->reference_answer,
             'system_status' => $record->system_status,
             'teacher_status' => $record->teacher_status,
             'subs' => $record->subs
