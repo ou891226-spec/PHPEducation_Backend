@@ -6,6 +6,7 @@ use App\Http\Requests\ApproveStudentItemsRequest;
 use App\Mail\StudentAccountCreated;
 use App\Models\StudentApplications;
 use App\Services\StudentAccountService;
+use App\Services\StudentCreateExcelService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Mail;
 
@@ -16,6 +17,7 @@ class StudentApprovementController extends Controller
 {
     public function __construct(
         private StudentAccountService $studentAccountService,
+        private StudentCreateExcelService $excelService,
     ) {}
 
     /**
@@ -76,14 +78,24 @@ class StudentApprovementController extends Controller
     private function notifyTeachers(array $createdByTeacher): void
     {
         foreach ($createdByTeacher as $group) {
+
+            $studentCount = count($group['students'] ?? []);
+        
             if ($group['students'] === []) {
                 continue;
             }
 
+            $excelContent = $this->excelService->generate(
+                students: $group['students'],
+                password: (string) ($group['teacher_account'] ?? ''), // 使用教師登入帳號作為 Excel 解鎖密碼
+            );
+
             Mail::to($group['teacher_email'])->send(new StudentAccountCreated(
                 teacherName: $group['teacher_name'],
-                className: $group['class_name'],
-                students: $group['students'],
+                courseName: (string) ($group['course_name'] ?? ''),
+                className: $group['class_name'] ?? '',
+                studentCount: $studentCount,
+                excelContent: $excelContent,
             ));
         }
     }

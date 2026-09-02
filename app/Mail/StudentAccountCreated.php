@@ -20,7 +20,9 @@ class StudentAccountCreated extends Mailable
     public function __construct(
         public string $teacherName,
         public string $className,    
-        public array $students,
+        public string $courseName,
+        public int $studentCount,
+        public string $excelContent,
     ){
         //
     }
@@ -52,6 +54,9 @@ class StudentAccountCreated extends Mailable
      */
     public function attachments(): array
     {
-        return [];
+        return [
+            Attachment::fromData(fn () => $this->excelContent, '學生帳號名單.xlsx')
+                ->withMime('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+        ];
     }
 }

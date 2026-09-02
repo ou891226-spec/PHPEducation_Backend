@@ -248,6 +248,8 @@ class StudentAccountService
                 if ($plainPassword !== null && $application?->teacher !== null) {
                     $teacherId = $application->tid;
                     $createdByTeacher[$teacherId] ??= [
+                        'course_name' => $course->name, // 取得當前課程
+                        'teacher_account' => $application->teacher->account, // 取得教師登入帳號 (作為解鎖 Excel 密碼)
                         'teacher_email' => $application->teacher->email,
                         'teacher_name' => $application->teacher->name,
                         'class_name' => $application->class_name,

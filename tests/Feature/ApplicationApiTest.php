@@ -654,11 +654,10 @@ class ApplicationApiTest extends TestCase
         $this->assertNotNull($student);
         $this->assertSame('s1411139001@nutc.edu.tw', $student->email);
 
-        // 3. 檢查通知信件包含正確明文密碼與信箱
-        Mail::assertSent(\App\Mail\StudentAccountCreated::class, function ($mail) use ($student) {
-            return $mail->students[0]['student_no'] === '1411139001'
-                && $mail->students[0]['email'] === 's1411139001@nutc.edu.tw'
-                && !empty($mail->students[0]['password']);
+        // 3. 檢查通知信件包含正確新建人數與加密 Excel 附件
+        Mail::assertSent(\App\Mail\StudentAccountCreated::class, function ($mail) {
+            return $mail->studentCount === 1
+                && !empty($mail->excelContent);
         });
     }
 

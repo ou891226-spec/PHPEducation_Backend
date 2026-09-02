@@ -1,17 +1,9 @@
 您好，{{ $teacherName }} 老師：
 
-您所提交的學生批次帳號申請已審核通過。
+您為「{{ $courseName }}/{{ $className }}」提交的學生帳號申請，管理員已審核開通。
+本次新建帳號 {{ $studentCount }} 人，姓名、帳號與初始密碼詳見加密附件。
+請妥善保存，並將帳密轉交給對應學生。
 
-班級：{{ $className }}
-
-本次共建立 {{ count($students) }} 位學生帳號。
-
-@foreach ($students as $student)
-
-學生姓名：{{ $student['name'] }}
-學號：{{ $student['student_no'] }}
-初始密碼：{{ $student['password'] }}
-
-@endforeach
-
-請將以上帳號資訊提供給對應學生使用。
+【解檔方式】
+附件已加密。解檔密碼為您的教師登入帳號（信箱），也就是您平時登入本系統使用的帳號。
+請勿將附件轉寄給無關人員。學生登入時，帳號請填學號。
