@@ -18,4 +18,18 @@ class MaterialNameRequest extends FormRequest
             'sort_order' => ['nullable', 'integer', 'min:0'],
         ];
     }
+
+    public function messages(): array
+    {
+        return [
+            'name.required' => '請填寫標題名稱',
+        ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        if (! $this->filled('name') && $this->filled('title')) {
+            $this->merge(['name' => $this->input('title')]);
+        }
+    }
 }

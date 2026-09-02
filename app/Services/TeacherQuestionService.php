@@ -161,6 +161,12 @@ class TeacherQuestionService
                 $query->whereHas(
                     'unit.chapter.topic',
                     fn (Builder $topic) => $topic->where('course_id', $course->id)
+                )->orWhereHas(
+                    'units.chapter.topic',
+                    fn (Builder $topic) => $topic->where('course_id', $course->id)
+                )->orWhereHas(
+                    'topic',
+                    fn (Builder $topic) => $topic->where('course_id', $course->id)
                 )->orWhere(function (Builder $orphaned) use ($course): void {
                     $orphaned->whereNull('unit_id')
                         ->whereHas(

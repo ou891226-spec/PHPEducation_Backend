@@ -10,7 +10,9 @@ class KnowledgeCard extends Model
 {
     protected $fillable = [
         'unit_id',
+        'topic_id',
         'title',
+        'type',
         'content',
         'example',
         'sort_order',
@@ -28,9 +30,25 @@ class KnowledgeCard extends Model
         return $this->belongsTo(Unit::class);
     }
 
+    public function topic(): BelongsTo
+    {
+        return $this->belongsTo(Topic::class);
+    }
+
+    public function units(): BelongsToMany
+    {
+        return $this->belongsToMany(Unit::class, 'knowledge_card_unit')
+            ->withTimestamps();
+    }
+
     public function questions(): BelongsToMany
     {
         return $this->belongsToMany(Question::class, 'question_knowledge_cards')
             ->withTimestamps();
+    }
+
+    public function primaryUnit(): ?Unit
+    {
+        return $this->unit ?? $this->units->first();
     }
 }

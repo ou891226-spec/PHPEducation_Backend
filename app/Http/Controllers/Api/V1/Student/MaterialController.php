@@ -42,6 +42,13 @@ class MaterialController extends Controller
         ]);
     }
 
+    public function graph(Request $request, int $courseId): JsonResponse
+    {
+        return response()->json([
+            'graph' => $this->studentMaterialService->courseGraph($this->student($request), $courseId),
+        ]);
+    }
+
     private function student(Request $request): Student
     {
         $user = $request->user();

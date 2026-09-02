@@ -5,29 +5,30 @@ namespace App\Http\Controllers\Api\V1\Teacher;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Material\ImportMaterialRequest;
 use App\Models\Teacher;
-use App\Services\MaterialDraftService;
+use App\Services\MaterialImportService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class MaterialImportController extends Controller
 {
     public function __construct(
-        private readonly MaterialDraftService $materialDraftService,
+        private readonly MaterialImportService $materialImportService,
     ) {}
 
     /**
-     * 接收教師上傳的 Excel，由後端解析後存成 Draft。前端不要自己解析檔案。
+     * 接收教師上傳的 Excel，直接寫入正式教材。前端不要自己解析檔案。
      */
     public function store(ImportMaterialRequest $request, int $courseId): JsonResponse
     {
         $path = $request->file('file')->getRealPath();
 
         return response()->json([
-            'draft' => $this->materialDraftService->import(
+            'topic' => $this->materialImportService->import(
                 $this->teacher($request),
                 $courseId,
                 $path,
                 $request->string('topic')->toString(),
+                $request->boolean('overwrite'),
             ),
         ], 201);
     }

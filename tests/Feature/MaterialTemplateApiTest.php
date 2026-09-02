@@ -17,7 +17,7 @@ class MaterialTemplateApiTest extends TestCase
             ->get('/api/v1/teacher/materials/template');
 
         $response->assertOk()
-            ->assertDownload('material_import_template.xlsx')
+            ->assertDownload('course_template.xlsx')
             ->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 
         $this->assertStringContainsString(
@@ -33,7 +33,7 @@ class MaterialTemplateApiTest extends TestCase
         $this->withToken($token)
             ->get('/api/v1/teacher/materials/template')
             ->assertOk()
-            ->assertDownload('material_import_template.xlsx');
+            ->assertDownload('course_template.xlsx');
     }
 
     public function test_student_cannot_download_material_template(): void

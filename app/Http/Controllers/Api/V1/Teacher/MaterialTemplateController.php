@@ -9,13 +9,13 @@ class MaterialTemplateController extends Controller
 {
     public function download(): BinaryFileResponse
     {
-        $path = public_path('templates/material_import_template.xlsx');
+        $path = public_path('templates/course_template.xlsx');
 
         abort_unless(is_file($path), 500, '教材匯入範本不存在');
 
         $response = response()->download(
             $path,
-            'material_import_template.xlsx',
+            'course_template.xlsx',
             [
                 'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             ],
@@ -24,7 +24,7 @@ class MaterialTemplateController extends Controller
         $encodedName = rawurlencode('教材匯入範本.xlsx');
         $response->headers->set(
             'Content-Disposition',
-            'attachment; filename="material_import_template.xlsx"; filename*=UTF-8\'\''.$encodedName,
+            'attachment; filename="course_template.xlsx"; filename*=UTF-8\'\''.$encodedName,
         );
 
         return $response;

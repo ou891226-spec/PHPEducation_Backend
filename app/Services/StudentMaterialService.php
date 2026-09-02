@@ -70,13 +70,59 @@ class StudentMaterialService
             ->map(fn (KnowledgeCard $card) => [
                 'id' => $card->id,
                 'title' => $card->title,
+                'name' => $card->title,
+                'type' => $card->type ?: 'keyword',
                 'content' => $card->content,
                 'example' => $card->example,
+                'code_example' => $card->example,
                 'sort_order' => $card->sort_order,
                 'created_at' => $card->created_at,
                 'updated_at' => $card->updated_at,
             ])
             ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function courseGraph(Student $student, int $courseId): array
+    {
+        $course = $this->enrolledCourse($student, $courseId);
+        $course->load([
+            'topics.chapters.units.knowledgeCards' => fn ($query) => $query->orderBy('sort_order'),
+        ]);
+
+        return [
+            'id' => $course->id,
+            'name' => $course->name,
+            'topics' => $course->topics->map(fn (Topic $topic) => [
+                'id' => $topic->id,
+                'name' => $topic->name,
+                'sort_order' => $topic->sort_order,
+                'chapters' => $topic->chapters->map(fn (Chapter $chapter) => [
+                    'id' => $chapter->id,
+                    'name' => $chapter->name,
+                    'title' => $chapter->name,
+                    'sort_order' => $chapter->sort_order,
+                    'units' => $chapter->units->map(fn (Unit $unit) => [
+                        'id' => $unit->id,
+                        'name' => $unit->name,
+                        'title' => $unit->name,
+                        'sort_order' => $unit->sort_order,
+                        'knowledge_cards' => $unit->knowledgeCards->map(fn (KnowledgeCard $card) => [
+                            'id' => $card->id,
+                            'title' => $card->title,
+                            'name' => $card->title,
+                            'type' => $card->type ?: 'keyword',
+                            'content' => $card->content,
+                            'example' => $card->example,
+                            'code_example' => $card->example,
+                            'sort_order' => $card->sort_order,
+                        ])->values()->all(),
+                    ])->values()->all(),
+                ])->values()->all(),
+            ])->values()->all(),
+        ];
     }
 
     private function enrolledCourse(Student $student, int $courseId): Course

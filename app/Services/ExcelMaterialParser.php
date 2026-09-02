@@ -2,15 +2,13 @@
 
 namespace App\Services;
 
-use App\Support\KnowledgeConcept;
 use InvalidArgumentException;
 use ZipArchive;
 
 /**
- * 依 Excel 欄位組成教材樹：Chapter → Unit（知識點）→ Knowledge Card + example。
+ * 依 course_template.xlsx 欄位組成教材樹：Chapter → Unit → Knowledge Card。
  * 主題由網頁匯入時一次填寫，不從 Excel 讀 topics 欄。
- * 欄位列的下一列是範本示範，整列不讀；再下一列起才是正式資料。
- * 「說明」列是內容，「實作變數01」列併進同章知識卡的 example，不單獨當知識點。
+ * 第 1 列欄位、第 2 列公版範例整列不讀，第 3 列起才是教材。空白章節／單元沿用上一列。
  */
 class ExcelMaterialParser
 {
@@ -26,67 +24,91 @@ class ExcelMaterialParser
 
         $rows = $this->readRows($path);
         if ($rows === []) {
-            throw new InvalidArgumentException('找不到教材名稱');
+            throw new InvalidArgumentException('找不到教材內容');
         }
 
         $headerIndex = $this->findHeaderRow($rows);
         if ($headerIndex === null) {
-            throw new InvalidArgumentException('找不到欄位列（chapters / units / knowledge_card）');
+            throw new InvalidArgumentException('找不到欄位列（chapter_title / unit_title / card_name）');
         }
 
-        $name = $this->findMaterialName($rows, $headerIndex);
         $map = $this->mapColumns($rows[$headerIndex]);
+        if (! isset($map['chapter_title'], $map['unit_title'], $map['card_name'])) {
+            throw new InvalidArgumentException('找不到欄位列（chapter_title / unit_title / card_name）');
+        }
+
         $topics = [];
         $lastChapter = '';
         $lastUnit = '';
-        $pending = [];
+        $lastChapterOrder = null;
+        $lastUnitOrder = null;
 
-        // 欄位列的下一列是範本示範，整列不讀；再下一列起 knowledge_card + example
-        for ($i = $headerIndex + 2, $count = count($rows); $i < $count; $i++) {
+        for ($i = $headerIndex + 1, $count = count($rows); $i < $count; $i++) {
             $row = $rows[$i];
-            $example = $this->cell($row, $map['example'] ?? null);
-            $chapter = $this->cell($row, $map['chapters'] ?? null);
-            $unit = $this->cell($row, $map['units'] ?? null);
-            $content = $this->cell($row, $map['knowledge_card'] ?? null);
-            $titleOverride = $this->cell($row, $map['title'] ?? null);
+            if ($this->isExampleRow($row)) {
+                continue;
+            }
+
+            $chapter = $this->cell($row, $map['chapter_title']);
+            $unit = $this->cell($row, $map['unit_title']);
+            $chapterOrder = $this->intCell($row, $map['chapter_order'] ?? null);
+            $unitOrder = $this->intCell($row, $map['unit_order'] ?? null);
+            $title = $this->cell($row, $map['card_name']);
+            $type = $this->cell($row, $map['card_type'] ?? null);
+            $content = $this->cell($row, $map['card_content'] ?? null);
+            $example = $this->cell($row, $map['code_example'] ?? null);
 
             if ($chapter !== '') {
                 $lastChapter = $chapter;
+                $lastChapterOrder = $chapterOrder;
             } else {
                 $chapter = $lastChapter;
+                $chapterOrder = $lastChapterOrder;
             }
 
             if ($unit !== '') {
                 $lastUnit = $unit;
+                $lastUnitOrder = $unitOrder;
             } else {
                 $unit = $lastUnit;
+                $unitOrder = $lastUnitOrder;
             }
 
-            if ($chapter === '' || $unit === '' || ($content === '' && $example === '' && $titleOverride === '')) {
+            if ($chapter === '') {
                 continue;
             }
 
-            $pending[] = [
-                'chapter' => $chapter,
-                'unit' => $unit,
-                'content' => $content,
-                'example' => $example,
-                'title' => $titleOverride,
-            ];
-        }
+            $this->ensureChapter($topics, $topicName, $chapter, $chapterOrder);
 
-        $this->appendNormalizedCards($topics, $topicName, $pending);
+            if ($unit === '') {
+                continue;
+            }
+
+            $this->ensureUnit($topics, $topicName, $chapter, $unit, $unitOrder);
+
+            if ($title === '') {
+                continue;
+            }
+
+            $this->appendCard(
+                $topics,
+                $topicName,
+                $chapter,
+                $unit,
+                $title,
+                $type !== '' ? $type : 'keyword',
+                $content,
+                $example !== '' ? $example : null,
+            );
+        }
 
         $topics = $this->finalizeTopics($topics);
-        if ($name === '' && $topics !== []) {
-            $name = $topicName;
-        }
-        if ($name === '') {
-            throw new InvalidArgumentException('找不到教材名稱');
+        if ($topics === []) {
+            throw new InvalidArgumentException('沒有可匯入的教材列');
         }
 
         return [
-            'name' => $name,
+            'name' => $topicName,
             'topics' => $topics,
         ];
     }
@@ -107,13 +129,17 @@ class ExcelMaterialParser
                 $units = [];
                 $unitOrder = 1;
                 foreach ($chapter['units'] as $unit) {
-                    $unit['sort_order'] = $unitOrder++;
+                    $unit['sort_order'] = $unit['sort_order'] ?: $unitOrder;
+                    $unitOrder = max($unitOrder, $unit['sort_order']) + 1;
                     $units[] = $unit;
                 }
+                usort($units, fn (array $a, array $b) => $a['sort_order'] <=> $b['sort_order']);
                 $chapter['units'] = $units;
-                $chapter['sort_order'] = $chapterOrder++;
+                $chapter['sort_order'] = $chapter['sort_order'] ?: $chapterOrder;
+                $chapterOrder = max($chapterOrder, $chapter['sort_order']) + 1;
                 $chapters[] = $chapter;
             }
+            usort($chapters, fn (array $a, array $b) => $a['sort_order'] <=> $b['sort_order']);
             $topic['chapters'] = $chapters;
             $topic['sort_order'] = $topicOrder++;
             $list[] = $topic;
@@ -124,78 +150,35 @@ class ExcelMaterialParser
 
     /**
      * @param  array<string, array<string, mixed>>  $topics
-     * @param  list<array{chapter: string, unit: string, content: string, example: string, title: string}>  $pending
      */
-    private function appendNormalizedCards(array &$topics, string $topicName, array $pending): void
+    private function ensureChapter(array &$topics, string $topic, string $chapter, ?int $order): void
     {
-        $byChapter = [];
-        foreach ($pending as $row) {
-            $byChapter[$row['chapter']][] = $row;
+        if (! isset($topics[$topic])) {
+            $topics[$topic] = $this->namedNode($topic, 'chapters');
         }
 
-        foreach ($byChapter as $chapterName => $rows) {
-            $fallback = $this->fallbackConcept($rows);
-
-            foreach ($rows as $row) {
-                $concept = trim($row['title'])
-                    ?: KnowledgeConcept::fromUnitName($row['unit'])
-                    ?: $fallback
-                    ?: $this->titleFromContent($row['content'] !== '' ? $row['content'] : $row['example']);
-
-                if ($concept === '') {
-                    continue;
-                }
-
-                $content = $row['content'];
-                $example = $row['example'];
-                if (KnowledgeConcept::isPracticeSection($row['unit'])) {
-                    if ($example === '') {
-                        $example = $content;
-                        $content = '';
-                    } elseif ($this->looksLikeCode($content)) {
-                        $content = '';
-                    }
-                }
-
-                $this->appendCard($topics, $topicName, $chapterName, $concept, $content, $example, $concept);
-            }
+        $chapters = &$topics[$topic]['chapters'];
+        if (! isset($chapters[$chapter])) {
+            $chapters[$chapter] = $this->namedNode($chapter, 'units');
+        }
+        if ($order !== null) {
+            $chapters[$chapter]['sort_order'] = $order;
         }
     }
 
     /**
-     * @param  list<array{chapter: string, unit: string, content: string, example: string, title: string}>  $rows
+     * @param  array<string, array<string, mixed>>  $topics
      */
-    private function fallbackConcept(array $rows): ?string
+    private function ensureUnit(array &$topics, string $topic, string $chapter, string $unit, ?int $order): void
     {
-        $named = [];
-        $practice = [];
-
-        foreach ($rows as $row) {
-            $fromUnit = KnowledgeConcept::fromUnitName($row['unit']);
-            if ($fromUnit === null) {
-                continue;
-            }
-            if (KnowledgeConcept::isPracticeSection($row['unit'])) {
-                $practice[$fromUnit] = true;
-            } else {
-                $named[$fromUnit] = true;
-            }
+        $this->ensureChapter($topics, $topic, $chapter, null);
+        $units = &$topics[$topic]['chapters'][$chapter]['units'];
+        if (! isset($units[$unit])) {
+            $units[$unit] = $this->namedNode($unit, 'knowledge_cards');
         }
-
-        $namedList = array_keys($named);
-        $practiceList = array_keys($practice);
-
-        if (count($namedList) === 1) {
-            return $namedList[0];
+        if ($order !== null) {
+            $units[$unit]['sort_order'] = $order;
         }
-        if (count($practiceList) === 1) {
-            return $practiceList[0];
-        }
-        if (count($practiceList) > 1) {
-            return $practiceList[0];
-        }
-
-        return null;
     }
 
     /**
@@ -206,37 +189,22 @@ class ExcelMaterialParser
         string $topic,
         string $chapter,
         string $unit,
+        string $title,
+        string $type,
         string $content,
-        string $example = '',
-        ?string $title = null,
+        ?string $example,
     ): void {
-        $title = trim((string) ($title ?? $unit));
-        if ($title === '') {
-            return;
-        }
+        $this->ensureUnit($topics, $topic, $chapter, $unit, null);
+        $cards = &$topics[$topic]['chapters'][$chapter]['units'][$unit]['knowledge_cards'];
 
-        if (! isset($topics[$topic])) {
-            $topics[$topic] = $this->namedNode($topic, 'chapters');
-        }
-
-        $chapters = &$topics[$topic]['chapters'];
-        if (! isset($chapters[$chapter])) {
-            $chapters[$chapter] = $this->namedNode($chapter, 'units');
-        }
-
-        $units = &$chapters[$chapter]['units'];
-        if (! isset($units[$unit])) {
-            $units[$unit] = $this->namedNode($unit, 'knowledge_cards');
-        }
-
-        foreach ($units[$unit]['knowledge_cards'] as &$existing) {
-            if (($existing['title'] ?? '') !== $title) {
+        foreach ($cards as &$existing) {
+            if (($existing['title'] ?? '') !== $title || ($existing['type'] ?? '') !== $type) {
                 continue;
             }
             if ($content !== '') {
                 $existing['content'] = trim($existing['content'] === '' ? $content : $existing['content']."\n\n".$content);
             }
-            if ($example !== '') {
+            if ($example) {
                 $existing['example'] = $existing['example']
                     ? $existing['example']."\n\n".$example
                     : $example;
@@ -246,24 +214,13 @@ class ExcelMaterialParser
         }
         unset($existing);
 
-        $units[$unit]['knowledge_cards'][] = [
-            'id' => $this->newId(),
+        $cards[] = [
             'title' => $title,
-            'content' => $content !== '' ? $content : $title,
-            'example' => $example !== '' ? $example : null,
-            'sort_order' => count($units[$unit]['knowledge_cards']) + 1,
+            'type' => $type,
+            'content' => $content,
+            'example' => $example,
+            'sort_order' => count($cards) + 1,
         ];
-    }
-
-    private function looksLikeCode(string $text): bool
-    {
-        $trim = ltrim($text);
-
-        return str_starts_with($trim, '<?')
-            || str_starts_with($trim, '$')
-            || str_starts_with($trim, '//')
-            || str_starts_with($trim, '/*')
-            || str_starts_with($trim, '#');
     }
 
     /**
@@ -272,7 +229,6 @@ class ExcelMaterialParser
     private function namedNode(string $name, string $childKey): array
     {
         return [
-            'id' => $this->newId(),
             'name' => $name,
             'sort_order' => 0,
             $childKey => [],
@@ -282,44 +238,13 @@ class ExcelMaterialParser
     /**
      * @param  list<array<string, string>>  $rows
      */
-    private function findMaterialName(array $rows, int $headerIndex): string
-    {
-        for ($i = 0; $i < $headerIndex; $i++) {
-            foreach ($rows[$i] as $column => $value) {
-                $value = trim($value);
-                if ($value === '') {
-                    continue;
-                }
-
-                if (preg_match('/^教材名稱\s*[:：]\s*(.+)$/u', $value, $matches) === 1) {
-                    return trim($matches[1]);
-                }
-
-                if (preg_match('/^教材名稱\s*[:：]?\s*$/u', $value) === 1) {
-                    $nextColumn = $column;
-                    $nextColumn++;
-                    $next = trim($rows[$i][$nextColumn] ?? '');
-                    $next = preg_replace('/^[:：]\s*/u', '', $next) ?? $next;
-                    if (trim($next) !== '') {
-                        return trim($next);
-                    }
-                }
-            }
-        }
-
-        return '';
-    }
-
-    /**
-     * @param  list<array<string, string>>  $rows
-     */
     private function findHeaderRow(array $rows): ?int
     {
         foreach ($rows as $index => $row) {
             $joined = implode(' ', array_map(fn (string $value) => mb_strtolower(trim($value)), $row));
-            $hasChapters = str_contains($joined, 'chapters') || str_contains($joined, '章節');
-            $hasUnits = str_contains($joined, 'units') || str_contains($joined, '單元');
-            if ($hasChapters && $hasUnits) {
+            $hasChapter = str_contains($joined, 'chapter_title') || str_contains($joined, '章節');
+            $hasUnit = str_contains($joined, 'unit_title') || str_contains($joined, '單元');
+            if ($hasChapter && $hasUnit) {
                 return $index;
             }
         }
@@ -337,25 +262,45 @@ class ExcelMaterialParser
 
         foreach ($row as $column => $value) {
             $key = mb_strtolower(trim($value));
-            if (str_starts_with($key, 'chapters') || $key === '章節') {
-                $map['chapters'] = $column;
-            } elseif (str_starts_with($key, 'units') || $key === '單元') {
-                $map['units'] = $column;
-            } elseif (
-                $key === 'title'
-                || str_contains($key, '知識點')
-                || str_contains($key, '知識卡標題')
-                || str_contains($key, 'card_title')
-            ) {
-                $map['title'] = $column;
-            } elseif (str_contains($key, 'knowledge_card') || str_starts_with($key, '知識卡')) {
-                $map['knowledge_card'] = $column;
-            } elseif ($key === '範例' || str_starts_with($key, '範例')) {
-                $map['example'] = $column;
+            if ($key === 'chapter_title' || $key === '章節') {
+                $map['chapter_title'] = $column;
+            } elseif ($key === 'chapter_order') {
+                $map['chapter_order'] = $column;
+            } elseif ($key === 'unit_title' || $key === '單元') {
+                $map['unit_title'] = $column;
+            } elseif ($key === 'unit_order') {
+                $map['unit_order'] = $column;
+            } elseif ($key === 'card_name' || str_contains($key, '知識卡標題')) {
+                $map['card_name'] = $column;
+            } elseif ($key === 'card_type' || $key === '類型') {
+                $map['card_type'] = $column;
+            } elseif ($key === 'card_content' || str_contains($key, '知識卡內容')) {
+                $map['card_content'] = $column;
+            } elseif ($key === 'code_example' || $key === '範例' || str_starts_with($key, '範例')) {
+                $map['code_example'] = $column;
             }
         }
 
         return $map;
+    }
+
+    /**
+     * @param  array<string, string>  $row
+     */
+    private function isExampleRow(array $row): bool
+    {
+        $values = array_filter(array_map('trim', array_values($row)), fn (string $value) => $value !== '');
+        if ($values === []) {
+            return true;
+        }
+
+        foreach ($values as $value) {
+            if (str_starts_with(mb_strtolower($value), 'ex：') || str_starts_with(mb_strtolower($value), 'ex:')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -368,6 +313,19 @@ class ExcelMaterialParser
         }
 
         return trim($row[$column] ?? '');
+    }
+
+    /**
+     * @param  array<string, string>  $row
+     */
+    private function intCell(array $row, ?string $column): ?int
+    {
+        $value = $this->cell($row, $column);
+        if ($value === '' || ! is_numeric($value)) {
+            return null;
+        }
+
+        return (int) $value;
     }
 
     /**
@@ -393,7 +351,6 @@ class ExcelMaterialParser
             throw new InvalidArgumentException('Excel 工作表格式錯誤');
         }
 
-        $xml->registerXPathNamespace('m', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
         $rows = [];
 
         foreach ($xml->sheetData->row ?? [] as $row) {
@@ -450,18 +407,5 @@ class ExcelMaterialParser
         }
 
         return trim((string) $cell->v);
-    }
-
-    private function titleFromContent(string $content): string
-    {
-        $line = trim(strtok(str_replace(["\r\n", "\r"], "\n", $content), "\n") ?: $content);
-        $line = preg_replace('/\s+/u', ' ', $line) ?? $line;
-
-        return mb_substr($line, 0, 80);
-    }
-
-    private function newId(): string
-    {
-        return (string) \Illuminate\Support\Str::ulid();
     }
 }
