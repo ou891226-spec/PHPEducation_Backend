@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Unit extends Model
 {
@@ -26,8 +26,9 @@ class Unit extends Model
         return $this->belongsTo(Chapter::class);
     }
 
-    public function knowledgeCards(): HasMany
+    public function knowledgeCards(): BelongsToMany
     {
-        return $this->hasMany(KnowledgeCard::class)->orderBy('sort_order');
+        return $this->belongsToMany(KnowledgeCard::class, 'knowledge_card_unit')
+            ->withTimestamps();
     }
 }

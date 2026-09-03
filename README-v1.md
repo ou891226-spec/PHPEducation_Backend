@@ -24,11 +24,11 @@ courses    → 課程（teacher_id → teachers，含 class_name 班級）
 enrollments → 選課（students ↔ courses）
 
 教材部分
-material_drafts → 匯入草稿（一門課可有多份；`name` 為教材名稱）
-topics          → 主題（course_id → courses）
+topics          → 主題（course_id → courses；網頁填名稱）
 chapters        → 章節（topic_id → topics）
 units           → 單元（chapter_id → chapters）
-knowledge_cards → 知識卡（unit_id → units）
+knowledge_cards → 知識卡（topic_id、可空 unit_id；type / content HTML / example）
+knowledge_card_unit → 單元 ↔ 知識卡（同一張卡可掛多個單元）
 questions       → 題目
 question_options → 選擇／是非選項
 question_sub_answers → 填空／除錯／解讀正解
@@ -43,7 +43,7 @@ bloom           → Bloom 編碼（出題 B11–B63）
 課程由教師建立並擁有（`courses.teacher_id`）；學生透過 `enrollments` 與課程形成多對多關聯。
 
 教材層級：教師 → 課程 → 主題 → 章節 → 單元 → 知識卡。
-主題名稱由匯入表單一次填寫；Excel 只含章節以下。表單主題 + Excel → Parser → `material_drafts.tree` → 前端畫樹編輯 → 發布 → 正式教材表。
+主題名稱由匯入表單一次填寫；Excel 用 `course_template.xlsx`（章／單元／卡名／類型／內文／程式範例）。表單主題 + Excel → Parser → **直接寫正式教材**。單張卡儲存變更學生立刻看到。再匯入同主題須確認覆蓋。
 
 ---
 
@@ -70,7 +70,8 @@ app/
 │  │     ├─ MaterialTemplateController.php
 │  │     ├─ StudentRosterTemplateController.php
 │  │     ├─ MaterialImportController.php
-│  │     ├─ MaterialDraftController.php
+│  │     ├─ MaterialGraphController.php
+│  │     ├─ EditorImageController.php
 │  │     ├─ TopicController.php
 │  │     ├─ ChapterController.php
 │  │     ├─ UnitController.php
@@ -86,7 +87,7 @@ app/
 │
 ├─ Models/
 │  └─ Admin、Teacher、Student、Course、Enrollment、
-│     MaterialDraft、Topic、Chapter、Unit、KnowledgeCard、
+│     Topic、Chapter、Unit、KnowledgeCard、
 │     Question、QuestionOption、QuestionSubAnswer、QuestionRecord、Bloom
 │
 ├─ Providers/
@@ -97,21 +98,23 @@ app/
    ├─ CourseService.php
    ├─ MaterialService.php
    ├─ ExcelMaterialParser.php
+   ├─ MaterialImportService.php
    ├─ ExcelStudentRosterParser.php
-   ├─ MaterialDraftService.php
    ├─ StudentMaterialService.php
    ├─ StudentQuestionService.php
    ├─ TeacherQuestionService.php
    ├─ TeacherQuestionRecordService.php
    ├─ StudentAccountService.php
+   ├─ StudentCreateExcelService.php
    ├─ DashboardService.php
    └─ UserFormatterService.php
 
 bootstrap/          → 應用程式啟動與 Middleware 註冊
 config/             → 設定檔（auth、cors、sanctum、database 等）
 public/templates/
-├─ material_import_template.xlsx   → 教師教材匯入 Excel 範本
-└─ student_import_template.xlsx    → 教師學生名冊 Excel 範本
+├─ course_template.xlsx             → 教師教材匯入 Excel 範本
+├─ student_import_template.xlsx     → 教師學生名冊 Excel 範本
+└─ student_account_template.xlsx    → 開通後寄給教師的學生帳密 Excel 範本
 database/
 ├─ migrations/      → 資料表結構
 └─ seeders/         → 測試帳號與示範資料
@@ -267,20 +270,6 @@ students ── enrollments ── courses
 學生 Dashboard 的「已修課程」透過 `enrollments` 關聯查詢（`Student` ↔ `Course` many-to-many）。
 Seeder 已讓王小明選修「網際系統設計」（班級資應）。
 
-### material_drafts 教材匯入草稿
-一門課可有多份草稿（用 `id` 區分）。同一門課同時只能有一份 `published` Draft 列（舊的改 `archived`），但**正式教材可以同時有多個主題**。發布只同步這份 Draft 裡的主題，不會砍掉其他已發布主題。學生看正式表（`topics` 等），不是看 Draft 列。
-
-| 欄位 | 型別 | 說明 |
-|------|------|------|
-| id | bigint | 草稿 ID（PK） |
-| course_id | bigint | 所屬課程 ID（FK → courses.id） |
-| teacher_id | bigint | 匯入教師 ID（FK → teachers.id） |
-| name | string | 教材名稱。Excel 匯入時不可與該課**未發布**草稿同名；已發布／已封存／已刪空的名稱可重用 |
-| status | string | `draft`、`published` 或 `archived` |
-| tree | json | 主題／章節／單元／知識卡樹 |
-| created_at | timestamp | 建立時間 |
-| updated_at | timestamp | 更新時間 |
-
 ### topics 主題資料
 一門課程底下可有多個主題
 
@@ -324,25 +313,39 @@ Seeder 已讓王小明選修「網際系統設計」（班級資應）。
 例如：第一章 PHP 簡介 → 1-1 PHP 是什麼、1-2 PHP 的特色、1-3 PHP 的應用。
 
 ### knowledge_cards 知識卡資料
-一個單元底下可有多張知識卡
+知識卡可掛在多個單元（`knowledge_card_unit`）。`unit_id` 仍表示主要單元；脫離教材樹時為空。
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
 | id | bigint | 知識卡 ID（PK） |
-| unit_id | bigint（可空） | 所屬單元 ID（FK → units.id）。有題目使用而從教材樹刪除時改為空，知識卡列會保留 |
-| title | string | 知識點名稱（例如 `變數`、`define()`） |
-| content | text | 知識卡內容 |
-| example | text | 知識卡範例（可空） |
+| unit_id | bigint（可空） | 主要單元 ID（FK → units.id）。有題目使用而從教材樹刪除時改為空 |
+| topic_id | bigint（可空） | 所屬主題（覆蓋匯入時用來對回同一張卡） |
+| title | string | 知識卡名稱（Excel `card_name`） |
+| type | string | 類型，例如 `keyword`、`function`（Excel `card_type`） |
+| content | longText | 知識卡內容，可存 HTML（Excel `card_content`） |
+| example | text | 程式範例（Excel `code_example`） |
 | sort_order | integer | 排序順序 |
 | created_at | timestamp | 建立時間 |
 | updated_at | timestamp | 更新時間 |
 
 例如：單元「變數」→ 知識卡「變數」（內容與 `example` 程式範例）。出題下拉依教材**主題**分組，顯示知識點名稱，不顯示「說明」課文或 `實作變數01`。
 
+### knowledge_card_unit 單元與知識卡
+
+同一張卡可掛在多個單元；同一單元對同一張卡不可重複。刪單元時只拿掉關聯，知識卡本體仍在（是否刪卡由上層刪除邏輯決定）。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 關聯 ID（PK） |
+| unit_id | bigint | 單元 ID（FK → units.id） |
+| knowledge_card_id | bigint | 知識卡 ID（FK → knowledge_cards.id） |
+| created_at | timestamp | 建立時間 |
+| updated_at | timestamp | 更新時間 |
+
 教材資料關聯：
 
 ```text
-courses → topics → chapters → units → knowledge_cards
+courses → topics → chapters → units ↔ knowledge_cards（knowledge_card_unit）
 courses → questions
 questions ↔ knowledge_cards（question_knowledge_cards）
 ```
@@ -665,7 +668,7 @@ POST /student-applications/approve
 POST /teacher/student-applications/{id}/approve
 ```
 
-流程：教師選課程並上傳 Excel 名冊，或單筆補漏掉的學生（僅學號、姓名；班級取自該門課）→ 管理員審核開通。沒帳號就建 `students`（以學號自動產生校園信箱）並寫 `enrollments`；已有帳號只寫選課。可勾選指定學生開通或整單一鍵開通。
+流程：教師選課程並上傳 Excel 名冊，或單筆補漏掉的學生（僅學號、姓名；班級取自該門課）→ 管理員審核開通。沒帳號就建 `students`（以學號自動產生校園信箱）並寫 `enrollments`；已有帳號只寫選課。可勾選指定學生開通或整單一鍵開通。本次若有新建帳號，會寄 `StudentAccountCreated` 給該課教師（本文不含明文密碼，附件為本次新建學生的姓名／學號／初始密碼 Excel）；沒有新建則不寄信、不附空檔。
 
 ### GET `/api/v1/teacher/student-applications/template`
 
@@ -795,9 +798,11 @@ Request：
 
 非管理員 **403**。未登入 **401**。
 
+本次有新建帳號才寄信給該課教師。信件本文不列學生密碼；附件 `學生帳號名單.xlsx` 依 `public/templates/student_account_template.xlsx`（第 1 列說明、第 2 列姓名／帳號／密碼、第 3 列起為本次新建學生）。工作表保護密碼為老師登入帳號 `teachers.account`。沒有新建帳號則不寄、不附空檔。
+
 ### POST `/api/v1/teacher/student-applications/{id}/approve`
 
-功能：管理員將整張申請單一次全數審核開通。需要管理員 Token。
+功能：管理員將整張申請單一次全數審核開通。需要管理員 Token。寄信規則與勾選開通相同。
 
 成功回應 **200**：
 
@@ -1010,35 +1015,30 @@ Authorization: Bearer {token}
 
 ### 教材匯入流程（權限）
 
-範本是系統給所有教師的固定檔，**不綁某一門課**。課程權限放在「匯入／草稿／發布」。
+範本是系統給所有教師的固定檔，**不綁某一門課**。匯入直接寫正式教材，學生立刻看得到。
 
 | 功能 | API | 權限 |
 |------|-----|------|
 | 下載 Excel 範本 | `GET /api/v1/teacher/materials/template` | 教師 |
 | 匯入教材 | `POST /api/v1/teacher/courses/{courseId}/materials/import` | 該課教師 |
-| 查看草稿 | `GET /api/v1/teacher/courses/{courseId}/material-drafts` | 該課教師 |
-| 從已發布教材開新 Draft | `POST /api/v1/teacher/courses/{courseId}/material-drafts` | 該課教師 |
-| 編輯草稿 | `/api/v1/teacher/material-drafts/{draftId}/...` | 該課教師 |
-| 發布教材 | `POST /api/v1/teacher/material-drafts/{draftId}/publish` | 該課教師 |
-| 學生查看正式教材 | `/api/v1/student/courses/{courseId}/topics` 等 | 修課學生 |
+| 教師圖譜樹 | `GET /api/v1/teacher/courses/{courseId}/tree`、`GET /api/v1/teacher/topics/{topicId}/tree` | 該課教師 |
+| 上傳編輯器圖片 | `POST /api/v1/teacher/upload-image` | 教師 |
+| 學生圖譜 | `GET /api/v1/student/courses/{courseId}/graph` | 修課學生 |
 
 流程（前端不要自己解析 Excel）：
 
-1. 填主題名稱 `topic` + 上傳 xlsx → 後端建成 Draft 樹（章節→單元→知識卡）→ 前端畫樹、用 Draft API 增刪改 → 發布後學生才看得到。
-2. 之後要改：對單一主題「加入草稿編輯」（POST 帶 `topic_id`）；不帶則複製該課全部已發布主題。再上傳 Excel 會另建一份 Draft。
-3. 未發布前學生仍看上一版。發布只合併這份 Draft 的主題：不同名並存，同名則更新那棵樹（知識卡 id 盡量保留）。舊 published 改 archived。
-4. 教材名稱只跟**未發布** Draft 重複才 422。草稿最後一個主題刪掉，整份 Draft 一併刪除，名稱可重用。列表皆新到舊，含 `created_at` / `updated_at`。
+1. 填主題名稱 `topic` + 上傳 xlsx → 後端寫入正式主題／章／單元／知識卡。
+2. 該主題已有內容時須再帶 `overwrite=true`（確認覆蓋）。有題目使用的知識卡不會硬刪，只脫離樹。
+3. 單張卡 PUT「儲存變更」立刻給學生看。圖譜用 tree／graph 一次撈整棵樹。
 
-Excel：一份檔一個主題（名稱用表單 `topic`）。第 1 列可寫 `教材名稱：…`（沒寫就用 `topic`）、第 2 列說明、第 3 列欄位、第 4 列範本不讀、第 5 列起才是內容。空白章節／單元沿用上一列。
-
-知識卡是**知識點名稱**（例如 `變數命名原則`、`define()`），不是章名、也不是 `實作變數01`。`units` 請填知識點；`chapters` 只用來分組。Excel 若仍用「說明」當單元、用「實作變數01」當列名，匯入時會把說明當內容、把實作列併進同章知識卡的 `example`，知識卡標題收斂成知識點（例如 `變數`）。可另加 `知識點`／`知識卡標題` 欄覆寫名稱。「範例」→ 知識卡 `example`（可空）。
+Excel：一份檔一個主題（名稱用表單 `topic`）。第 1 列欄位：`chapter_title`、`chapter_order`、`unit_title`、`unit_order`、`card_name`、`card_type`、`card_content`、`code_example`。第 2 列公版範例整列不讀，第 3 列起才是內容。任一格以 `ex：` 或 `ex:` 開頭的列也整列不讀。空白章節／單元沿用上一列。同主題、同名＋同 type 只建一張卡，可掛多個單元。`code_example` 存成知識卡 `example`。
 
 ### 教材匯入範本
 
 檔案位置（專案內固定這一份，下載 API 直接讀這個檔）：
 
 ```text
-public/templates/material_import_template.xlsx
+public/templates/course_template.xlsx
 ```
 
 老師下載後檔名會顯示為 `教材匯入範本.xlsx`。範本**沒有主題欄**。
@@ -1049,7 +1049,7 @@ public/templates/material_import_template.xlsx
 
 任何已登入教師皆可下載。學生會得到 403。
 
-### 匯入、草稿、發布
+### 匯入、圖譜
 
 `multipart/form-data`：
 
@@ -1057,52 +1057,39 @@ public/templates/material_import_template.xlsx
 |------|------|------|
 | topic | 是 | 主題名稱。一份檔只掛這一個主題 |
 | file | 是 | `.xlsx` |
+| overwrite | 否 | 主題已有內容時必須為 true |
 
 沒帶 `topic`（空字串也不行）會 **422**。副檔名必須是 `.xlsx`。
 
 | Method | URL | 說明 |
 |--------|-----|------|
-| POST | `/api/v1/teacher/courses/{courseId}/materials/import` | 後端解析 Excel，新增一份草稿（前端不要自己解析） |
-| GET | `/api/v1/teacher/courses/{courseId}/material-drafts` | 列出該課所有草稿 |
-| POST | `/api/v1/teacher/courses/{courseId}/material-drafts` | 從正式教材複製一份新 Draft；可帶 `topic_id` 只複製那一個主題 |
-| POST | `/api/v1/teacher/material-drafts/{draftId}/topics` | 草稿新增主題 |
-| PUT | `/api/v1/teacher/material-drafts/{draftId}/topics/{nodeId}` | 草稿修改主題 |
-| DELETE | `/api/v1/teacher/material-drafts/{draftId}/topics/{nodeId}` | 草稿刪除主題 |
-| POST | `/api/v1/teacher/material-drafts/{draftId}/topics/{topicId}/chapters` | 草稿新增章節 |
-| PUT | `/api/v1/teacher/material-drafts/{draftId}/chapters/{nodeId}` | 草稿修改章節 |
-| DELETE | `/api/v1/teacher/material-drafts/{draftId}/chapters/{nodeId}` | 草稿刪除章節 |
-| POST | `/api/v1/teacher/material-drafts/{draftId}/chapters/{chapterId}/units` | 草稿新增單元 |
-| PUT | `/api/v1/teacher/material-drafts/{draftId}/units/{nodeId}` | 草稿修改單元 |
-| DELETE | `/api/v1/teacher/material-drafts/{draftId}/units/{nodeId}` | 草稿刪除單元 |
-| POST | `/api/v1/teacher/material-drafts/{draftId}/units/{unitId}/knowledge-cards` | 草稿新增知識卡 |
-| PUT | `/api/v1/teacher/material-drafts/{draftId}/knowledge-cards/{nodeId}` | 草稿修改知識卡 |
-| DELETE | `/api/v1/teacher/material-drafts/{draftId}/knowledge-cards/{nodeId}` | 草稿刪除知識卡 |
-| POST | `/api/v1/teacher/material-drafts/{draftId}/publish` | 發布為正式教材 |
+| POST | `/api/v1/teacher/courses/{courseId}/materials/import` | 後端解析 Excel，直接寫正式教材，回 `{ topic }`（**201**） |
+| GET | `/api/v1/teacher/courses/{courseId}/tree` | 該課全部主題的樹，回 `{ course }` |
+| GET | `/api/v1/teacher/topics/{topicId}/tree` | 單一主題的樹，回 `{ topic }` |
+| POST | `/api/v1/teacher/upload-image` | 編輯器圖片。`multipart` 欄位 `image`（圖檔，最大 5MB），回 `{ url }`（**201**；需 `php artisan storage:link`） |
+| GET | `/api/v1/student/courses/{courseId}/graph` | 修課學生圖譜，回 `{ graph }` |
 
-草稿欄位與正式教材相同。主題／章節／單元：`name`、`sort_order`。知識卡：`title`、`content`、`example`、`sort_order`。匯入／新增成功為 **201**。草稿列表依 `updated_at` 新到舊，並含時間欄位。
+知識卡欄位：`title`（別名 `name`）、`type`、`content`、`example`（別名 `code_example`）、`sort_order`。章／單元另給 `title` 別名方便 vis-network。圖片實際檔在 `storage/app/public/editor_images/`，網址為 `/storage/editor_images/...`，寫進知識卡 `content` HTML，沒有獨立圖片欄。
 
 | 情況 | 狀態 |
 |------|------|
-| 只上傳範本示範列、沒填 `topic`、找不到教材名稱 | 422 |
-| 同一份 Draft 主題名稱重複 | 422 |
-| Excel 教材名稱與該課**未發布** Draft 重複 | 422 |
-| 已發布或已封存的 Draft 再改／再發布 | 422 |
+| 只上傳範本示範列、沒填 `topic` | 422 |
+| 主題已有教材但沒帶 overwrite | 422 |
 | 不是該課教師 | 404 |
 
-發布時：同課其他 `published` Draft 改成 `archived`，只同步這份樹裡的主題（同名或同正式 id 就更新，否則新增）。其他主題不動。草稿裡刪掉的章／單元會從正式樹拿掉；已有題目關聯的知識卡不會刪，改為脫離教材樹（`unit_id` 設為 null），與正式刪除相同。
+覆蓋時：該主題章／單元換成這份 Excel。已有題目關聯、卻沒再出現在 Excel 的知識卡不會刪，改為脫離教材樹（`unit_id` 設為 null）。
 
-### 學生教材（已發布、已選課）
+### 學生教材（已選課）
 
-學生只能看正式教材，看不到草稿。未選課回 **404**。非學生打這些路由 **403**。
+學生看正式教材。未選課回 **404**。非學生打這些路由 **403**。
 
 | Method | URL | 說明 |
 |--------|-----|------|
-| GET | `/api/v1/student/courses/{courseId}/topics` | 列出該課主題 |
+| GET | `/api/v1/student/courses/{courseId}/graph` | 一次回整棵樹給圖譜 |
+| GET | `/api/v1/student/courses/{courseId}/topics` | 列出該課主題（舊鑽層） |
 | GET | `/api/v1/student/topics/{topicId}/chapters` | 列出該主題章節 |
 | GET | `/api/v1/student/chapters/{chapterId}/units` | 列出該章節單元 |
 | GET | `/api/v1/student/units/{unitId}/knowledge-cards` | 列出該單元知識卡 |
-
-一層一層往下點，格式與教師列表相同（含 `item_count`、`created_at`、`updated_at`）。主題列表依最後更新時間新到舊。
 
 ### 教師出題
 
@@ -1220,7 +1207,7 @@ public/templates/material_import_template.xlsx
 
 ### topics 主題
 
-這段是**正式教材**的鑽層 API（`MaterialService`），給已發布內容或教師手動建正式表用。Excel 匯入與老師改第一版樹請用上面的 **Draft API**。
+這段是**正式教材**的鑽層 API（`MaterialService`）。Excel 匯入會直接寫正式表；單張卡 PUT 也是改正式資料。
 
 | Method | URL | 說明 |
 |--------|-----|------|
@@ -1279,13 +1266,14 @@ Request（新增／修改）：
 ```json
 {
   "title": "變數",
+  "type": "keyword",
   "content": "變數是用來儲存資料的容器，PHP 使用 $ 符號宣告變數。",
   "example": "$name = \"PHP\";",
   "sort_order": 1
 }
 ```
 
-`title`、`content` 必填，`example` 選填。畫面上一層用 `name`，知識卡請用 `title`。
+`title`、`content` 必填，`type`、`example` 選填（`type` 預設 `keyword`）。也接受 `name`、`code_example` 別名。畫面上一層用 `name`，知識卡請用 `title`。
 
 成功建立為 **201**。刪除成功 200：
 
@@ -1310,7 +1298,7 @@ Request（新增／修改）：
 
 教師只能管理自己建立的課程，無法查看、修改或刪除其他教師的課程（**404**）。  
 非教師存取 `/teacher/*` 回傳 **403**。  
-學生只能看自己有選課的課程教材（未選課 **404**）；草稿未發布時學生列表為空。
+學生只能看自己有選課的課程教材（未選課 **404**）。匯入後立刻看得到。
 
 ---
 
@@ -1341,7 +1329,7 @@ php artisan key:generate
 
 ```bash
 php artisan migrate
-php artisan db:seed
+php artisan storage:link
 php artisan serve
 ```
 

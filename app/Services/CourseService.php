@@ -55,6 +55,11 @@ class CourseService
         return $this->formatCourse($course);
     }
 
+    public function ownedCourse(Teacher $teacher, int $courseId): Course
+    {
+        return $this->findOwnedCourse($teacher, $courseId);
+    }
+
     public function update(Teacher $teacher, int $courseId, array $data): array
     {
         $course = $this->findOwnedCourse($teacher, $courseId);
