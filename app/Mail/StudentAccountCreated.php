@@ -33,7 +33,7 @@ class StudentAccountCreated extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Student Account Created',
+            subject: '【PHPEducation】學生帳號建立通知',
         );
     }
 

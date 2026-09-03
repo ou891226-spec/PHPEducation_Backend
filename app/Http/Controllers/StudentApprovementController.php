@@ -79,8 +79,10 @@ class StudentApprovementController extends Controller
     {
         foreach ($createdByTeacher as $group) {
 
+            // 計算 N 學生總數
             $studentCount = count($group['students'] ?? []);
         
+            // N > 0 才寄信、才做附件。N = 0 不寄、不做空白檔
             if ($group['students'] === []) {
                 continue;
             }

@@ -31,6 +31,7 @@ class StudentCreateExcelService {
             $sheet->setCellValue('C2', '密碼');
         }
        
+        // Excel 第3列開始的列數（不含說明列、標題列）。
         $row = 3;
         foreach ($students as $student) {
             $sheet->setCellValueExplicit('A' . $row, $student['name'], DataType::TYPE_STRING);
