@@ -495,6 +495,68 @@ HTTP Status 與 body 中的 `statusCode` 一致。
 
 ---
 
+## 忘記密碼
+
+未登入即可打。後端產生 12 碼隨機新密碼、寫入帳號（hashed），再寄到校園信箱。管理員沒有這支 API。
+
+欄位不要跟登入的 `account` 混用：學生用 `student_no`，教師用 `teacher_account`。
+
+開發環境預設 `MAIL_MAILER=log`，信件會寫進 `storage/logs/laravel.log`，不會真的寄出。正式環境請改 SMTP。
+
+### POST `/api/v1/auth/student/forgot-password`
+
+功能：重設學生密碼並寄信到 `students.email`。
+
+Request：
+
+```json
+{
+  "student_no": "1411131000"
+}
+```
+
+學號不必加 `s`。若前端送 `s1411131000` 也可以（後端會組成校園信箱再查）。
+
+| 狀態碼 | 說明 |
+|--------|------|
+| 200 | 已重設並寄信 |
+| 422 | 沒帶 `student_no`，或學號不存在 |
+
+#### 成功回應 200
+
+```json
+{
+  "message": "已寄送新密碼至學生校園信箱"
+}
+```
+
+### POST `/api/v1/auth/teacher/forgot-password`
+
+功能：重設教師密碼並寄信到 `teachers.email`。帳號對 `teachers.account`。
+
+Request：
+
+```json
+{
+  "teacher_account": "teacher@school.edu.tw"
+}
+```
+
+| 狀態碼 | 說明 |
+|--------|------|
+| 200 | 已重設並寄信 |
+| 422 | 沒帶 `teacher_account`，或帳號不存在 |
+
+#### 成功回應 200
+
+```json
+{
+  "message": "已寄送新密碼至教師校園信箱"
+}
+```
+
+---
+
 ## 登出
 
 ### POST `/api/v1/auth/logout`
