@@ -5,12 +5,11 @@ namespace App\Mail;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
-use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-class TeacherAccountCreated extends Mailable
+class TeacherPasswordReset extends Mailable
 {
     use Queueable, SerializesModels;
 
@@ -18,13 +17,10 @@ class TeacherAccountCreated extends Mailable
      * Create a new message instance.
      */
     public function __construct(
-        public string $tid,
-        public string $name,
-        public string $account,
-        public string $password,
-    ){
-        //
-    }
+        public string $teacherName,
+        public string $teacherAccount,
+        public string $newPassword,
+    ) {}
 
     /**
      * Get the message envelope.
@@ -32,7 +28,7 @@ class TeacherAccountCreated extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: '【PHPEducation】教師帳號建立通知',
+            subject: '【PHPEducation】教師帳號密碼重設通知',
         );
     }
 
@@ -42,14 +38,14 @@ class TeacherAccountCreated extends Mailable
     public function content(): Content
     {
         return new Content(
-            view: 'emails.teachers-account-created'
+            view: 'emails.teacher-password-reset',
         );
     }
 
     /**
      * Get the attachments for the message.
      *
-     * @return array<int, Attachment>
+     * @return array<int, \Illuminate\Mail\Mailables\Attachment>
      */
     public function attachments(): array
     {

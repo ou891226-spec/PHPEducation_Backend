@@ -6,6 +6,7 @@ use App\Models\Course;
 use App\Models\Teacher;
 use App\Services\CourseService;
 use Database\Seeders\DatabaseSeeder;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Tests\TestCase;
 
@@ -195,6 +196,60 @@ class AuthApiTest extends TestCase
         $this->withToken($token)
             ->getJson('/api/v1/teacher/courses')
             ->assertForbidden();
+    }
+
+        public function test_student_forgot_password(): void
+    {
+        Mail::fake();
+
+        $response = $this->postJson('/api/v1/auth/student/forgot-password', [
+            'student_no' => '1411131000',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('message', '已寄送新密碼至學生校園信箱');
+
+        Mail::assertSent(\App\Mail\StudentPasswordReset::class, function ($mail) {
+            return $mail->studentAccount === '1411131000'
+                && !empty($mail->newPassword);
+        });
+    }
+
+    public function test_student_forgot_password_with_invalid_student_no(): void
+    {
+        $response = $this->postJson('/api/v1/auth/student/forgot-password', [
+            'student_no' => 'invalid_student_no',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['student_no']);
+    }
+
+    public function test_teacher_forgot_password(): void
+    {
+        Mail::fake();
+
+        $response = $this->postJson('/api/v1/auth/teacher/forgot-password', [
+            'teacher_account' => 'teacher@school.edu.tw',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('message', '已寄送新密碼至教師校園信箱');
+
+        Mail::assertSent(\App\Mail\TeacherPasswordReset::class, function ($mail) {
+            return $mail->teacherAccount === 'teacher@school.edu.tw'
+                && !empty($mail->newPassword);
+        });
+    }
+
+    public function test_teacher_forgot_password_with_invalid_account(): void
+    {
+        $response = $this->postJson('/api/v1/auth/teacher/forgot-password', [
+            'teacher_account' => 'nonexistent_teacher',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['teacher_account']);
     }
 
     private function loginToken(string $account): string

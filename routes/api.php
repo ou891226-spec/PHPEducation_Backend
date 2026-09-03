@@ -25,11 +25,12 @@ use App\Http\Controllers\StudentApprovementController;
 
 Route::prefix('v1')->group(function () {
 
-    // 教師 / 學生批次帳號 申請路由
     Route::post('/teacher-applications', [TeacherApplicationController::class, 'store']);
     Route::post('/teacher/student-applications', [StudentAccountApplicationController::class, 'store']);
 
     Route::post('/auth/login', [AuthController::class, 'login']);
+    Route::post('/auth/student/forgot-password', [AuthController::class, 'studentForgotPassword']);
+    Route::post('/auth/teacher/forgot-password', [AuthController::class, 'teacherForgotPassword']);
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('/auth/logout', [AuthController::class, 'logout']);
