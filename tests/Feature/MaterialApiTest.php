@@ -22,37 +22,27 @@ class MaterialApiTest extends TestCase
             'class_name' => '資應二甲',
         ])->json('course.id');
 
-        $topic = $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/topics", [
-            'name' => 'PHP 基礎',
-        ]);
-
-        $topic->assertCreated()
-            ->assertJsonPath('topic.name', 'PHP 基礎')
-            ->assertJsonPath('topic.item_count', 0);
-
-        $topicId = $topic->json('topic.id');
-
-        $this->withToken($token)
-            ->getJson("/api/v1/teacher/courses/{$courseId}/topics")
-            ->assertOk()
-            ->assertJsonCount(1, 'topics');
-
-        $chapter = $this->withToken($token)->postJson("/api/v1/teacher/topics/{$topicId}/chapters", [
+        $chapter = $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/chapters", [
             'name' => '第一章 PHP 簡介',
         ]);
 
         $chapter->assertCreated()
-            ->assertJsonPath('chapter.name', '第一章 PHP 簡介');
+            ->assertJsonPath('chapter.name', '第一章 PHP 簡介')
+            ->assertJsonPath('chapter.item_count', 0);
 
         $chapterId = $chapter->json('chapter.id');
 
         $this->withToken($token)
-            ->putJson("/api/v1/teacher/topics/{$topicId}", [
-                'name' => 'PHP 入門',
+            ->getJson("/api/v1/teacher/courses/{$courseId}/chapters")
+            ->assertOk()
+            ->assertJsonCount(1, 'chapters');
+
+        $this->withToken($token)
+            ->putJson("/api/v1/teacher/chapters/{$chapterId}", [
+                'name' => '第一章 PHP 入門',
             ])
             ->assertOk()
-            ->assertJsonPath('topic.name', 'PHP 入門')
-            ->assertJsonPath('topic.item_count', 1);
+            ->assertJsonPath('chapter.name', '第一章 PHP 入門');
 
         $unit = $this->withToken($token)->postJson("/api/v1/teacher/chapters/{$chapterId}/units", [
             'name' => '變數',
@@ -108,13 +98,9 @@ class MaterialApiTest extends TestCase
             ->assertOk();
 
         $this->withToken($token)
-            ->deleteJson("/api/v1/teacher/topics/{$topicId}")
-            ->assertOk();
-
-        $this->withToken($token)
-            ->getJson("/api/v1/teacher/courses/{$courseId}/topics")
+            ->getJson("/api/v1/teacher/courses/{$courseId}/chapters")
             ->assertOk()
-            ->assertJsonCount(0, 'topics');
+            ->assertJsonCount(0, 'chapters');
     }
 
     public function test_teacher_cannot_access_other_teachers_materials(): void
@@ -130,12 +116,12 @@ class MaterialApiTest extends TestCase
         $token = $this->loginToken('teacher@school.edu.tw');
 
         $this->withToken($token)
-            ->getJson("/api/v1/teacher/courses/{$otherCourse->id}/topics")
+            ->getJson("/api/v1/teacher/courses/{$otherCourse->id}/chapters")
             ->assertNotFound();
 
         $this->withToken($token)
-            ->postJson("/api/v1/teacher/courses/{$otherCourse->id}/topics", [
-                'name' => '非法主題',
+            ->postJson("/api/v1/teacher/courses/{$otherCourse->id}/chapters", [
+                'name' => '非法章節',
             ])
             ->assertNotFound();
     }
@@ -145,24 +131,24 @@ class MaterialApiTest extends TestCase
         $token = $this->loginToken('s1411131000');
 
         $this->withToken($token)
-            ->getJson('/api/v1/teacher/courses/1/topics')
+            ->getJson('/api/v1/teacher/courses/1/chapters')
             ->assertForbidden();
     }
 
-    public function test_deleting_topic_keeps_knowledge_cards_used_by_questions(): void
+    public function test_deleting_chapter_keeps_knowledge_cards_used_by_questions(): void
     {
         $token = $this->loginToken('teacher@school.edu.tw');
-        [$courseId, $topicId, $keptCardId, $unusedCardId] = $this->seedTopicWithLinkedAndUnusedCards($token);
+        [$courseId, $chapterId, $keptCardId, $unusedCardId] = $this->seedChapterWithLinkedAndUnusedCards($token);
 
         $this->withToken($token)
-            ->deleteJson("/api/v1/teacher/topics/{$topicId}")
+            ->deleteJson("/api/v1/teacher/chapters/{$chapterId}")
             ->assertOk()
-            ->assertJson(['message' => '主題已刪除']);
+            ->assertJson(['message' => '章節已刪除']);
 
         $this->withToken($token)
-            ->getJson("/api/v1/teacher/courses/{$courseId}/topics")
+            ->getJson("/api/v1/teacher/courses/{$courseId}/chapters")
             ->assertOk()
-            ->assertJsonCount(0, 'topics');
+            ->assertJsonCount(0, 'chapters');
 
         $this->assertDatabaseMissing('knowledge_cards', ['id' => $unusedCardId]);
         $this->assertDatabaseHas('knowledge_cards', [
@@ -177,7 +163,7 @@ class MaterialApiTest extends TestCase
     public function test_deleting_knowledge_card_used_by_question_is_rejected(): void
     {
         $token = $this->loginToken('teacher@school.edu.tw');
-        [, , $keptCardId] = $this->seedTopicWithLinkedAndUnusedCards($token);
+        [, , $keptCardId] = $this->seedChapterWithLinkedAndUnusedCards($token);
 
         $this->withToken($token)
             ->deleteJson("/api/v1/teacher/knowledge-cards/{$keptCardId}")
@@ -187,31 +173,10 @@ class MaterialApiTest extends TestCase
         $this->assertDatabaseHas('knowledge_cards', ['id' => $keptCardId]);
     }
 
-    public function test_teacher_cannot_create_topic_with_duplicate_name(): void
-    {
-        $token = $this->loginToken('teacher@school.edu.tw');
-        $courseId = $this->withToken($token)->postJson('/api/v1/teacher/courses', [
-            'name' => 'PHP 程式設計',
-            'description' => '從基礎語法到實作練習',
-            'semester' => '115-1',
-            'class_name' => '資應二甲',
-        ])->json('course.id');
-
-        $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/topics", [
-            'name' => 'PHP 基礎',
-        ])->assertCreated();
-
-        $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/topics", [
-            'name' => 'PHP 基礎',
-        ])
-            ->assertStatus(422)
-            ->assertJsonValidationErrors('name');
-    }
-
     /**
-     * @return array{0: int, 1: int, 2: int, 3: int} courseId, topicId, linkedCardId, unusedCardId
+     * @return array{0: int, 1: int, 2: int, 3: int} courseId, chapterId, linkedCardId, unusedCardId
      */
-    private function seedTopicWithLinkedAndUnusedCards(string $token): array
+    private function seedChapterWithLinkedAndUnusedCards(string $token): array
     {
         $courseId = $this->withToken($token)->postJson('/api/v1/teacher/courses', [
             'name' => '知識卡刪除測試',
@@ -220,11 +185,7 @@ class MaterialApiTest extends TestCase
             'class_name' => '資應二甲',
         ])->json('course.id');
 
-        $topicId = $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/topics", [
-            'name' => 'PHP 基礎',
-        ])->json('topic.id');
-
-        $chapterId = $this->withToken($token)->postJson("/api/v1/teacher/topics/{$topicId}/chapters", [
+        $chapterId = $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/chapters", [
             'name' => '第一章',
         ])->json('chapter.id');
 
@@ -252,7 +213,7 @@ class MaterialApiTest extends TestCase
         ]);
         $question->knowledgeCards()->attach($keptCardId);
 
-        return [$courseId, $topicId, $keptCardId, $unusedCardId];
+        return [$courseId, $chapterId, $keptCardId, $unusedCardId];
     }
 
     private function loginToken(string $account): string

@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Models\Course;
 use App\Models\KnowledgeCard;
 use App\Models\Question;
-use App\Models\Topic;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -30,28 +29,28 @@ class MaterialImportApiTest extends TestCase
             ->withHeader('Accept', 'application/json')
             ->post(
                 "/api/v1/teacher/courses/{$course->id}/materials/import",
-                ['topic' => 'PHP 基礎', 'file' => $this->upload($path)],
+                ['file' => $this->upload($path)],
             );
 
         $response->assertCreated()
-            ->assertJsonPath('topic.name', 'PHP 基礎')
-            ->assertJsonPath('topic.chapters.0.name', '第一章 PHP 簡介')
-            ->assertJsonPath('topic.chapters.0.units.0.name', '變數與資料型態')
-            ->assertJsonPath('topic.chapters.0.units.0.knowledge_cards.0.title', '變數宣告')
-            ->assertJsonPath('topic.chapters.0.units.0.knowledge_cards.0.type', 'keyword')
-            ->assertJsonPath('topic.chapters.0.units.0.knowledge_cards.0.example', '$name = "PHP";')
-            ->assertJsonPath('topic.chapters.0.units.0.knowledge_cards.1.type', 'function')
-            ->assertJsonCount(2, 'topic.chapters.0.units.0.knowledge_cards');
+            ->assertJsonPath('course.name', '網際系統設計')
+            ->assertJsonPath('course.chapters.0.name', '第一章 PHP 簡介')
+            ->assertJsonPath('course.chapters.0.units.0.name', '變數與資料型態')
+            ->assertJsonPath('course.chapters.0.units.0.knowledge_cards.0.title', '變數宣告')
+            ->assertJsonPath('course.chapters.0.units.0.knowledge_cards.0.type', 'keyword')
+            ->assertJsonPath('course.chapters.0.units.0.knowledge_cards.0.example', '$name = "PHP";')
+            ->assertJsonPath('course.chapters.0.units.0.knowledge_cards.1.type', 'function')
+            ->assertJsonCount(2, 'course.chapters.0.units.0.knowledge_cards');
 
-        $this->assertSame(1, Topic::query()->where('course_id', $course->id)->count());
+        $this->assertSame(1, $course->chapters()->count());
         $this->assertSame(2, KnowledgeCard::query()->count());
 
         $studentToken = $this->loginToken('s1411131000');
         $this->withToken($studentToken)
             ->getJson("/api/v1/student/courses/{$course->id}/graph")
             ->assertOk()
-            ->assertJsonPath('graph.topics.0.name', 'PHP 基礎')
-            ->assertJsonPath('graph.topics.0.chapters.0.units.0.knowledge_cards.0.code_example', '$name = "PHP";');
+            ->assertJsonPath('graph.name', '網際系統設計')
+            ->assertJsonPath('graph.chapters.0.units.0.knowledge_cards.0.code_example', '$name = "PHP";');
     }
 
     public function test_example_rows_and_empty_template_are_rejected(): void
@@ -63,27 +62,20 @@ class MaterialImportApiTest extends TestCase
             ->withHeader('Accept', 'application/json')
             ->post(
                 "/api/v1/teacher/courses/{$course->id}/materials/import",
-                ['topic' => 'PHP 基礎', 'file' => $this->upload(public_path('templates/course_template.xlsx'))],
+                ['file' => $this->upload(public_path('templates/course_template.xlsx'))],
             )->assertStatus(422);
     }
 
-    public function test_import_requires_topic(): void
+    public function test_import_requires_file(): void
     {
-        $path = $this->xlsxPath([
-            ['第一章 PHP 簡介', '1', '變數', '1', '變數宣告', 'keyword', '變數是容器。', ''],
-        ]);
-
         $token = $this->loginToken('teacher2@school.edu.tw');
         $course = $this->yingCourse();
 
         $this->withToken($token)
             ->withHeader('Accept', 'application/json')
-            ->post(
-                "/api/v1/teacher/courses/{$course->id}/materials/import",
-                ['file' => $this->upload($path)],
-            )
+            ->post("/api/v1/teacher/courses/{$course->id}/materials/import")
             ->assertStatus(422)
-            ->assertJsonValidationErrors('topic');
+            ->assertJsonValidationErrors('file');
     }
 
     public function test_reimport_without_overwrite_is_rejected(): void
@@ -95,13 +87,13 @@ class MaterialImportApiTest extends TestCase
         $token = $this->loginToken('teacher2@school.edu.tw');
         $course = $this->yingCourse();
 
-        $this->import($token, $course->id, $path, 'PHP 基礎')->assertCreated();
+        $this->import($token, $course->id, $path)->assertCreated();
 
         $this->withToken($token)
             ->withHeader('Accept', 'application/json')
             ->post(
                 "/api/v1/teacher/courses/{$course->id}/materials/import",
-                ['topic' => 'PHP 基礎', 'file' => $this->upload($path)],
+                ['file' => $this->upload($path)],
             )
             ->assertStatus(422)
             ->assertJsonValidationErrors('overwrite');
@@ -120,7 +112,7 @@ class MaterialImportApiTest extends TestCase
         $token = $this->loginToken('teacher2@school.edu.tw');
         $course = $this->yingCourse();
 
-        $this->import($token, $course->id, $first, 'PHP 基礎')->assertCreated();
+        $this->import($token, $course->id, $first)->assertCreated();
 
         $removed = KnowledgeCard::query()->where('title', '比較運算')->firstOrFail();
         $kept = KnowledgeCard::query()->where('title', '變數宣告')->firstOrFail();
@@ -138,12 +130,12 @@ class MaterialImportApiTest extends TestCase
             ->withHeader('Accept', 'application/json')
             ->post(
                 "/api/v1/teacher/courses/{$course->id}/materials/import",
-                ['topic' => 'PHP 基礎', 'file' => $this->upload($second), 'overwrite' => 'true'],
+                ['file' => $this->upload($second), 'overwrite' => 'true'],
             )
             ->assertCreated()
-            ->assertJsonCount(1, 'topic.chapters')
-            ->assertJsonPath('topic.chapters.0.units.0.knowledge_cards.0.content', '更新後的內容')
-            ->assertJsonPath('topic.chapters.0.units.0.knowledge_cards.0.id', $kept->id);
+            ->assertJsonCount(1, 'course.chapters')
+            ->assertJsonPath('course.chapters.0.units.0.knowledge_cards.0.content', '更新後的內容')
+            ->assertJsonPath('course.chapters.0.units.0.knowledge_cards.0.id', $kept->id);
 
         $this->assertDatabaseHas('knowledge_cards', [
             'id' => $removed->id,
@@ -163,10 +155,10 @@ class MaterialImportApiTest extends TestCase
         $token = $this->loginToken('teacher2@school.edu.tw');
         $course = $this->yingCourse();
 
-        $this->import($token, $course->id, $path, 'PHP 基礎')
+        $this->import($token, $course->id, $path)
             ->assertCreated()
-            ->assertJsonPath('topic.chapters.0.units.0.knowledge_cards.0.title', '變數宣告')
-            ->assertJsonPath('topic.chapters.0.units.1.knowledge_cards.0.title', '變數宣告');
+            ->assertJsonPath('course.chapters.0.units.0.knowledge_cards.0.title', '變數宣告')
+            ->assertJsonPath('course.chapters.0.units.1.knowledge_cards.0.title', '變數宣告');
 
         $this->assertSame(1, KnowledgeCard::query()->count());
         $this->assertSame(2, KnowledgeCard::query()->first()->units()->count());
@@ -180,17 +172,13 @@ class MaterialImportApiTest extends TestCase
 
         $teacherToken = $this->loginToken('teacher2@school.edu.tw');
         $course = $this->yingCourse();
-        $topicId = $this->import($teacherToken, $course->id, $path, 'PHP 基礎')->json('topic.id');
-
-        $this->withToken($teacherToken)
-            ->getJson("/api/v1/teacher/topics/{$topicId}/tree")
-            ->assertOk()
-            ->assertJsonPath('topic.name', 'PHP 基礎');
+        $this->import($teacherToken, $course->id, $path)->assertCreated();
 
         $this->withToken($teacherToken)
             ->getJson("/api/v1/teacher/courses/{$course->id}/tree")
             ->assertOk()
-            ->assertJsonPath('course.topics.0.name', 'PHP 基礎');
+            ->assertJsonPath('course.name', '網際系統設計')
+            ->assertJsonPath('course.chapters.0.name', '第一章 PHP 簡介');
 
         $otherTeacher = $this->loginToken('teacher@school.edu.tw');
         $this->withToken($otherTeacher)
@@ -217,7 +205,7 @@ class MaterialImportApiTest extends TestCase
             ->withHeader('Accept', 'application/json')
             ->post(
                 "/api/v1/teacher/courses/{$course->id}/materials/import",
-                ['topic' => 'PHP 基礎', 'file' => $this->upload($path)],
+                ['file' => $this->upload($path)],
             )->assertNotFound();
     }
 
@@ -254,13 +242,13 @@ class MaterialImportApiTest extends TestCase
         return $path;
     }
 
-    private function import(string $token, int $courseId, string $path, string $topic)
+    private function import(string $token, int $courseId, string $path)
     {
         return $this->withToken($token)
             ->withHeader('Accept', 'application/json')
             ->post(
                 "/api/v1/teacher/courses/{$courseId}/materials/import",
-                ['topic' => $topic, 'file' => $this->upload($path)],
+                ['file' => $this->upload($path)],
             );
     }
 

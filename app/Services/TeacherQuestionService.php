@@ -158,16 +158,14 @@ class TeacherQuestionService
         $owned = KnowledgeCard::query()
             ->whereIn('id', $ids)
             ->where(function (Builder $query) use ($course): void {
-                $query->whereHas(
-                    'unit.chapter.topic',
-                    fn (Builder $topic) => $topic->where('course_id', $course->id)
-                )->orWhereHas(
-                    'units.chapter.topic',
-                    fn (Builder $topic) => $topic->where('course_id', $course->id)
-                )->orWhereHas(
-                    'topic',
-                    fn (Builder $topic) => $topic->where('course_id', $course->id)
-                )->orWhere(function (Builder $orphaned) use ($course): void {
+                $query->where('course_id', $course->id)
+                    ->orWhereHas(
+                        'unit.chapter',
+                        fn (Builder $chapter) => $chapter->where('course_id', $course->id)
+                    )->orWhereHas(
+                        'units.chapter',
+                        fn (Builder $chapter) => $chapter->where('course_id', $course->id)
+                    )->orWhere(function (Builder $orphaned) use ($course): void {
                     $orphaned->whereNull('unit_id')
                         ->whereHas(
                             'questions',

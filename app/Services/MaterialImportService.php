@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\Chapter;
 use App\Models\KnowledgeCard;
 use App\Models\Teacher;
-use App\Models\Topic;
 use App\Models\Unit;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -25,65 +24,58 @@ class MaterialImportService
     /**
      * @return array<string, mixed>
      */
-    public function import(Teacher $teacher, int $courseId, string $path, string $topicName, bool $overwrite): array
+    public function import(Teacher $teacher, int $courseId, string $path, bool $overwrite): array
     {
         $course = $this->courseService->ownedCourse($teacher, $courseId);
 
         try {
-            $parsed = $this->parser->parse($path, $topicName);
+            $parsed = $this->parser->parse($path);
         } catch (InvalidArgumentException $exception) {
             throw ValidationException::withMessages([
                 'file' => [$exception->getMessage()],
             ]);
         }
 
-        $topicNode = $parsed['topics'][0] ?? null;
-        if ($topicNode === null) {
+        $chapters = $parsed['chapters'] ?? [];
+        if ($chapters === []) {
             throw ValidationException::withMessages([
                 'file' => ['沒有可匯入的教材列'],
             ]);
         }
 
-        return DB::transaction(function () use ($teacher, $course, $topicNode, $topicName, $overwrite) {
-            $topic = Topic::query()->firstOrCreate(
-                [
-                    'course_id' => $course->id,
-                    'name' => $topicName,
-                ],
-                [
-                    'sort_order' => (int) Topic::query()->where('course_id', $course->id)->max('sort_order') + 1,
-                ],
-            );
-
-            $hasContent = $topic->chapters()->exists()
-                || KnowledgeCard::query()->where('topic_id', $topic->id)->exists();
+        return DB::transaction(function () use ($teacher, $course, $chapters, $overwrite) {
+            $hasContent = $course->chapters()->exists()
+                || KnowledgeCard::query()->where('course_id', $course->id)->exists();
 
             if ($hasContent && ! $overwrite) {
                 throw ValidationException::withMessages([
-                    'overwrite' => ['此主題已有教材，請確認覆蓋後再上傳'],
+                    'overwrite' => ['此課程已有教材，請確認覆蓋後再上傳'],
                 ]);
             }
 
             if ($hasContent) {
-                $this->clearTopicTree($topic);
+                $this->clearCourseTree($course->id);
             }
 
-            $this->buildTopicTree($topic, $topicNode);
+            $this->buildCourseTree($course->id, $chapters);
 
-            return $this->materialService->topicTree($teacher, $topic->id);
+            return $this->materialService->courseTree($teacher, $course->id);
         });
     }
 
-    private function clearTopicTree(Topic $topic): void
+    private function clearCourseTree(int $courseId): void
     {
-        $topic->load('chapters.units.knowledgeCards');
+        $courseChapters = Chapter::query()
+            ->where('course_id', $courseId)
+            ->with('units.knowledgeCards')
+            ->get();
 
         $existing = KnowledgeCard::query()
-            ->where('topic_id', $topic->id)
+            ->where('course_id', $courseId)
             ->get()
             ->keyBy(fn (KnowledgeCard $card) => $this->cardKey($card->title, $card->type));
 
-        foreach ($topic->chapters as $chapter) {
+        foreach ($courseChapters as $chapter) {
             foreach ($chapter->units as $unit) {
                 $unit->knowledgeCards()->detach();
             }
@@ -93,23 +85,23 @@ class MaterialImportService
             $card->update(['unit_id' => null]);
         }
 
-        $topic->chapters()->delete();
+        Chapter::query()->where('course_id', $courseId)->delete();
     }
 
     /**
-     * @param  array<string, mixed>  $topicNode
+     * @param  list<array<string, mixed>>  $chapterNodes
      */
-    private function buildTopicTree(Topic $topic, array $topicNode): void
+    private function buildCourseTree(int $courseId, array $chapterNodes): void
     {
         $reusable = KnowledgeCard::query()
-            ->where('topic_id', $topic->id)
+            ->where('course_id', $courseId)
             ->get()
             ->keyBy(fn (KnowledgeCard $card) => $this->cardKey($card->title, $card->type));
         $usedIds = [];
 
-        foreach ($topicNode['chapters'] as $chapterNode) {
+        foreach ($chapterNodes as $chapterNode) {
             $chapter = Chapter::query()->create([
-                'topic_id' => $topic->id,
+                'course_id' => $courseId,
                 'name' => $chapterNode['name'],
                 'sort_order' => $chapterNode['sort_order'] ?: 1,
             ]);
@@ -127,7 +119,7 @@ class MaterialImportService
 
                     if ($card === null) {
                         $card = KnowledgeCard::query()->create([
-                            'topic_id' => $topic->id,
+                            'course_id' => $courseId,
                             'unit_id' => $unit->id,
                             'title' => $cardNode['title'],
                             'type' => $cardNode['type'],

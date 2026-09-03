@@ -27,9 +27,9 @@ class Course extends Model
         return $this->belongsToMany(Student::class, 'enrollments');
     }
 
-    public function topics(): HasMany
+    public function chapters(): HasMany
     {
-        return $this->hasMany(Topic::class)->orderBy('sort_order');
+        return $this->hasMany(Chapter::class)->orderBy('sort_order');
     }
 
     public function questions(): HasMany

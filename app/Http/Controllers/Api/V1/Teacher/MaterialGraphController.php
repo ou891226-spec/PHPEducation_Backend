@@ -21,13 +21,6 @@ class MaterialGraphController extends Controller
         ]);
     }
 
-    public function topicTree(Request $request, int $topicId): JsonResponse
-    {
-        return response()->json([
-            'topic' => $this->materialService->topicTree($this->teacher($request), $topicId),
-        ]);
-    }
-
     private function teacher(Request $request): Teacher
     {
         $user = $request->user();

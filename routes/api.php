@@ -15,7 +15,6 @@ use App\Http\Controllers\Api\V1\Teacher\MaterialTemplateController;
 use App\Http\Controllers\Api\V1\Teacher\StudentRosterTemplateController;
 use App\Http\Controllers\Api\V1\Teacher\QuestionController as TeacherQuestionController;
 use App\Http\Controllers\Api\V1\Teacher\QuestionRecordController;
-use App\Http\Controllers\Api\V1\Teacher\TopicController;
 use App\Http\Controllers\Api\V1\Teacher\UnitController;
 use Illuminate\Support\Facades\Route;
 
@@ -57,19 +56,13 @@ Route::prefix('v1')->group(function () {
             Route::get('student-applications/template', [StudentRosterTemplateController::class, 'download']);
             Route::post('courses/{courseId}/materials/import', [MaterialImportController::class, 'store']);
             Route::get('courses/{courseId}/tree', [MaterialGraphController::class, 'courseTree']);
-            Route::get('topics/{topicId}/tree', [MaterialGraphController::class, 'topicTree']);
             Route::get('courses/{courseId}/student-applications', [StudentAccountApplicationController::class, 'indexForCourse']);
             Route::post('courses/{courseId}/student-applications', [StudentAccountApplicationController::class, 'storeOneForCourse']);
             Route::delete('courses/{courseId}/student-applications/{itemId}', [StudentAccountApplicationController::class, 'destroyForCourse']);
 
-            Route::get('courses/{courseId}/topics', [TopicController::class, 'index']);
             Route::get('courses/{courseId}/knowledge-cards', [KnowledgeCardController::class, 'indexForCourse']);
-            Route::post('courses/{courseId}/topics', [TopicController::class, 'store']);
-            Route::put('topics/{topicId}', [TopicController::class, 'update']);
-            Route::delete('topics/{topicId}', [TopicController::class, 'destroy']);
-
-            Route::get('topics/{topicId}/chapters', [ChapterController::class, 'index']);
-            Route::post('topics/{topicId}/chapters', [ChapterController::class, 'store']);
+            Route::get('courses/{courseId}/chapters', [ChapterController::class, 'index']);
+            Route::post('courses/{courseId}/chapters', [ChapterController::class, 'store']);
             Route::put('chapters/{chapterId}', [ChapterController::class, 'update']);
             Route::delete('chapters/{chapterId}', [ChapterController::class, 'destroy']);
 
@@ -95,9 +88,8 @@ Route::prefix('v1')->group(function () {
         });
 
         Route::middleware('role:student')->prefix('student')->group(function () {
-            Route::get('courses/{courseId}/topics', [StudentMaterialController::class, 'topics']);
             Route::get('courses/{courseId}/graph', [StudentMaterialController::class, 'graph']);
-            Route::get('topics/{topicId}/chapters', [StudentMaterialController::class, 'chapters']);
+            Route::get('courses/{courseId}/chapters', [StudentMaterialController::class, 'chapters']);
             Route::get('chapters/{chapterId}/units', [StudentMaterialController::class, 'units']);
             Route::get('units/{unitId}/knowledge-cards', [StudentMaterialController::class, 'knowledgeCards']);
             Route::get('courses/{courseId}/questions', [StudentQuestionController::class, 'index']);

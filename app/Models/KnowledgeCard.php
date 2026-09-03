@@ -10,7 +10,7 @@ class KnowledgeCard extends Model
 {
     protected $fillable = [
         'unit_id',
-        'topic_id',
+        'course_id',
         'title',
         'type',
         'content',
@@ -30,9 +30,9 @@ class KnowledgeCard extends Model
         return $this->belongsTo(Unit::class);
     }
 
-    public function topic(): BelongsTo
+    public function course(): BelongsTo
     {
-        return $this->belongsTo(Topic::class);
+        return $this->belongsTo(Course::class);
     }
 
     public function units(): BelongsToMany

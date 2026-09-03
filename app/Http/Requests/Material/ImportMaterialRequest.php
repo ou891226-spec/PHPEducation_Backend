@@ -14,7 +14,6 @@ class ImportMaterialRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'topic' => ['required', 'string', 'max:255'],
             'file' => ['required', 'file'],
             'overwrite' => ['sometimes', 'boolean'],
         ];
@@ -22,12 +21,6 @@ class ImportMaterialRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        if ($this->has('topic')) {
-            $this->merge([
-                'topic' => trim((string) $this->input('topic')),
-            ]);
-        }
-
         if ($this->has('overwrite')) {
             $this->merge([
                 'overwrite' => filter_var($this->input('overwrite'), FILTER_VALIDATE_BOOLEAN),

@@ -37,7 +37,7 @@ CREATE TABLE `admins` (
 
 LOCK TABLES `admins` WRITE;
 /*!40000 ALTER TABLE `admins` DISABLE KEYS */;
-INSERT INTO `admins` VALUES (1,'admin@school.edu.tw','$2y$12$7DaUavuvSUxLZ53apGBqLu3i313ihE0LjLToXV1MQMOZOgzY7wpPG');
+INSERT INTO `admins` VALUES (1,'admin@school.edu.tw','$2y$12$8UXZXq.2aoxVnZm92Ic8jOSdkljheDQ.A21MeBPJEHzfhT9JtJuai');
 /*!40000 ALTER TABLE `admins` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -64,7 +64,7 @@ CREATE TABLE `bloom` (
 
 LOCK TABLES `bloom` WRITE;
 /*!40000 ALTER TABLE `bloom` DISABLE KEYS */;
-INSERT INTO `bloom` VALUES ('B1','記憶','回憶事實、名詞與基本概念','2026-09-02 17:15:31','2026-09-02 17:15:31'),('B11','記憶（事實/定義）','回憶事實、名詞與基本概念','2026-09-02 17:15:33','2026-09-02 17:15:33'),('B12','記憶（事實/定義）','回憶事實、名詞與基本概念','2026-09-02 17:15:33','2026-09-02 17:15:33'),('B13','記憶（事實/定義）','回憶事實、名詞與基本概念','2026-09-02 17:15:33','2026-09-02 17:15:33'),('B2','理解','解釋、摘要並說明意義','2026-09-02 17:15:31','2026-09-02 17:15:31'),('B21','理解（解釋/說明）','解釋、摘要並說明意義','2026-09-02 17:15:33','2026-09-02 17:15:33'),('B22','理解（解釋/說明）','解釋、摘要並說明意義','2026-09-02 17:15:33','2026-09-02 17:15:33'),('B23','理解（解釋/說明）','解釋、摘要並說明意義','2026-09-02 17:15:33','2026-09-02 17:15:33'),('B3','應用','在新情境使用程序或方法','2026-09-02 17:15:31','2026-09-02 17:15:31'),('B31','應用（程式實作/填空）','在新情境使用程序或方法','2026-09-02 17:15:33','2026-09-02 17:15:33'),('B32','應用（程式實作/填空）','在新情境使用程序或方法','2026-09-02 17:15:33','2026-09-02 17:15:33'),('B33','應用（程式實作/填空）','在新情境使用程序或方法','2026-09-02 17:15:33','2026-09-02 17:15:33'),('B4','分析','拆解、比較並找出關係','2026-09-02 17:15:31','2026-09-02 17:15:31'),('B41','分析（程式除錯/判讀）','拆解、比較並找出關係','2026-09-02 17:15:33','2026-09-02 17:15:33'),('B42','分析（程式除錯/判讀）','拆解、比較並找出關係','2026-09-02 17:15:33','2026-09-02 17:15:33'),('B43','分析（程式除錯/判讀）','拆解、比較並找出關係','2026-09-02 17:15:33','2026-09-02 17:15:33'),('B5','評鑑','依規準判斷與評論','2026-09-02 17:15:31','2026-09-02 17:15:31'),('B51','評鑑（判斷/評論）','依規準判斷與評論','2026-09-02 17:15:33','2026-09-02 17:15:33'),('B52','評鑑（判斷/評論）','依規準判斷與評論','2026-09-02 17:15:33','2026-09-02 17:15:33'),('B53','評鑑（判斷/評論）','依規準判斷與評論','2026-09-02 17:15:33','2026-09-02 17:15:33'),('B6','創造','重組、設計並產出新結構','2026-09-02 17:15:31','2026-09-02 17:15:31'),('B61','創造（設計/產出）','重組、設計並產出新結構','2026-09-02 17:15:33','2026-09-02 17:15:33'),('B62','創造（設計/產出）','重組、設計並產出新結構','2026-09-02 17:15:33','2026-09-02 17:15:33'),('B63','創造（設計/產出）','重組、設計並產出新結構','2026-09-02 17:15:33','2026-09-02 17:15:33');
+INSERT INTO `bloom` VALUES ('B1','記憶','回憶事實、名詞與基本概念','2026-09-03 08:01:06','2026-09-03 08:01:06'),('B11','記憶（事實/定義）','回憶事實、名詞與基本概念','2026-09-03 08:01:08','2026-09-03 08:01:08'),('B12','記憶（事實/定義）','回憶事實、名詞與基本概念','2026-09-03 08:01:08','2026-09-03 08:01:08'),('B13','記憶（事實/定義）','回憶事實、名詞與基本概念','2026-09-03 08:01:08','2026-09-03 08:01:08'),('B2','理解','解釋、摘要並說明意義','2026-09-03 08:01:06','2026-09-03 08:01:06'),('B21','理解（解釋/說明）','解釋、摘要並說明意義','2026-09-03 08:01:08','2026-09-03 08:01:08'),('B22','理解（解釋/說明）','解釋、摘要並說明意義','2026-09-03 08:01:08','2026-09-03 08:01:08'),('B23','理解（解釋/說明）','解釋、摘要並說明意義','2026-09-03 08:01:08','2026-09-03 08:01:08'),('B3','應用','在新情境使用程序或方法','2026-09-03 08:01:06','2026-09-03 08:01:06'),('B31','應用（程式實作/填空）','在新情境使用程序或方法','2026-09-03 08:01:08','2026-09-03 08:01:08'),('B32','應用（程式實作/填空）','在新情境使用程序或方法','2026-09-03 08:01:08','2026-09-03 08:01:08'),('B33','應用（程式實作/填空）','在新情境使用程序或方法','2026-09-03 08:01:08','2026-09-03 08:01:08'),('B4','分析','拆解、比較並找出關係','2026-09-03 08:01:06','2026-09-03 08:01:06'),('B41','分析（程式除錯/判讀）','拆解、比較並找出關係','2026-09-03 08:01:08','2026-09-03 08:01:08'),('B42','分析（程式除錯/判讀）','拆解、比較並找出關係','2026-09-03 08:01:08','2026-09-03 08:01:08'),('B43','分析（程式除錯/判讀）','拆解、比較並找出關係','2026-09-03 08:01:08','2026-09-03 08:01:08'),('B5','評鑑','依規準判斷與評論','2026-09-03 08:01:06','2026-09-03 08:01:06'),('B51','評鑑（判斷/評論）','依規準判斷與評論','2026-09-03 08:01:08','2026-09-03 08:01:08'),('B52','評鑑（判斷/評論）','依規準判斷與評論','2026-09-03 08:01:08','2026-09-03 08:01:08'),('B53','評鑑（判斷/評論）','依規準判斷與評論','2026-09-03 08:01:08','2026-09-03 08:01:08'),('B6','創造','重組、設計並產出新結構','2026-09-03 08:01:06','2026-09-03 08:01:06'),('B61','創造（設計/產出）','重組、設計並產出新結構','2026-09-03 08:01:08','2026-09-03 08:01:08'),('B62','創造（設計/產出）','重組、設計並產出新結構','2026-09-03 08:01:08','2026-09-03 08:01:08'),('B63','創造（設計/產出）','重組、設計並產出新結構','2026-09-03 08:01:08','2026-09-03 08:01:08');
 /*!40000 ALTER TABLE `bloom` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -77,15 +77,15 @@ DROP TABLE IF EXISTS `chapters`;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `chapters` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '章節 ID',
-  `topic_id` bigint unsigned NOT NULL,
+  `course_id` bigint unsigned DEFAULT NULL,
   `name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '章節名稱',
   `sort_order` int NOT NULL COMMENT '排序順序',
   `created_at` timestamp NULL DEFAULT NULL COMMENT '建立時間',
   `updated_at` timestamp NULL DEFAULT NULL COMMENT '更新時間',
   PRIMARY KEY (`id`),
-  KEY `chapters_topic_id_foreign` (`topic_id`),
-  CONSTRAINT `chapters_topic_id_foreign` FOREIGN KEY (`topic_id`) REFERENCES `topics` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  KEY `chapters_course_id_foreign` (`course_id`),
+  CONSTRAINT `chapters_course_id_foreign` FOREIGN KEY (`course_id`) REFERENCES `courses` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -94,7 +94,6 @@ CREATE TABLE `chapters` (
 
 LOCK TABLES `chapters` WRITE;
 /*!40000 ALTER TABLE `chapters` DISABLE KEYS */;
-INSERT INTO `chapters` VALUES (1,1,'第一章 Python 基礎入門',1,'2026-09-02 20:04:13','2026-09-02 20:04:13'),(2,1,'第二章 Web API 開發',2,'2026-09-02 20:04:13','2026-09-02 20:04:13'),(3,2,'第一章 Python 基礎入門',1,'2026-09-02 20:21:47','2026-09-02 20:21:47'),(4,2,'第二章 Web API 開發',2,'2026-09-02 20:21:47','2026-09-02 20:21:47'),(5,2,'第二章 前端開發基礎',2,'2026-09-02 20:44:44','2026-09-02 20:44:44');
 /*!40000 ALTER TABLE `chapters` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -117,7 +116,7 @@ CREATE TABLE `courses` (
   PRIMARY KEY (`id`),
   KEY `courses_teacher_id_foreign` (`teacher_id`),
   CONSTRAINT `courses_teacher_id_foreign` FOREIGN KEY (`teacher_id`) REFERENCES `teachers` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -126,7 +125,7 @@ CREATE TABLE `courses` (
 
 LOCK TABLES `courses` WRITE;
 /*!40000 ALTER TABLE `courses` DISABLE KEYS */;
-INSERT INTO `courses` VALUES (1,'網際系統設計','資應班網際系統設計課程','115-1','資應',2,'2026-09-02 17:15:33','2026-09-02 17:15:33'),(2,'網際系統設計','資管班網際系統設計課程','115-1','資管',2,'2026-09-02 17:15:33','2026-09-02 17:15:33'),(3,'網頁設計','網頁設計','115-1','資管',1,'2026-09-02 17:45:38','2026-09-02 17:45:38');
+INSERT INTO `courses` VALUES (1,'網際系統設計','資應班網際系統設計課程','115-1','資應',2,'2026-09-03 08:01:09','2026-09-03 08:01:09'),(2,'網際系統設計','資管班網際系統設計課程','115-1','資管',2,'2026-09-03 08:01:09','2026-09-03 08:01:09');
 /*!40000 ALTER TABLE `courses` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -153,7 +152,7 @@ CREATE TABLE `enrollments` (
 
 LOCK TABLES `enrollments` WRITE;
 /*!40000 ALTER TABLE `enrollments` DISABLE KEYS */;
-INSERT INTO `enrollments` VALUES (1,1),(2,3),(3,3),(4,3),(5,3),(6,3);
+INSERT INTO `enrollments` VALUES (1,1);
 /*!40000 ALTER TABLE `enrollments` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -165,7 +164,7 @@ DROP TABLE IF EXISTS `knowledge_card_unit`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `knowledge_card_unit` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '關聯 ID',
   `unit_id` bigint unsigned NOT NULL,
   `knowledge_card_id` bigint unsigned NOT NULL,
   `created_at` timestamp NULL DEFAULT NULL,
@@ -175,7 +174,7 @@ CREATE TABLE `knowledge_card_unit` (
   KEY `knowledge_card_unit_knowledge_card_id_foreign` (`knowledge_card_id`),
   CONSTRAINT `knowledge_card_unit_knowledge_card_id_foreign` FOREIGN KEY (`knowledge_card_id`) REFERENCES `knowledge_cards` (`id`) ON DELETE CASCADE,
   CONSTRAINT `knowledge_card_unit_unit_id_foreign` FOREIGN KEY (`unit_id`) REFERENCES `units` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -184,7 +183,6 @@ CREATE TABLE `knowledge_card_unit` (
 
 LOCK TABLES `knowledge_card_unit` WRITE;
 /*!40000 ALTER TABLE `knowledge_card_unit` DISABLE KEYS */;
-INSERT INTO `knowledge_card_unit` VALUES (1,1,1,'2026-09-02 20:04:13','2026-09-02 20:04:13'),(2,2,2,'2026-09-02 20:04:13','2026-09-02 20:04:13'),(3,3,3,'2026-09-02 20:04:13','2026-09-02 20:04:13'),(4,4,4,'2026-09-02 20:21:47','2026-09-02 20:21:47'),(5,5,5,'2026-09-02 20:21:47','2026-09-02 20:21:47'),(6,6,6,'2026-09-02 20:21:47','2026-09-02 20:21:47'),(7,7,7,'2026-09-02 20:45:57','2026-09-02 20:45:57');
 /*!40000 ALTER TABLE `knowledge_card_unit` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -198,7 +196,7 @@ DROP TABLE IF EXISTS `knowledge_cards`;
 CREATE TABLE `knowledge_cards` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '知識卡 ID',
   `unit_id` bigint unsigned DEFAULT NULL,
-  `topic_id` bigint unsigned DEFAULT NULL,
+  `course_id` bigint unsigned DEFAULT NULL,
   `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '知識卡標題',
   `type` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'keyword' COMMENT '知識卡類型，例如 keyword、function',
   `content` longtext COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '知識卡內容',
@@ -208,10 +206,10 @@ CREATE TABLE `knowledge_cards` (
   `updated_at` timestamp NULL DEFAULT NULL COMMENT '更新時間',
   PRIMARY KEY (`id`),
   KEY `knowledge_cards_unit_id_foreign` (`unit_id`),
-  KEY `knowledge_cards_topic_id_foreign` (`topic_id`),
-  CONSTRAINT `knowledge_cards_topic_id_foreign` FOREIGN KEY (`topic_id`) REFERENCES `topics` (`id`) ON DELETE SET NULL,
+  KEY `knowledge_cards_course_id_foreign` (`course_id`),
+  CONSTRAINT `knowledge_cards_course_id_foreign` FOREIGN KEY (`course_id`) REFERENCES `courses` (`id`) ON DELETE SET NULL,
   CONSTRAINT `knowledge_cards_unit_id_foreign` FOREIGN KEY (`unit_id`) REFERENCES `units` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -220,7 +218,6 @@ CREATE TABLE `knowledge_cards` (
 
 LOCK TABLES `knowledge_cards` WRITE;
 /*!40000 ALTER TABLE `knowledge_cards` DISABLE KEYS */;
-INSERT INTO `knowledge_cards` VALUES (1,1,1,'變數宣告與印出','concept','Python 使用等號 = 來指派變數值，並用 print() 印出內容。','name = \"Alice\"\nprint(f\"Hello, {name}\")',1,'2026-09-02 20:04:13','2026-09-02 20:04:13'),(2,2,1,'If 條件判斷','concept','使用 if、elif 與 else 進行判斷，注意程式碼區塊需要縮排。','age = 18\nif age >= 18:\n    print(\"成年\")',1,'2026-09-02 20:04:13','2026-09-02 20:04:13'),(3,3,1,'第一支 API 路由','practice','定義一個 GET 請求的根路由，傳回 JSON 格式回應。','from fastapi import FastAPI\napp = FastAPI()\n@app.get(\"/\")\ndef read_root():\n    return {\"message\": \"Hello World\"}',1,'2026-09-02 20:04:13','2026-09-02 20:04:13'),(4,4,2,'變數宣告與印出','concept','<img src=\"http://127.0.0.1:8000/storage/editor_images/B2zSOkA9nHd9Dab4WWsBBLRO8Sh3vom6DDYs84l8.png\"><p>Python 使用等號 = 來指派變數值，並用 print() 印出內容。</p>','name = \"Alice\"\nprint(f\"Hello, {name}\")',1,'2026-09-02 20:21:47','2026-09-02 20:44:09'),(5,5,2,'If 條件判斷','concept','<p>使用 if、elif 與 else 進行判斷，注意程式碼區塊需要縮排。</p><img src=\"http://127.0.0.1:8000/storage/editor_images/6MR3I5tioyWHYA8ctULrnumX5FpfKOrMcCsEFScH.png\"><p></p>','age = 18\nif age >= 18:\n    print(\"成年\")',1,'2026-09-02 20:21:47','2026-09-02 20:23:17'),(6,6,2,'第一支 API 路由','practice','定義一個 GET 請求的根路由，傳回 JSON 格式回應。','from fastapi import FastAPI\napp = FastAPI()\n@app.get(\"/\")\ndef read_root():\n    return {\"message\": \"Hello World\"}',1,'2026-09-02 20:21:47','2026-09-02 20:21:47'),(7,7,2,'CSS 選擇器','concept','<p>使用類別選擇器（.classname）或 ID 選擇器（#idname）來套用樣式。</p>','.btn {\ncolor: white;\nbackground-color: blue;\n}',1,'2026-09-02 20:45:57','2026-09-02 20:45:57');
 /*!40000 ALTER TABLE `knowledge_cards` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -236,7 +233,7 @@ CREATE TABLE `migrations` (
   `migration` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `batch` int NOT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=43 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=44 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -245,7 +242,7 @@ CREATE TABLE `migrations` (
 
 LOCK TABLES `migrations` WRITE;
 /*!40000 ALTER TABLE `migrations` DISABLE KEYS */;
-INSERT INTO `migrations` VALUES (1,'2026_08_14_000001_create_admins_table',1),(2,'2026_08_14_000002_create_teachers_table',1),(3,'2026_08_14_000003_create_students_table',1),(4,'2026_08_14_000005_create_courses_table',1),(5,'2026_08_14_000006_create_personal_access_tokens_table',1),(6,'2026_08_14_000007_create_enrollments_table',1),(7,'2026_08_14_000008_create_topics_table',1),(8,'2026_08_14_000009_create_chapters_table',1),(9,'2026_08_14_000010_create_units_table',1),(10,'2026_08_14_000011_create_knowledge_cards_table',1),(11,'2026_08_18_000012_create_teacher_applications_table',1),(12,'2026_08_18_000013_create_student_applications_table',1),(13,'2026_08_18_000014_create_student_application_items_table',1),(14,'2026_08_22_000015_create_material_drafts_table',1),(15,'2026_08_23_000016_add_course_id_and_item_status_to_student_applications',1),(16,'2026_08_23_000017_add_example_to_knowledge_cards',1),(17,'2026_08_23_000018_add_account_to_teacher_applications',1),(18,'2026_08_23_000018_create_bloom_table',1),(19,'2026_08_23_000019_create_solo_table',1),(20,'2026_08_23_000019_drop_email_from_student_application_items',1),(21,'2026_08_23_000020_create_questions_table',1),(22,'2026_08_23_000021_create_question_options_table',1),(23,'2026_08_23_000022_create_debug_sub_info_table',1),(24,'2026_08_23_000023_create_coding_sub_info_table',1),(25,'2026_08_23_000024_create_question_bloom_solo_mappings_table',1),(26,'2026_08_23_000025_create_question_records_table',1),(27,'2026_08_23_000026_create_ai_feedback_table',1),(28,'2026_08_24_000020_add_class_name_to_students_table',1),(29,'2026_08_24_000027_create_question_knowledge_cards_table',1),(30,'2026_08_25_000028_make_knowledge_cards_unit_id_nullable',1),(31,'2026_08_26_000029_add_class_name_to_courses_table',1),(32,'2026_08_30_000030_add_bloom_id_and_description_to_questions_table',1),(33,'2026_08_30_000031_add_solo_to_question_options_table',1),(34,'2026_08_30_000032_create_question_sub_answers_table',1),(35,'2026_08_30_000033_drop_legacy_question_bank_tables',1),(36,'2026_08_30_000034_create_question_record_subs_table',1),(37,'2026_08_30_000037_add_solo_and_bloom_id_to_question_records_table',1),(38,'2026_08_30_000038_add_teacher_bloom_codes',1),(39,'2026_09_01_000041_add_show_example_to_questions_table',1),(40,'2026_09_01_000042_add_coding_fields_to_questions_table',1),(41,'2026_09_03_000043_add_graph_fields_to_knowledge_cards',2),(42,'2026_09_03_000044_drop_material_drafts_table',3);
+INSERT INTO `migrations` VALUES (1,'2026_08_14_000001_create_admins_table',1),(2,'2026_08_14_000002_create_teachers_table',1),(3,'2026_08_14_000003_create_students_table',1),(4,'2026_08_14_000005_create_courses_table',1),(5,'2026_08_14_000006_create_personal_access_tokens_table',1),(6,'2026_08_14_000007_create_enrollments_table',1),(7,'2026_08_14_000008_create_topics_table',1),(8,'2026_08_14_000009_create_chapters_table',1),(9,'2026_08_14_000010_create_units_table',1),(10,'2026_08_14_000011_create_knowledge_cards_table',1),(11,'2026_08_18_000012_create_teacher_applications_table',1),(12,'2026_08_18_000013_create_student_applications_table',1),(13,'2026_08_18_000014_create_student_application_items_table',1),(14,'2026_08_22_000015_create_material_drafts_table',1),(15,'2026_08_23_000016_add_course_id_and_item_status_to_student_applications',1),(16,'2026_08_23_000017_add_example_to_knowledge_cards',1),(17,'2026_08_23_000018_add_account_to_teacher_applications',1),(18,'2026_08_23_000018_create_bloom_table',1),(19,'2026_08_23_000019_create_solo_table',1),(20,'2026_08_23_000019_drop_email_from_student_application_items',1),(21,'2026_08_23_000020_create_questions_table',1),(22,'2026_08_23_000021_create_question_options_table',1),(23,'2026_08_23_000022_create_debug_sub_info_table',1),(24,'2026_08_23_000023_create_coding_sub_info_table',1),(25,'2026_08_23_000024_create_question_bloom_solo_mappings_table',1),(26,'2026_08_23_000025_create_question_records_table',1),(27,'2026_08_23_000026_create_ai_feedback_table',1),(28,'2026_08_24_000020_add_class_name_to_students_table',1),(29,'2026_08_24_000027_create_question_knowledge_cards_table',1),(30,'2026_08_25_000028_make_knowledge_cards_unit_id_nullable',1),(31,'2026_08_26_000029_add_class_name_to_courses_table',1),(32,'2026_08_30_000030_add_bloom_id_and_description_to_questions_table',1),(33,'2026_08_30_000031_add_solo_to_question_options_table',1),(34,'2026_08_30_000032_create_question_sub_answers_table',1),(35,'2026_08_30_000033_drop_legacy_question_bank_tables',1),(36,'2026_08_30_000034_create_question_record_subs_table',1),(37,'2026_08_30_000037_add_solo_and_bloom_id_to_question_records_table',1),(38,'2026_08_30_000038_add_teacher_bloom_codes',1),(39,'2026_09_01_000041_add_show_example_to_questions_table',1),(40,'2026_09_01_000042_add_coding_fields_to_questions_table',1),(41,'2026_09_03_000043_add_graph_fields_to_knowledge_cards',1),(42,'2026_09_03_000044_drop_material_drafts_table',1),(43,'2026_09_03_000045_move_chapters_and_cards_to_courses',1);
 /*!40000 ALTER TABLE `migrations` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -270,7 +267,7 @@ CREATE TABLE `personal_access_tokens` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `personal_access_tokens_token_unique` (`token`),
   KEY `personal_access_tokens_tokenable_type_tokenable_id_index` (`tokenable_type`,`tokenable_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -279,7 +276,6 @@ CREATE TABLE `personal_access_tokens` (
 
 LOCK TABLES `personal_access_tokens` WRITE;
 /*!40000 ALTER TABLE `personal_access_tokens` DISABLE KEYS */;
-INSERT INTO `personal_access_tokens` VALUES (1,'App\\Models\\Teacher',1,'auth','2a90b13ebf60216fd1f29847387b67ea903e4c432e3bfa6317645cd3703b0f38','[\"*\"]','2026-09-02 20:18:08',NULL,'2026-09-02 17:45:02','2026-09-02 20:18:08'),(3,'App\\Models\\Teacher',1,'auth','2ef987e85fd8a4833417d3974a90dcc29b770c3023db13e50d1a38bc280e6573','[\"*\"]','2026-09-02 20:46:22',NULL,'2026-09-02 20:19:09','2026-09-02 20:46:22');
 /*!40000 ALTER TABLE `personal_access_tokens` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -502,7 +498,7 @@ CREATE TABLE `student_application_items` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `student_application_items_application_id_student_no_unique` (`application_id`,`student_no`),
   CONSTRAINT `student_application_items_application_id_foreign` FOREIGN KEY (`application_id`) REFERENCES `student_applications` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -511,7 +507,6 @@ CREATE TABLE `student_application_items` (
 
 LOCK TABLES `student_application_items` WRITE;
 /*!40000 ALTER TABLE `student_application_items` DISABLE KEYS */;
-INSERT INTO `student_application_items` VALUES (1,1,'1411231001','陳小美','approved','2026-09-02 17:50:57','2026-09-02 18:15:28'),(2,1,'1411231002','李李仁','approved','2026-09-02 17:50:57','2026-09-02 18:15:28'),(3,1,'1411231003','吳寶建','approved','2026-09-02 17:50:57','2026-09-02 18:15:29'),(4,1,'1411231004','王佩珊','approved','2026-09-02 17:50:57','2026-09-02 18:15:30'),(5,1,'1411231005','黃小小','approved','2026-09-02 17:50:57','2026-09-02 18:15:30');
 /*!40000 ALTER TABLE `student_application_items` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -535,7 +530,7 @@ CREATE TABLE `student_applications` (
   KEY `student_applications_course_id_foreign` (`course_id`),
   CONSTRAINT `student_applications_course_id_foreign` FOREIGN KEY (`course_id`) REFERENCES `courses` (`id`) ON DELETE CASCADE,
   CONSTRAINT `student_applications_tid_foreign` FOREIGN KEY (`tid`) REFERENCES `teachers` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -544,7 +539,6 @@ CREATE TABLE `student_applications` (
 
 LOCK TABLES `student_applications` WRITE;
 /*!40000 ALTER TABLE `student_applications` DISABLE KEYS */;
-INSERT INTO `student_applications` VALUES (1,1,3,'資管','approved','2026-09-02 17:50:57','2026-09-02 18:15:30');
 /*!40000 ALTER TABLE `student_applications` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -567,7 +561,7 @@ CREATE TABLE `students` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `students_student_no_unique` (`student_no`),
   UNIQUE KEY `students_email_unique` (`email`)
-) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -576,7 +570,7 @@ CREATE TABLE `students` (
 
 LOCK TABLES `students` WRITE;
 /*!40000 ALTER TABLE `students` DISABLE KEYS */;
-INSERT INTO `students` VALUES (1,'$2y$12$7DaUavuvSUxLZ53apGBqLu3i313ihE0LjLToXV1MQMOZOgzY7wpPG','1411131000','王小明','資應','s1411131000@nutc.edu.tw','2026-09-02 17:15:33','2026-09-02 17:15:33'),(2,'$2y$12$iYkdqWTyemOEOwhUezb6xuynxNN25VcKGiUPLgqy/Ctd9iUqxpz2e','1411231001','陳小美','資管','s1411231001@nutc.edu.tw','2026-09-02 18:15:28','2026-09-02 18:15:28'),(3,'$2y$12$pgFGO7OdnuczPIrs1ouN.Oi1qdZP3TuvNacVvJAyC.I.RkBBDH0OC','1411231002','李李仁','資管','s1411231002@nutc.edu.tw','2026-09-02 18:15:28','2026-09-02 18:15:28'),(4,'$2y$12$vH56V/6ifUBZoe9lt6d41uygjusqnrs7d..SWnp4Q5IXkVzl4Z0gW','1411231003','吳寶建','資管','s1411231003@nutc.edu.tw','2026-09-02 18:15:29','2026-09-02 18:15:29'),(5,'$2y$12$zlSMUp8vG1U6qQy7Ge1pOuB5UtVupAaQLczNQAK4WLXRkEKTt7PgC','1411231004','王佩珊','資管','s1411231004@nutc.edu.tw','2026-09-02 18:15:30','2026-09-02 18:15:30'),(6,'$2y$12$X/l71dGz.yzackL8QoAx7.lSOE4NIUUmaCw9V3kvL2iinD9Cg397W','1411231005','黃小小','資管','s1411231005@nutc.edu.tw','2026-09-02 18:15:30','2026-09-02 18:15:30');
+INSERT INTO `students` VALUES (1,'$2y$12$8UXZXq.2aoxVnZm92Ic8jOSdkljheDQ.A21MeBPJEHzfhT9JtJuai','1411131000','王小明','資應','s1411131000@nutc.edu.tw','2026-09-03 08:01:09','2026-09-03 08:01:09');
 /*!40000 ALTER TABLE `students` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -638,38 +632,8 @@ CREATE TABLE `teachers` (
 
 LOCK TABLES `teachers` WRITE;
 /*!40000 ALTER TABLE `teachers` DISABLE KEYS */;
-INSERT INTO `teachers` VALUES (1,'teacher@school.edu.tw','$2y$12$7DaUavuvSUxLZ53apGBqLu3i313ihE0LjLToXV1MQMOZOgzY7wpPG','許老師','teacher@school.edu.tw','2026-09-02 17:15:33','2026-09-02 17:15:33'),(2,'teacher2@school.edu.tw','$2y$12$7DaUavuvSUxLZ53apGBqLu3i313ihE0LjLToXV1MQMOZOgzY7wpPG','陳老師','teacher2@school.edu.tw','2026-09-02 17:15:33','2026-09-02 17:15:33');
+INSERT INTO `teachers` VALUES (1,'teacher@school.edu.tw','$2y$12$8UXZXq.2aoxVnZm92Ic8jOSdkljheDQ.A21MeBPJEHzfhT9JtJuai','許老師','teacher@school.edu.tw','2026-09-03 08:01:09','2026-09-03 08:01:09'),(2,'teacher2@school.edu.tw','$2y$12$8UXZXq.2aoxVnZm92Ic8jOSdkljheDQ.A21MeBPJEHzfhT9JtJuai','陳老師','teacher2@school.edu.tw','2026-09-03 08:01:09','2026-09-03 08:01:09');
 /*!40000 ALTER TABLE `teachers` ENABLE KEYS */;
-UNLOCK TABLES;
-
---
--- Table structure for table `topics`
---
-
-DROP TABLE IF EXISTS `topics`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `topics` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主題 ID',
-  `course_id` bigint unsigned NOT NULL,
-  `name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '主題名稱',
-  `sort_order` int NOT NULL COMMENT '排序順序',
-  `created_at` timestamp NULL DEFAULT NULL COMMENT '建立時間',
-  `updated_at` timestamp NULL DEFAULT NULL COMMENT '更新時間',
-  PRIMARY KEY (`id`),
-  KEY `topics_course_id_foreign` (`course_id`),
-  CONSTRAINT `topics_course_id_foreign` FOREIGN KEY (`course_id`) REFERENCES `courses` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `topics`
---
-
-LOCK TABLES `topics` WRITE;
-/*!40000 ALTER TABLE `topics` DISABLE KEYS */;
-INSERT INTO `topics` VALUES (1,3,'PHP 基礎',1,'2026-09-02 20:04:13','2026-09-02 20:04:13'),(2,3,'PHP 進階',2,'2026-09-02 20:21:30','2026-09-02 20:21:30');
-/*!40000 ALTER TABLE `topics` ENABLE KEYS */;
 UNLOCK TABLES;
 
 --
@@ -689,7 +653,7 @@ CREATE TABLE `units` (
   PRIMARY KEY (`id`),
   KEY `units_chapter_id_foreign` (`chapter_id`),
   CONSTRAINT `units_chapter_id_foreign` FOREIGN KEY (`chapter_id`) REFERENCES `chapters` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -698,7 +662,6 @@ CREATE TABLE `units` (
 
 LOCK TABLES `units` WRITE;
 /*!40000 ALTER TABLE `units` DISABLE KEYS */;
-INSERT INTO `units` VALUES (1,1,'變數與資料型態',1,'2026-09-02 20:04:13','2026-09-02 20:04:13'),(2,1,'流程控制',2,'2026-09-02 20:04:13','2026-09-02 20:04:13'),(3,2,'FastAPI 簡介',1,'2026-09-02 20:04:13','2026-09-02 20:04:13'),(4,3,'變數與資料型態',1,'2026-09-02 20:21:47','2026-09-02 20:21:47'),(5,3,'流程控制',2,'2026-09-02 20:21:47','2026-09-02 20:21:47'),(6,4,'FastAPI 簡介',1,'2026-09-02 20:21:47','2026-09-02 20:21:47'),(7,5,'CSS 樣式與排版',1,'2026-09-02 20:45:04','2026-09-02 20:45:04');
 /*!40000 ALTER TABLE `units` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -715,4 +678,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-09-03  4:52:47
+-- Dump completed on 2026-09-03 16:02:22

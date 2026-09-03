@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Chapter extends Model
 {
     protected $fillable = [
-        'topic_id',
+        'course_id',
         'name',
         'sort_order',
     ];
@@ -21,9 +21,9 @@ class Chapter extends Model
         ];
     }
 
-    public function topic(): BelongsTo
+    public function course(): BelongsTo
     {
-        return $this->belongsTo(Topic::class);
+        return $this->belongsTo(Course::class);
     }
 
     public function units(): HasMany

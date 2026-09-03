@@ -6,7 +6,6 @@ use App\Models\Chapter;
 use App\Models\Course;
 use App\Models\KnowledgeCard;
 use App\Models\Teacher;
-use App\Models\Topic;
 use App\Models\Unit;
 use App\Support\KnowledgeConcept;
 use Illuminate\Database\Eloquent\Builder;
@@ -16,7 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * 正式教材鑽層 CRUD（topics / chapters / units / knowledge_cards）。
+ * 正式教材鑽層 CRUD（chapters / units / knowledge_cards）。
  */
 class MaterialService
 {
@@ -27,99 +26,35 @@ class MaterialService
     {
         $course = $this->ownedCourse($teacher, $courseId);
         $course->load([
-            'topics.chapters.units.knowledgeCards' => fn ($query) => $query->orderBy('sort_order'),
+            'chapters.units.knowledgeCards' => fn ($query) => $query->orderBy('sort_order'),
         ]);
 
         return [
             'id' => $course->id,
             'name' => $course->name,
-            'topics' => $course->topics->map(fn (Topic $topic) => $this->formatTreeTopic($topic))->values()->all(),
+            'chapters' => $this->formatChapters($course->chapters),
         ];
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    public function topicTree(Teacher $teacher, int $topicId): array
-    {
-        $topic = $this->ownedTopic($teacher, $topicId);
-        $topic->load([
-            'chapters.units.knowledgeCards' => fn ($query) => $query->orderBy('sort_order'),
-        ]);
-
-        return $this->formatTreeTopic($topic);
-    }
-
-    public function listTopics(Teacher $teacher, int $courseId): array
+    public function listChapters(Teacher $teacher, int $courseId): array
     {
         $course = $this->ownedCourse($teacher, $courseId);
 
-        return Topic::query()
-            ->where('course_id', $course->id)
-            ->withCount('chapters')
-            ->orderByDesc('updated_at')
-            ->orderByDesc('id')
-            ->get()
-            ->map(fn (Topic $topic) => $this->formatNamedNode($topic, (int) $topic->chapters_count))
-            ->all();
-    }
-
-    public function createTopic(Teacher $teacher, int $courseId, array $data): array
-    {
-        $course = $this->ownedCourse($teacher, $courseId);
-        $this->assertUniqueTopicName($course->id, $data['name']);
-
-        $topic = Topic::query()->create([
-            'course_id' => $course->id,
-            'name' => $data['name'],
-            'sort_order' => $data['sort_order'] ?? $this->nextSortOrder(Topic::query()->where('course_id', $course->id)),
-        ]);
-
-        return $this->formatNamedNode($topic, 0);
-    }
-
-    public function updateTopic(Teacher $teacher, int $topicId, array $data): array
-    {
-        $topic = $this->ownedTopic($teacher, $topicId);
-        $this->assertUniqueTopicName($topic->course_id, $data['name'], $topic->id);
-        $this->updateNamedNode($topic, $data);
-        $topic = $topic->fresh()->loadCount('chapters');
-
-        return $this->formatNamedNode($topic, (int) $topic->chapters_count);
-    }
-
-    public function deleteTopic(Teacher $teacher, int $topicId): void
-    {
-        $topic = $this->ownedTopic($teacher, $topicId);
-
-        DB::transaction(function () use ($topic): void {
-            $topic->load('chapters.units.knowledgeCards');
-            foreach ($topic->chapters as $chapter) {
-                $this->detachOrDeleteCardsInChapter($chapter);
-            }
-            $topic->delete();
-        });
-    }
-
-    public function listChapters(Teacher $teacher, int $topicId): array
-    {
-        $topic = $this->ownedTopic($teacher, $topicId);
-
-        return $topic->chapters()
+        return $course->chapters()
             ->withCount('units')
             ->get()
             ->map(fn (Chapter $chapter) => $this->formatNamedNode($chapter, (int) $chapter->units_count))
             ->all();
     }
 
-    public function createChapter(Teacher $teacher, int $topicId, array $data): array
+    public function createChapter(Teacher $teacher, int $courseId, array $data): array
     {
-        $topic = $this->ownedTopic($teacher, $topicId);
+        $course = $this->ownedCourse($teacher, $courseId);
 
         $chapter = Chapter::query()->create([
-            'topic_id' => $topic->id,
+            'course_id' => $course->id,
             'name' => $data['name'],
-            'sort_order' => $data['sort_order'] ?? $this->nextSortOrder(Chapter::query()->where('topic_id', $topic->id)),
+            'sort_order' => $data['sort_order'] ?? $this->nextSortOrder(Chapter::query()->where('course_id', $course->id)),
         ]);
 
         return $this->formatNamedNode($chapter, 0);
@@ -204,21 +139,19 @@ class MaterialService
     {
         $course = $this->ownedCourse($teacher, $courseId);
 
-        $cardRelations = ['unit.chapter.topic', 'unit.chapter.units', 'units.chapter.topic', 'units.chapter.units', 'topic'];
+        $cardRelations = ['unit.chapter', 'unit.chapter.units', 'units.chapter', 'units.chapter.units', 'course'];
 
         $fromTree = KnowledgeCard::query()
             ->with($cardRelations)
             ->where(function (Builder $query) use ($course): void {
-                $query->whereHas(
-                    'unit.chapter.topic',
-                    fn (Builder $topics) => $topics->where('course_id', $course->id)
-                )->orWhereHas(
-                    'units.chapter.topic',
-                    fn (Builder $topics) => $topics->where('course_id', $course->id)
-                )->orWhereHas(
-                    'topic',
-                    fn (Builder $topics) => $topics->where('course_id', $course->id)
-                );
+                $query->where('course_id', $course->id)
+                    ->orWhereHas(
+                        'unit.chapter',
+                        fn (Builder $chapters) => $chapters->where('course_id', $course->id)
+                    )->orWhereHas(
+                        'units.chapter',
+                        fn (Builder $chapters) => $chapters->where('course_id', $course->id)
+                    );
             })
             ->orderBy('id')
             ->get();
@@ -241,45 +174,37 @@ class MaterialService
             }
 
             $unit = $card->primaryUnit();
-            $topicId = $unit?->chapter?->topic?->id ?? $card->topic_id;
-            $key = ($topicId ?? 'none')."\0".$title;
             $item = [
                 'id' => $card->id,
                 'title' => $title,
                 'example' => $card->example,
                 'unit_name' => $unit?->name,
                 'chapter_name' => $unit?->chapter?->name,
-                'topic_name' => $unit?->chapter?->topic?->name ?? $card->topic?->name,
-                'topic_id' => $topicId,
                 'practice' => KnowledgeConcept::isPracticeSection((string) $unit?->name),
                 'content_len' => mb_strlen((string) $card->content),
             ];
 
-            if (! isset($best[$key])) {
-                $best[$key] = $item;
+            if (! isset($best[$title])) {
+                $best[$title] = $item;
 
                 continue;
             }
 
             $newScore = $this->pickerCardScore($item);
-            $oldScore = $this->pickerCardScore($best[$key]);
-            if ($newScore > $oldScore || ($newScore === $oldScore && $item['id'] < $best[$key]['id'])) {
-                $best[$key] = $item;
+            $oldScore = $this->pickerCardScore($best[$title]);
+            if ($newScore > $oldScore || ($newScore === $oldScore && $item['id'] < $best[$title]['id'])) {
+                $best[$title] = $item;
             }
         }
 
         return collect($best)
-            ->sortBy([
-                ['topic_id', 'asc'],
-                ['title', 'asc'],
-            ])
+            ->sortBy('title')
             ->map(fn (array $item) => [
                 'id' => $item['id'],
                 'title' => $item['title'],
                 'example' => $item['example'],
                 'unit_name' => $item['unit_name'],
                 'chapter_name' => $item['chapter_name'],
-                'topic_name' => $item['topic_name'],
             ])
             ->values()
             ->all();
@@ -302,7 +227,7 @@ class MaterialService
 
         $card = KnowledgeCard::query()->create([
             'unit_id' => $unit->id,
-            'topic_id' => $unit->chapter->topic_id,
+            'course_id' => $unit->chapter->course_id,
             'title' => $data['title'],
             'type' => $data['type'] ?? 'keyword',
             'content' => $data['content'],
@@ -346,7 +271,7 @@ class MaterialService
         $card->delete();
     }
 
-    private function ownedCourse(Teacher $teacher, int $courseId): Course
+    public function ownedCourse(Teacher $teacher, int $courseId): Course
     {
         $course = Course::query()
             ->where('teacher_id', $teacher->id)
@@ -360,25 +285,11 @@ class MaterialService
         return $course;
     }
 
-    private function ownedTopic(Teacher $teacher, int $topicId): Topic
-    {
-        $topic = Topic::query()
-            ->whereKey($topicId)
-            ->whereHas('course', fn (Builder $query) => $query->where('teacher_id', $teacher->id))
-            ->first();
-
-        if ($topic === null) {
-            throw new ModelNotFoundException();
-        }
-
-        return $topic;
-    }
-
     private function ownedChapter(Teacher $teacher, int $chapterId): Chapter
     {
         $chapter = Chapter::query()
             ->whereKey($chapterId)
-            ->whereHas('topic.course', fn (Builder $query) => $query->where('teacher_id', $teacher->id))
+            ->whereHas('course', fn (Builder $query) => $query->where('teacher_id', $teacher->id))
             ->first();
 
         if ($chapter === null) {
@@ -392,7 +303,7 @@ class MaterialService
     {
         $unit = Unit::query()
             ->whereKey($unitId)
-            ->whereHas('chapter.topic.course', fn (Builder $query) => $query->where('teacher_id', $teacher->id))
+            ->whereHas('chapter.course', fn (Builder $query) => $query->where('teacher_id', $teacher->id))
             ->first();
 
         if ($unit === null) {
@@ -409,9 +320,9 @@ class MaterialService
         $card = KnowledgeCard::query()
             ->whereKey($cardId)
             ->where(function (Builder $query) use ($ownsCourse): void {
-                $query->whereHas('unit.chapter.topic.course', $ownsCourse)
-                    ->orWhereHas('units.chapter.topic.course', $ownsCourse)
-                    ->orWhereHas('topic.course', $ownsCourse)
+                $query->whereHas('course', $ownsCourse)
+                    ->orWhereHas('unit.chapter.course', $ownsCourse)
+                    ->orWhereHas('units.chapter.course', $ownsCourse)
                     ->orWhereHas('questions.course', $ownsCourse);
             })
             ->first();
@@ -490,7 +401,7 @@ class MaterialService
     /**
      * @return array<string, mixed>
      */
-    private function formatCard(KnowledgeCard $card): array
+    public function formatCard(KnowledgeCard $card): array
     {
         return [
             'id' => $card->id,
@@ -507,45 +418,23 @@ class MaterialService
     }
 
     /**
-     * @return array<string, mixed>
+     * @param  iterable<int, Chapter>  $chapters
+     * @return list<array<string, mixed>>
      */
-    private function formatTreeTopic(Topic $topic): array
+    public function formatChapters(iterable $chapters): array
     {
-        return [
-            'id' => $topic->id,
-            'name' => $topic->name,
-            'sort_order' => $topic->sort_order,
-            'chapters' => $topic->chapters->map(fn (Chapter $chapter) => [
-                'id' => $chapter->id,
-                'name' => $chapter->name,
-                'title' => $chapter->name,
-                'sort_order' => $chapter->sort_order,
-                'units' => $chapter->units->map(fn (Unit $unit) => [
-                    'id' => $unit->id,
-                    'name' => $unit->name,
-                    'title' => $unit->name,
-                    'sort_order' => $unit->sort_order,
-                    'knowledge_cards' => $unit->knowledgeCards->map(fn (KnowledgeCard $card) => $this->formatCard($card))->values()->all(),
-                ])->values()->all(),
+        return collect($chapters)->map(fn (Chapter $chapter) => [
+            'id' => $chapter->id,
+            'name' => $chapter->name,
+            'title' => $chapter->name,
+            'sort_order' => $chapter->sort_order,
+            'units' => $chapter->units->map(fn (Unit $unit) => [
+                'id' => $unit->id,
+                'name' => $unit->name,
+                'title' => $unit->name,
+                'sort_order' => $unit->sort_order,
+                'knowledge_cards' => $unit->knowledgeCards->map(fn (KnowledgeCard $card) => $this->formatCard($card))->values()->all(),
             ])->values()->all(),
-        ];
-    }
-
-    private function assertUniqueTopicName(int $courseId, string $name, ?int $ignoreTopicId = null): void
-    {
-        $name = trim($name);
-        $query = Topic::query()
-            ->where('course_id', $courseId)
-            ->where('name', $name);
-
-        if ($ignoreTopicId !== null) {
-            $query->whereKeyNot($ignoreTopicId);
-        }
-
-        if ($query->exists()) {
-            throw ValidationException::withMessages([
-                'name' => ['教材名稱與現有教材重複（'.$name.'），請修改後再試'],
-            ]);
-        }
+        ])->values()->all();
     }
 }

@@ -24,10 +24,9 @@ courses    → 課程（teacher_id → teachers，含 class_name 班級）
 enrollments → 選課（students ↔ courses）
 
 教材部分
-topics          → 主題（course_id → courses；網頁填名稱）
-chapters        → 章節（topic_id → topics）
+chapters        → 章節（course_id → courses）
 units           → 單元（chapter_id → chapters）
-knowledge_cards → 知識卡（topic_id、可空 unit_id；type / content HTML / example）
+knowledge_cards → 知識卡（course_id、可空 unit_id；type / content HTML / example）
 knowledge_card_unit → 單元 ↔ 知識卡（同一張卡可掛多個單元）
 questions       → 題目
 question_options → 選擇／是非選項
@@ -42,8 +41,8 @@ bloom           → Bloom 編碼（出題 B11–B63）
 
 課程由教師建立並擁有（`courses.teacher_id`）；學生透過 `enrollments` 與課程形成多對多關聯。
 
-教材層級：教師 → 課程 → 主題 → 章節 → 單元 → 知識卡。
-主題名稱由匯入表單一次填寫；Excel 用 `course_template.xlsx`（章／單元／卡名／類型／內文／程式範例）。表單主題 + Excel → Parser → **直接寫正式教材**。單張卡儲存變更學生立刻看到。再匯入同主題須確認覆蓋。
+教材層級：教師 → 課程 → 章節 → 單元 → 知識卡。
+主題就是課程；不再有獨立的 `topics` 表。Excel 用 `course_template.xlsx`（章／單元／卡名／類型／內文／程式範例）匯入後直接寫正式教材。單張卡儲存變更學生立刻看到。同一門課再匯入須確認覆蓋。
 
 ---
 
@@ -72,7 +71,6 @@ app/
 │  │     ├─ MaterialImportController.php
 │  │     ├─ MaterialGraphController.php
 │  │     ├─ EditorImageController.php
-│  │     ├─ TopicController.php
 │  │     ├─ ChapterController.php
 │  │     ├─ UnitController.php
 │  │     └─ KnowledgeCardController.php
@@ -87,7 +85,7 @@ app/
 │
 ├─ Models/
 │  └─ Admin、Teacher、Student、Course、Enrollment、
-│     Topic、Chapter、Unit、KnowledgeCard、
+│     Chapter、Unit、KnowledgeCard、
 │     Question、QuestionOption、QuestionSubAnswer、QuestionRecord、Bloom
 │
 ├─ Providers/
@@ -270,33 +268,19 @@ students ── enrollments ── courses
 學生 Dashboard 的「已修課程」透過 `enrollments` 關聯查詢（`Student` ↔ `Course` many-to-many）。
 Seeder 已讓王小明選修「網際系統設計」（班級資應）。
 
-### topics 主題資料
-一門課程底下可有多個主題
-
-| 欄位 | 型別 | 說明 |
-|------|------|------|
-| id | bigint | 主題 ID（PK） |
-| course_id | bigint | 所屬課程 ID（FK → courses.id） |
-| name | string | 主題名稱 |
-| sort_order | integer | 排序順序 |
-| created_at | timestamp | 建立時間 |
-| updated_at | timestamp | 更新時間 |
-
-例如：PHP 程式設計 → PHP 基礎、PHP 語法、PHP 資料庫。
-
 ### chapters 章節資料
-一個主題底下可有多個章節
+一門課程底下可有多個章節
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
 | id | bigint | 章節 ID（PK） |
-| topic_id | bigint | 所屬主題 ID（FK → topics.id） |
+| course_id | bigint | 所屬課程 ID（FK → courses.id） |
 | name | string | 章節名稱 |
 | sort_order | integer | 排序順序 |
 | created_at | timestamp | 建立時間 |
 | updated_at | timestamp | 更新時間 |
 
-例如：主題「PHP 基礎」→ 第一章 PHP 簡介、第二章 PHP 環境、第三章 PHP 基本語法。
+例如：課程「PHP 程式設計」→ 第一章 PHP 簡介、第二章 PHP 環境、第三章 PHP 基本語法。
 
 ### units 單元資料
 一個章節底下可有多個單元
@@ -319,7 +303,7 @@ Seeder 已讓王小明選修「網際系統設計」（班級資應）。
 |------|------|------|
 | id | bigint | 知識卡 ID（PK） |
 | unit_id | bigint（可空） | 主要單元 ID（FK → units.id）。有題目使用而從教材樹刪除時改為空 |
-| topic_id | bigint（可空） | 所屬主題（覆蓋匯入時用來對回同一張卡） |
+| course_id | bigint（可空） | 所屬課程（覆蓋匯入時用來對回同一張卡） |
 | title | string | 知識卡名稱（Excel `card_name`） |
 | type | string | 類型，例如 `keyword`、`function`（Excel `card_type`） |
 | content | longText | 知識卡內容，可存 HTML（Excel `card_content`） |
@@ -328,7 +312,7 @@ Seeder 已讓王小明選修「網際系統設計」（班級資應）。
 | created_at | timestamp | 建立時間 |
 | updated_at | timestamp | 更新時間 |
 
-例如：單元「變數」→ 知識卡「變數」（內容與 `example` 程式範例）。出題下拉依教材**主題**分組，顯示知識點名稱，不顯示「說明」課文或 `實作變數01`。
+例如：單元「變數」→ 知識卡「變數」（內容與 `example` 程式範例）。出題下拉依教材**章節**分組，顯示知識點名稱，不顯示「說明」課文或 `實作變數01`。
 
 ### knowledge_card_unit 單元與知識卡
 
@@ -345,13 +329,13 @@ Seeder 已讓王小明選修「網際系統設計」（班級資應）。
 教材資料關聯：
 
 ```text
-courses → topics → chapters → units ↔ knowledge_cards（knowledge_card_unit）
+courses → chapters → units ↔ knowledge_cards（knowledge_card_unit）
 courses → questions
 questions ↔ knowledge_cards（question_knowledge_cards）
 ```
 
-畫面採一層一層點進去（鑽層）：課程 → 主題 → 章節 → 單元 → 知識卡。  
-列表的 `item_count` 代表下一層有幾筆（對應畫面上的「N 項」）。知識卡沒有下一層，回傳 `title`、`content`、`example`。刪除主題／章節／單元時，沒有題目使用的知識卡會一併刪除；**已掛在 `question_knowledge_cards` 的知識卡會保留**（`unit_id` 改為空，脫離教材樹），題目關聯不斷。直接刪單張知識卡若已有題目使用會 **422**。
+畫面採一層一層點進去（鑽層）：課程 → 章節 → 單元 → 知識卡。  
+列表的 `item_count` 代表下一層有幾筆（對應畫面上的「N 項」）。知識卡沒有下一層，回傳 `title`、`content`、`example`。刪除章節／單元時，沒有題目使用的知識卡會一併刪除；**已掛在 `question_knowledge_cards` 的知識卡會保留**（`unit_id` 改為空，脫離教材樹），題目關聯不斷。直接刪單張知識卡若已有題目使用會 **422**。
 
 ### questions 題目資料
 
@@ -414,7 +398,7 @@ questions ↔ knowledge_cards（question_knowledge_cards）
 | created_at | timestamp | 建立時間 |
 | updated_at | timestamp | 更新時間 |
 
-同一題對同一張知識卡不可重複（`question_id` + `knowledge_card_id` unique）。刪題目時，對應關聯會一併刪除。刪知識卡時若仍有題目使用則拒絕；從教材樹刪除主題／章節／單元時，有題目使用的知識卡會保留（關聯不斷）。
+同一題對同一張知識卡不可重複（`question_id` + `knowledge_card_id` unique）。刪題目時，對應關聯會一併刪除。刪知識卡時若仍有題目使用則拒絕；從教材樹刪除章節／單元時，有題目使用的知識卡會保留（關聯不斷）。
 
 ### question_records / question_record_subs 作答
 
@@ -1021,17 +1005,17 @@ Authorization: Bearer {token}
 |------|-----|------|
 | 下載 Excel 範本 | `GET /api/v1/teacher/materials/template` | 教師 |
 | 匯入教材 | `POST /api/v1/teacher/courses/{courseId}/materials/import` | 該課教師 |
-| 教師圖譜樹 | `GET /api/v1/teacher/courses/{courseId}/tree`、`GET /api/v1/teacher/topics/{topicId}/tree` | 該課教師 |
+| 教師圖譜樹 | `GET /api/v1/teacher/courses/{courseId}/tree` | 該課教師 |
 | 上傳編輯器圖片 | `POST /api/v1/teacher/upload-image` | 教師 |
 | 學生圖譜 | `GET /api/v1/student/courses/{courseId}/graph` | 修課學生 |
 
 流程（前端不要自己解析 Excel）：
 
-1. 填主題名稱 `topic` + 上傳 xlsx → 後端寫入正式主題／章／單元／知識卡。
-2. 該主題已有內容時須再帶 `overwrite=true`（確認覆蓋）。有題目使用的知識卡不會硬刪，只脫離樹。
+1. 上傳 xlsx → 後端寫入該課程的正式章／單元／知識卡。
+2. 該課程已有章節或知識卡時須再帶 `overwrite=true`（確認覆蓋）。有題目使用的知識卡不會硬刪，只脫離樹。
 3. 單張卡 PUT「儲存變更」立刻給學生看。圖譜用 tree／graph 一次撈整棵樹。
 
-Excel：一份檔一個主題（名稱用表單 `topic`）。第 1 列欄位：`chapter_title`、`chapter_order`、`unit_title`、`unit_order`、`card_name`、`card_type`、`card_content`、`code_example`。第 2 列公版範例整列不讀，第 3 列起才是內容。任一格以 `ex：` 或 `ex:` 開頭的列也整列不讀。空白章節／單元沿用上一列。同主題、同名＋同 type 只建一張卡，可掛多個單元。`code_example` 存成知識卡 `example`。
+Excel：一份檔對應一門課程。第 1 列欄位：`chapter_title`、`chapter_order`、`unit_title`、`unit_order`、`card_name`、`card_type`、`card_content`、`code_example`。第 2 列公版範例整列不讀，第 3 列起才是內容。任一格以 `ex：` 或 `ex:` 開頭的列也整列不讀。空白章節／單元沿用上一列。同課程、同名＋同 type 只建一張卡，可掛多個單元。`code_example` 存成知識卡 `example`。
 
 ### 教材匯入範本
 
@@ -1055,17 +1039,15 @@ public/templates/course_template.xlsx
 
 | 欄位 | 必填 | 說明 |
 |------|------|------|
-| topic | 是 | 主題名稱。一份檔只掛這一個主題 |
 | file | 是 | `.xlsx` |
-| overwrite | 否 | 主題已有內容時必須為 true |
+| overwrite | 否 | 課程已有內容時必須為 true |
 
-沒帶 `topic`（空字串也不行）會 **422**。副檔名必須是 `.xlsx`。
+副檔名必須是 `.xlsx`。
 
 | Method | URL | 說明 |
 |--------|-----|------|
-| POST | `/api/v1/teacher/courses/{courseId}/materials/import` | 後端解析 Excel，直接寫正式教材，回 `{ topic }`（**201**） |
-| GET | `/api/v1/teacher/courses/{courseId}/tree` | 該課全部主題的樹，回 `{ course }` |
-| GET | `/api/v1/teacher/topics/{topicId}/tree` | 單一主題的樹，回 `{ topic }` |
+| POST | `/api/v1/teacher/courses/{courseId}/materials/import` | 後端解析 Excel，直接寫正式教材，回 `{ course }`（**201**） |
+| GET | `/api/v1/teacher/courses/{courseId}/tree` | 該課整棵樹，回 `{ course }` |
 | POST | `/api/v1/teacher/upload-image` | 編輯器圖片。`multipart` 欄位 `image`（圖檔，最大 5MB），回 `{ url }`（**201**；需 `php artisan storage:link`） |
 | GET | `/api/v1/student/courses/{courseId}/graph` | 修課學生圖譜，回 `{ graph }` |
 
@@ -1073,11 +1055,11 @@ public/templates/course_template.xlsx
 
 | 情況 | 狀態 |
 |------|------|
-| 只上傳範本示範列、沒填 `topic` | 422 |
-| 主題已有教材但沒帶 overwrite | 422 |
+| 只上傳範本示範列 | 422 |
+| 課程已有教材但沒帶 overwrite | 422 |
 | 不是該課教師 | 404 |
 
-覆蓋時：該主題章／單元換成這份 Excel。已有題目關聯、卻沒再出現在 Excel 的知識卡不會刪，改為脫離教材樹（`unit_id` 設為 null）。
+覆蓋時：該課程章／單元換成這份 Excel。已有題目關聯、卻沒再出現在 Excel 的知識卡不會刪，改為脫離教材樹（`unit_id` 設為 null）。
 
 ### 學生教材（已選課）
 
@@ -1086,8 +1068,7 @@ public/templates/course_template.xlsx
 | Method | URL | 說明 |
 |--------|-----|------|
 | GET | `/api/v1/student/courses/{courseId}/graph` | 一次回整棵樹給圖譜 |
-| GET | `/api/v1/student/courses/{courseId}/topics` | 列出該課主題（舊鑽層） |
-| GET | `/api/v1/student/topics/{topicId}/chapters` | 列出該主題章節 |
+| GET | `/api/v1/student/courses/{courseId}/chapters` | 列出該課章節 |
 | GET | `/api/v1/student/chapters/{chapterId}/units` | 列出該章節單元 |
 | GET | `/api/v1/student/units/{unitId}/knowledge-cards` | 列出該單元知識卡 |
 
@@ -1098,7 +1079,7 @@ public/templates/course_template.xlsx
 | Method | URL | 說明 |
 |--------|-----|------|
 | GET | `/api/v1/teacher/blooms` | Bloom 對照（出題用 B11–B63） |
-| GET | `/api/v1/teacher/courses/{courseId}/knowledge-cards` | 該課知識點（依主題分組、去重；出題下拉） |
+| GET | `/api/v1/teacher/courses/{courseId}/knowledge-cards` | 該課知識點（依章節分組、去重；出題下拉） |
 | GET | `/api/v1/teacher/courses/{courseId}/questions` | 列出該課題目（含正解） |
 | POST | `/api/v1/teacher/courses/{courseId}/questions` | 新增題目 |
 | GET | `/api/v1/teacher/questions/{questionId}` | 單題（含正解） |
@@ -1205,40 +1186,29 @@ public/templates/course_template.xlsx
 | GET | `/api/v1/teacher/courses/{courseId}/question-records` | 列出該課學生作答（`records`，含子項 `subs`） |
 | PUT | `/api/v1/teacher/question-records/{recordId}` | 實作：`bloom_id`；其餘：`solo` 1 錯／2 對 |
 
-### topics 主題
+### chapters 章節
 
 這段是**正式教材**的鑽層 API（`MaterialService`）。Excel 匯入會直接寫正式表；單張卡 PUT 也是改正式資料。
 
 | Method | URL | 說明 |
 |--------|-----|------|
-| GET | `/api/v1/teacher/courses/{courseId}/topics` | 列出該課程的主題 |
-| POST | `/api/v1/teacher/courses/{courseId}/topics` | 新增主題 |
-| PUT | `/api/v1/teacher/topics/{topicId}` | 修改主題 |
-| DELETE | `/api/v1/teacher/topics/{topicId}` | 刪除主題（有題目使用的知識卡會保留並脫離教材樹） |
+| GET | `/api/v1/teacher/courses/{courseId}/chapters` | 列出該課程的章節 |
+| POST | `/api/v1/teacher/courses/{courseId}/chapters` | 新增章節 |
+| PUT | `/api/v1/teacher/chapters/{chapterId}` | 修改章節 |
+| DELETE | `/api/v1/teacher/chapters/{chapterId}` | 刪除章節（有題目使用的知識卡會保留並脫離教材樹） |
 
 Request（新增／修改）：
 
 ```json
 {
-  "name": "PHP 基礎",
+  "name": "第一章 PHP 簡介",
   "sort_order": 1
 }
 ```
 
 `sort_order` 選填；不傳則自動接在最後。
 
-列表／單筆會含 `item_count`（底下章節數量）以及 `created_at`、`updated_at`。主題列表依最後更新時間新到舊。
-
-### chapters 章節
-
-| Method | URL | 說明 |
-|--------|-----|------|
-| GET | `/api/v1/teacher/topics/{topicId}/chapters` | 列出該主題的章節 |
-| POST | `/api/v1/teacher/topics/{topicId}/chapters` | 新增章節 |
-| PUT | `/api/v1/teacher/chapters/{chapterId}` | 修改章節 |
-| DELETE | `/api/v1/teacher/chapters/{chapterId}` | 刪除章節（有題目使用的知識卡會保留並脫離教材樹） |
-
-Request 同主題，欄位為 `name`、`sort_order`。`item_count` 為底下單元數量。
+列表／單筆會含 `item_count`（底下單元數量）以及 `created_at`、`updated_at`。
 
 ### units 單元
 
@@ -1249,13 +1219,13 @@ Request 同主題，欄位為 `name`、`sort_order`。`item_count` 為底下單�
 | PUT | `/api/v1/teacher/units/{unitId}` | 修改單元 |
 | DELETE | `/api/v1/teacher/units/{unitId}` | 刪除單元（有題目使用的知識卡會保留並脫離教材樹） |
 
-Request 同主題。`item_count` 為底下知識卡數量。
+Request 同章節，欄位為 `name`、`sort_order`。`item_count` 為底下知識卡數量。
 
 ### knowledge_cards 知識卡
 
 | Method | URL | 說明 |
 |--------|-----|------|
-| GET | `/api/v1/teacher/courses/{courseId}/knowledge-cards` | 該課出題用知識點（依主題去重） |
+| GET | `/api/v1/teacher/courses/{courseId}/knowledge-cards` | 該課出題用知識點（依章節去重） |
 | GET | `/api/v1/teacher/units/{unitId}/knowledge-cards` | 列出該單元的知識卡 |
 | POST | `/api/v1/teacher/units/{unitId}/knowledge-cards` | 新增知識卡 |
 | PUT | `/api/v1/teacher/knowledge-cards/{cardId}` | 修改知識卡 |
@@ -1283,7 +1253,7 @@ Request（新增／修改）：
 }
 ```
 
-知識卡已有題目關聯時刪除會 **422**（`knowledge_card`）。請先從題目拿掉該知識卡，或改刪上層主題／章節／單元：有題的卡會保留、沒題的卡會刪，主題本身會從列表消失。
+知識卡已有題目關聯時刪除會 **422**（`knowledge_card`）。請先從題目拿掉該知識卡，或改刪上層章節／單元：有題的卡會保留、沒題的卡會刪。
 
 ---
 
