@@ -215,6 +215,19 @@ class AuthApiTest extends TestCase
         });
     }
 
+    public function test_student_forgot_password_accepts_school_email_aliases(): void
+    {
+        Mail::fake();
+
+        $this->postJson('/api/v1/auth/student/forgot-password', [
+            'student_no' => 's1411131000',
+        ])->assertOk();
+
+        $this->postJson('/api/v1/auth/student/forgot-password', [
+            'student_no' => '1411131000@nutc.edu.tw',
+        ])->assertOk();
+    }
+
     public function test_student_forgot_password_with_invalid_student_no(): void
     {
         $response = $this->postJson('/api/v1/auth/student/forgot-password', [
