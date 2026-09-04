@@ -50,11 +50,13 @@ class MaterialService
     public function createChapter(Teacher $teacher, int $courseId, array $data): array
     {
         $course = $this->ownedCourse($teacher, $courseId);
+        $siblings = Chapter::query()->where('course_id', $course->id);
+        $sortOrder = $this->resolveSortOrder($siblings, $data['sort_order'] ?? null);
 
         $chapter = Chapter::query()->create([
             'course_id' => $course->id,
             'name' => $data['name'],
-            'sort_order' => $data['sort_order'] ?? $this->nextSortOrder(Chapter::query()->where('course_id', $course->id)),
+            'sort_order' => $sortOrder,
         ]);
 
         return $this->formatNamedNode($chapter, 0);
@@ -63,7 +65,11 @@ class MaterialService
     public function updateChapter(Teacher $teacher, int $chapterId, array $data): array
     {
         $chapter = $this->ownedChapter($teacher, $chapterId);
-        $this->updateNamedNode($chapter, $data);
+        $this->updateNamedNode(
+            $chapter,
+            $data,
+            Chapter::query()->where('course_id', $chapter->course_id),
+        );
         $chapter = $chapter->fresh()->loadCount('units');
 
         return $this->formatNamedNode($chapter, (int) $chapter->units_count);
@@ -93,11 +99,13 @@ class MaterialService
     public function createUnit(Teacher $teacher, int $chapterId, array $data): array
     {
         $chapter = $this->ownedChapter($teacher, $chapterId);
+        $siblings = Unit::query()->where('chapter_id', $chapter->id);
+        $sortOrder = $this->resolveSortOrder($siblings, $data['sort_order'] ?? null);
 
         $unit = Unit::query()->create([
             'chapter_id' => $chapter->id,
             'name' => $data['name'],
-            'sort_order' => $data['sort_order'] ?? $this->nextSortOrder(Unit::query()->where('chapter_id', $chapter->id)),
+            'sort_order' => $sortOrder,
         ]);
 
         return $this->formatNamedNode($unit, 0);
@@ -106,7 +114,11 @@ class MaterialService
     public function updateUnit(Teacher $teacher, int $unitId, array $data): array
     {
         $unit = $this->ownedUnit($teacher, $unitId);
-        $this->updateNamedNode($unit, $data);
+        $this->updateNamedNode(
+            $unit,
+            $data,
+            Unit::query()->where('chapter_id', $unit->chapter_id),
+        );
         $unit = $unit->fresh()->loadCount('knowledgeCards');
 
         return $this->formatNamedNode($unit, (int) $unit->knowledge_cards_count);
@@ -224,6 +236,8 @@ class MaterialService
     {
         $unit = $this->ownedUnit($teacher, $unitId);
         $unit->loadMissing('chapter');
+        $siblings = KnowledgeCard::query()->where('unit_id', $unit->id);
+        $sortOrder = $this->resolveSortOrder($siblings, $data['sort_order'] ?? null);
 
         $card = KnowledgeCard::query()->create([
             'unit_id' => $unit->id,
@@ -232,7 +246,7 @@ class MaterialService
             'type' => $data['type'] ?? 'keyword',
             'content' => $data['content'],
             'example' => $data['example'] ?? null,
-            'sort_order' => $data['sort_order'] ?? $this->nextSortOrder(KnowledgeCard::query()->where('unit_id', $unit->id)),
+            'sort_order' => $sortOrder,
         ]);
         $card->units()->syncWithoutDetaching([$unit->id]);
 
@@ -251,7 +265,9 @@ class MaterialService
         ];
 
         if (array_key_exists('sort_order', $data) && $data['sort_order'] !== null) {
-            $payload['sort_order'] = $data['sort_order'];
+            $siblings = KnowledgeCard::query()->where('unit_id', $card->unit_id);
+            $this->assertUniqueSortOrder($siblings, (int) $data['sort_order'], (int) $card->id);
+            $payload['sort_order'] = (int) $data['sort_order'];
         }
 
         $card->update($payload);
@@ -370,14 +386,47 @@ class MaterialService
         return (int) $query->max('sort_order') + 1;
     }
 
-    private function updateNamedNode(Model $model, array $data): void
+    /**
+     * 沒傳 sort_order 就接在最後；有傳則同一父層不可重複。
+     */
+    private function resolveSortOrder(Builder $siblings, mixed $sortOrder): int
+    {
+        if ($sortOrder === null) {
+            return $this->nextSortOrder(clone $siblings);
+        }
+
+        $order = (int) $sortOrder;
+        $this->assertUniqueSortOrder($siblings, $order);
+
+        return $order;
+    }
+
+    private function assertUniqueSortOrder(Builder $siblings, int $sortOrder, ?int $ignoreId = null): void
+    {
+        $query = clone $siblings;
+        $query->where('sort_order', $sortOrder);
+
+        if ($ignoreId !== null) {
+            $query->whereKeyNot($ignoreId);
+        }
+
+        if ($query->exists()) {
+            throw ValidationException::withMessages([
+                'sort_order' => ['sort_order 已存在'],
+            ]);
+        }
+    }
+
+    private function updateNamedNode(Model $model, array $data, Builder $siblings): void
     {
         $payload = [
             'name' => $data['name'],
         ];
 
         if (array_key_exists('sort_order', $data) && $data['sort_order'] !== null) {
-            $payload['sort_order'] = $data['sort_order'];
+            $order = (int) $data['sort_order'];
+            $this->assertUniqueSortOrder($siblings, $order, (int) $model->getKey());
+            $payload['sort_order'] = $order;
         }
 
         $model->update($payload);

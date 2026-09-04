@@ -1268,7 +1268,7 @@ Request（新增／修改）：
 }
 ```
 
-`sort_order` 選填；不傳則自動接在最後。
+`sort_order` 選填；不傳則自動接在最後（`max + 1`）。同一課程內章節的 `sort_order` 不可重複；重複回 **422**：`sort_order 已存在`。更新時維持原值不算重複。
 
 列表／單筆會含 `item_count`（底下單元數量）以及 `created_at`、`updated_at`。
 
@@ -1281,7 +1281,7 @@ Request（新增／修改）：
 | PUT | `/api/v1/teacher/units/{unitId}` | 修改單元 |
 | DELETE | `/api/v1/teacher/units/{unitId}` | 刪除單元（有題目使用的知識卡會保留並脫離教材樹） |
 
-Request 同章節，欄位為 `name`、`sort_order`。`item_count` 為底下知識卡數量。
+Request 同章節，欄位為 `name`、`sort_order`。`item_count` 為底下知識卡數量。同一章節內單元的 `sort_order` 不可重複；不同章節可以同號。
 
 ### knowledge_cards 知識卡
 
@@ -1305,7 +1305,7 @@ Request（新增／修改）：
 }
 ```
 
-`title`、`content` 必填，`type`、`example` 選填（`type` 預設 `keyword`）。也接受 `name`、`code_example` 別名。畫面上一層用 `name`，知識卡請用 `title`。
+`title`、`content` 必填，`type`、`example` 選填（`type` 預設 `keyword`）。也接受 `name`、`code_example` 別名。畫面上一層用 `name`，知識卡請用 `title`。`sort_order` 選填；不傳則接在該單元最後。同一單元內知識卡的 `sort_order` 不可重複。
 
 成功建立為 **201**。刪除成功 200：
 

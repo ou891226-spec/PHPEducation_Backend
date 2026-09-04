@@ -103,6 +103,90 @@ class MaterialApiTest extends TestCase
             ->assertJsonCount(0, 'chapters');
     }
 
+    public function test_sort_order_must_be_unique_within_parent_scope(): void
+    {
+        $token = $this->loginToken('teacher@school.edu.tw');
+
+        $courseId = $this->withToken($token)->postJson('/api/v1/teacher/courses', [
+            'name' => '排序測試課',
+            'description' => 'sort_order',
+            'semester' => '115-1',
+            'class_name' => '資應二甲',
+        ])->json('course.id');
+
+        $chapter1 = $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/chapters", [
+            'name' => '第一章',
+            'sort_order' => 1,
+        ])->assertCreated()->json('chapter');
+
+        $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/chapters", [
+            'name' => '重複章',
+            'sort_order' => 1,
+        ])->assertStatus(422)->assertJsonValidationErrors(['sort_order']);
+
+        $chapter2Id = $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/chapters", [
+            'name' => '第二章',
+            'sort_order' => 2,
+        ])->assertCreated()->json('chapter.id');
+
+        $unitA = $this->withToken($token)->postJson("/api/v1/teacher/chapters/{$chapter1['id']}/units", [
+            'name' => '單元 A',
+            'sort_order' => 1,
+        ])->assertCreated()->json('unit');
+
+        $unitBId = $this->withToken($token)->postJson("/api/v1/teacher/chapters/{$chapter1['id']}/units", [
+            'name' => '單元 B',
+            'sort_order' => 2,
+        ])->assertCreated()->json('unit.id');
+
+        $this->withToken($token)->postJson("/api/v1/teacher/chapters/{$chapter1['id']}/units", [
+            'name' => '單元 C 搶位',
+            'sort_order' => 2,
+        ])->assertStatus(422)->assertJsonPath('errors.sort_order.0', 'sort_order 已存在');
+
+        // 不同章節可以同號
+        $this->withToken($token)->postJson("/api/v1/teacher/chapters/{$chapter2Id}/units", [
+            'name' => '另一章的單元',
+            'sort_order' => 1,
+        ])->assertCreated();
+
+        // 更新成自己原本的 sort_order 可以
+        $this->withToken($token)->putJson("/api/v1/teacher/units/{$unitBId}", [
+            'name' => '單元 B',
+            'sort_order' => 2,
+        ])->assertOk()->assertJsonPath('unit.sort_order', 2);
+
+        // 搶別人的號不行，原資料不變
+        $this->withToken($token)->putJson("/api/v1/teacher/units/{$unitBId}", [
+            'name' => '單元 B',
+            'sort_order' => 1,
+        ])->assertStatus(422)->assertJsonValidationErrors(['sort_order']);
+
+        $this->withToken($token)
+            ->getJson("/api/v1/teacher/chapters/{$chapter1['id']}/units")
+            ->assertOk()
+            ->assertJsonFragment(['id' => $unitBId, 'name' => '單元 B', 'sort_order' => 2])
+            ->assertJsonFragment(['id' => $unitA['id'], 'sort_order' => 1]);
+
+        $cardAId = $this->withToken($token)->postJson("/api/v1/teacher/units/{$unitA['id']}/knowledge-cards", [
+            'title' => '卡 A',
+            'content' => '內容 A',
+            'sort_order' => 0,
+        ])->assertCreated()->json('knowledge_card.id');
+
+        $this->withToken($token)->postJson("/api/v1/teacher/units/{$unitA['id']}/knowledge-cards", [
+            'title' => '卡 B 搶位',
+            'content' => '內容 B',
+            'sort_order' => 0,
+        ])->assertStatus(422)->assertJsonValidationErrors(['sort_order']);
+
+        $this->withToken($token)->putJson("/api/v1/teacher/knowledge-cards/{$cardAId}", [
+            'title' => '卡 A',
+            'content' => '內容 A',
+            'sort_order' => 0,
+        ])->assertOk()->assertJsonPath('knowledge_card.sort_order', 0);
+    }
+
     public function test_teacher_cannot_access_other_teachers_materials(): void
     {
         $otherTeacher = \App\Models\Teacher::query()
