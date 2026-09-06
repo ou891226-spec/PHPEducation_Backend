@@ -7,21 +7,16 @@ use ZipArchive;
 
 /**
  * 依 course_template.xlsx 欄位組成教材樹：Chapter → Unit → Knowledge Card。
- * 主題由網頁匯入時一次填寫，不從 Excel 讀 topics 欄。
+ * 教材屬於目前課程，不從 Excel 讀主題。
  * 第 1 列欄位、第 2 列公版範例整列不讀，第 3 列起才是教材。空白章節／單元沿用上一列。
  */
 class ExcelMaterialParser
 {
     /**
-     * @return array{name: string, topics: list<array<string, mixed>>}
+     * @return array{chapters: list<array<string, mixed>>}
      */
-    public function parse(string $path, string $topicName): array
+    public function parse(string $path): array
     {
-        $topicName = trim($topicName);
-        if ($topicName === '') {
-            throw new InvalidArgumentException('請填寫主題名稱');
-        }
-
         $rows = $this->readRows($path);
         if ($rows === []) {
             throw new InvalidArgumentException('找不到教材內容');
@@ -37,7 +32,7 @@ class ExcelMaterialParser
             throw new InvalidArgumentException('找不到欄位列（chapter_title / unit_title / card_name）');
         }
 
-        $topics = [];
+        $chapters = [];
         $lastChapter = '';
         $lastUnit = '';
         $lastChapterOrder = null;
@@ -78,21 +73,20 @@ class ExcelMaterialParser
                 continue;
             }
 
-            $this->ensureChapter($topics, $topicName, $chapter, $chapterOrder);
+            $this->ensureChapter($chapters, $chapter, $chapterOrder);
 
             if ($unit === '') {
                 continue;
             }
 
-            $this->ensureUnit($topics, $topicName, $chapter, $unit, $unitOrder);
+            $this->ensureUnit($chapters, $chapter, $unit, $unitOrder);
 
             if ($title === '') {
                 continue;
             }
 
             $this->appendCard(
-                $topics,
-                $topicName,
+                $chapters,
                 $chapter,
                 $unit,
                 $title,
@@ -102,62 +96,50 @@ class ExcelMaterialParser
             );
         }
 
-        $topics = $this->finalizeTopics($topics);
-        if ($topics === []) {
+        $chapters = $this->finalizeChapters($chapters);
+        if ($chapters === []) {
             throw new InvalidArgumentException('沒有可匯入的教材列');
         }
 
         return [
-            'name' => $topicName,
-            'topics' => $topics,
+            'chapters' => $chapters,
         ];
     }
 
     /**
-     * @param  array<string, array<string, mixed>>  $topics
+     * @param  array<string, array<string, mixed>>  $chapters
      * @return list<array<string, mixed>>
      */
-    private function finalizeTopics(array $topics): array
+    private function finalizeChapters(array $chapters): array
     {
         $list = [];
-        $topicOrder = 1;
+        $chapterOrder = 1;
 
-        foreach ($topics as $topic) {
-            $chapters = [];
-            $chapterOrder = 1;
-            foreach ($topic['chapters'] as $chapter) {
-                $units = [];
-                $unitOrder = 1;
-                foreach ($chapter['units'] as $unit) {
-                    $unit['sort_order'] = $unit['sort_order'] ?: $unitOrder;
-                    $unitOrder = max($unitOrder, $unit['sort_order']) + 1;
-                    $units[] = $unit;
-                }
-                usort($units, fn (array $a, array $b) => $a['sort_order'] <=> $b['sort_order']);
-                $chapter['units'] = $units;
-                $chapter['sort_order'] = $chapter['sort_order'] ?: $chapterOrder;
-                $chapterOrder = max($chapterOrder, $chapter['sort_order']) + 1;
-                $chapters[] = $chapter;
+        foreach ($chapters as $chapter) {
+            $units = [];
+            $unitOrder = 1;
+            foreach ($chapter['units'] as $unit) {
+                $unit['sort_order'] = $unit['sort_order'] ?: $unitOrder;
+                $unitOrder = max($unitOrder, $unit['sort_order']) + 1;
+                $units[] = $unit;
             }
-            usort($chapters, fn (array $a, array $b) => $a['sort_order'] <=> $b['sort_order']);
-            $topic['chapters'] = $chapters;
-            $topic['sort_order'] = $topicOrder++;
-            $list[] = $topic;
+            usort($units, fn (array $a, array $b) => $a['sort_order'] <=> $b['sort_order']);
+            $chapter['units'] = $units;
+            $chapter['sort_order'] = $chapter['sort_order'] ?: $chapterOrder;
+            $chapterOrder = max($chapterOrder, $chapter['sort_order']) + 1;
+            $list[] = $chapter;
         }
+
+        usort($list, fn (array $a, array $b) => $a['sort_order'] <=> $b['sort_order']);
 
         return $list;
     }
 
     /**
-     * @param  array<string, array<string, mixed>>  $topics
+     * @param  array<string, array<string, mixed>>  $chapters
      */
-    private function ensureChapter(array &$topics, string $topic, string $chapter, ?int $order): void
+    private function ensureChapter(array &$chapters, string $chapter, ?int $order): void
     {
-        if (! isset($topics[$topic])) {
-            $topics[$topic] = $this->namedNode($topic, 'chapters');
-        }
-
-        $chapters = &$topics[$topic]['chapters'];
         if (! isset($chapters[$chapter])) {
             $chapters[$chapter] = $this->namedNode($chapter, 'units');
         }
@@ -167,12 +149,12 @@ class ExcelMaterialParser
     }
 
     /**
-     * @param  array<string, array<string, mixed>>  $topics
+     * @param  array<string, array<string, mixed>>  $chapters
      */
-    private function ensureUnit(array &$topics, string $topic, string $chapter, string $unit, ?int $order): void
+    private function ensureUnit(array &$chapters, string $chapter, string $unit, ?int $order): void
     {
-        $this->ensureChapter($topics, $topic, $chapter, null);
-        $units = &$topics[$topic]['chapters'][$chapter]['units'];
+        $this->ensureChapter($chapters, $chapter, null);
+        $units = &$chapters[$chapter]['units'];
         if (! isset($units[$unit])) {
             $units[$unit] = $this->namedNode($unit, 'knowledge_cards');
         }
@@ -182,11 +164,10 @@ class ExcelMaterialParser
     }
 
     /**
-     * @param  array<string, array<string, mixed>>  $topics
+     * @param  array<string, array<string, mixed>>  $chapters
      */
     private function appendCard(
-        array &$topics,
-        string $topic,
+        array &$chapters,
         string $chapter,
         string $unit,
         string $title,
@@ -194,8 +175,8 @@ class ExcelMaterialParser
         string $content,
         ?string $example,
     ): void {
-        $this->ensureUnit($topics, $topic, $chapter, $unit, null);
-        $cards = &$topics[$topic]['chapters'][$chapter]['units'][$unit]['knowledge_cards'];
+        $this->ensureUnit($chapters, $chapter, $unit, null);
+        $cards = &$chapters[$chapter]['units'][$unit]['knowledge_cards'];
 
         foreach ($cards as &$existing) {
             if (($existing['title'] ?? '') !== $title || ($existing['type'] ?? '') !== $type) {

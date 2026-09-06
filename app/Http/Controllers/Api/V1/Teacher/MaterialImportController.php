@@ -23,11 +23,10 @@ class MaterialImportController extends Controller
         $path = $request->file('file')->getRealPath();
 
         return response()->json([
-            'topic' => $this->materialImportService->import(
+            'course' => $this->materialImportService->import(
                 $this->teacher($request),
                 $courseId,
                 $path,
-                $request->string('topic')->toString(),
                 $request->boolean('overwrite'),
             ),
         ], 201);

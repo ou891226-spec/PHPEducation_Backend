@@ -82,9 +82,10 @@ class CourseService
             KnowledgeCard::query()
                 ->where(function (Builder $query) use ($course): void {
                     $query->whereHas(
-                        'unit.chapter.topic',
-                        fn (Builder $topicQuery) => $topicQuery->where('course_id', $course->id),
-                    )->orWhere(function (Builder $detached) use ($course): void {
+                        'unit.chapter',
+                        fn (Builder $chapterQuery) => $chapterQuery->where('course_id', $course->id),
+                    )->orWhere('course_id', $course->id)
+                    ->orWhere(function (Builder $detached) use ($course): void {
                         $detached->whereNull('unit_id')
                             ->whereHas('questions', fn (Builder $questionQuery) => $questionQuery->where('course_id', $course->id));
                     });

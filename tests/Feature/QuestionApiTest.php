@@ -331,6 +331,7 @@ class QuestionApiTest extends TestCase
 
         $card = KnowledgeCard::query()->create([
             'unit_id' => $this->ensureUnit($course)->id,
+            'course_id' => $course->id,
             'title' => '卡片 '.$title,
             'content' => '內容',
             'example' => '$name = "PHP";',
@@ -343,17 +344,9 @@ class QuestionApiTest extends TestCase
 
     private function ensureUnit(Course $course): Unit
     {
-        $topic = $course->topics()->first();
-        if ($topic === null) {
-            $topic = $course->topics()->create([
-                'name' => '測試主題',
-                'sort_order' => 1,
-            ]);
-        }
-
-        $chapter = $topic->chapters()->first();
+        $chapter = $course->chapters()->first();
         if ($chapter === null) {
-            $chapter = $topic->chapters()->create([
+            $chapter = $course->chapters()->create([
                 'name' => '測試章節',
                 'sort_order' => 1,
             ]);

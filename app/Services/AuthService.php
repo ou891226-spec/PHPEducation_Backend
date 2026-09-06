@@ -107,9 +107,14 @@ class AuthService
      */
     public function studentForgotPassword(string $studentNo): void
     {
+        $studentNo = trim($studentNo);
+        $normalized = $this->normalizedStudentNo($studentNo);
+
         $student = Student::query()
-            ->where('student_no', $studentNo)
-            ->orWhere('email', Student::emailFromStudentNo($studentNo))
+            ->where('student_no', $normalized)
+            ->orWhere('student_no', $studentNo)
+            ->orWhere('email', $studentNo)
+            ->orWhere('email', Student::emailFromStudentNo($normalized))
             ->first();
 
         if ($student === null) {
@@ -185,5 +190,14 @@ class AuthService
         }
 
         return Student::query()->where('email', Student::emailFromStudentNo($account))->first();
+    }
+
+    private function normalizedStudentNo(string $input): string
+    {
+        if (str_contains($input, '@')) {
+            $input = explode('@', $input)[0];
+        }
+
+        return ltrim($input, 'Ss');
     }
 }

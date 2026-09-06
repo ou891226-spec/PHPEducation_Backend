@@ -15,17 +15,17 @@ class ChapterController extends Controller
         private readonly MaterialService $materialService,
     ) {}
 
-    public function index(Request $request, int $topicId): JsonResponse
+    public function index(Request $request, int $courseId): JsonResponse
     {
         return response()->json([
-            'chapters' => $this->materialService->listChapters($this->teacher($request), $topicId),
+            'chapters' => $this->materialService->listChapters($this->teacher($request), $courseId),
         ]);
     }
 
-    public function store(MaterialNameRequest $request, int $topicId): JsonResponse
+    public function store(MaterialNameRequest $request, int $courseId): JsonResponse
     {
         return response()->json([
-            'chapter' => $this->materialService->createChapter($this->teacher($request), $topicId, $request->validated()),
+            'chapter' => $this->materialService->createChapter($this->teacher($request), $courseId, $request->validated()),
         ], 201);
     }
 

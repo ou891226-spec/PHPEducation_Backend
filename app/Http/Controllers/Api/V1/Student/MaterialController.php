@@ -14,17 +14,10 @@ class MaterialController extends Controller
         private readonly StudentMaterialService $studentMaterialService,
     ) {}
 
-    public function topics(Request $request, int $courseId): JsonResponse
+    public function chapters(Request $request, int $courseId): JsonResponse
     {
         return response()->json([
-            'topics' => $this->studentMaterialService->listTopics($this->student($request), $courseId),
-        ]);
-    }
-
-    public function chapters(Request $request, int $topicId): JsonResponse
-    {
-        return response()->json([
-            'chapters' => $this->studentMaterialService->listChapters($this->student($request), $topicId),
+            'chapters' => $this->studentMaterialService->listChapters($this->student($request), $courseId),
         ]);
     }
 

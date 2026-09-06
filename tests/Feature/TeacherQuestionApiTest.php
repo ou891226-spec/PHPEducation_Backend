@@ -73,11 +73,7 @@ class TeacherQuestionApiTest extends TestCase
             'class_name' => '資應二甲',
         ])->json('course.id');
 
-        $topicId = $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/topics", [
-            'name' => 'PHP 基礎',
-        ])->json('topic.id');
-
-        $chapterId = $this->withToken($token)->postJson("/api/v1/teacher/topics/{$topicId}/chapters", [
+        $chapterId = $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/chapters", [
             'name' => '第一章 PHP 簡介',
         ])->json('chapter.id');
 
@@ -107,8 +103,7 @@ class TeacherQuestionApiTest extends TestCase
             ->assertJsonCount(1, 'knowledge_cards')
             ->assertJsonPath('knowledge_cards.0.id', $explainCardId)
             ->assertJsonPath('knowledge_cards.0.title', '變數')
-            ->assertJsonPath('knowledge_cards.0.chapter_name', '第一章 PHP 簡介')
-            ->assertJsonPath('knowledge_cards.0.topic_name', 'PHP 基礎');
+            ->assertJsonPath('knowledge_cards.0.chapter_name', '第一章 PHP 簡介');
     }
 
     public function test_course_knowledge_cards_unique_per_topic_and_omit_lecture_rows(): void
@@ -121,12 +116,8 @@ class TeacherQuestionApiTest extends TestCase
             'class_name' => '資應二甲',
         ])->json('course.id');
 
-        $topicId = $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/topics", [
-            'name' => 'PHP 實作',
-        ])->json('topic.id');
-
         foreach (['第一章', '第二章'] as $chapterName) {
-            $chapterId = $this->withToken($token)->postJson("/api/v1/teacher/topics/{$topicId}/chapters", [
+            $chapterId = $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/chapters", [
                 'name' => $chapterName,
             ])->json('chapter.id');
 
@@ -150,11 +141,8 @@ class TeacherQuestionApiTest extends TestCase
             ]);
         }
 
-        $lectureTopicId = $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/topics", [
+        $lectureChapterId = $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/chapters", [
             'name' => '只有說明',
-        ])->json('topic.id');
-        $lectureChapterId = $this->withToken($token)->postJson("/api/v1/teacher/topics/{$lectureTopicId}/chapters", [
-            'name' => '第一章',
         ])->json('chapter.id');
         $lectureUnitId = $this->withToken($token)->postJson("/api/v1/teacher/chapters/{$lectureChapterId}/units", [
             'name' => '說明',
@@ -168,8 +156,7 @@ class TeacherQuestionApiTest extends TestCase
             ->getJson("/api/v1/teacher/courses/{$courseId}/knowledge-cards")
             ->assertOk()
             ->assertJsonCount(1, 'knowledge_cards')
-            ->assertJsonPath('knowledge_cards.0.title', '變數')
-            ->assertJsonPath('knowledge_cards.0.topic_name', 'PHP 實作');
+            ->assertJsonPath('knowledge_cards.0.title', '變數');
     }
 
     public function test_teacher_can_create_choice_question_with_auto_solo(): void
@@ -585,11 +572,7 @@ class TeacherQuestionApiTest extends TestCase
             'class_name' => '資應二甲',
         ])->json('course.id');
 
-        $topicId = $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/topics", [
-            'name' => 'PHP 基礎',
-        ])->json('topic.id');
-
-        $chapterId = $this->withToken($token)->postJson("/api/v1/teacher/topics/{$topicId}/chapters", [
+        $chapterId = $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/chapters", [
             'name' => '第一章',
         ])->json('chapter.id');
 
