@@ -8,16 +8,17 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 /**
- * Class TeacherAccountService
- * 專責處理教師帳號生成與密碼邏輯的核心服務
+ * 教師帳號核心業務服務
+ * 
+ * 專責處理教師帳號生成、隨機初始密碼建立與資料庫持久化。
  */
 class TeacherAccountService
 {
     /**
      * 依據核准的教師申請單建立正式教師帳號
      *
-     * @param TeacherApplication $application
-     * @return array{tid: int, account: string, password: string} 回傳建立之教師 ID、帳號與明文初始密碼
+     * @param TeacherApplication $application 審核通過的教師申請單
+     * @return array{tid: int, account: string, password: string} 回傳建立之教師 ID、帳號與明文初始密碼（供寄信使用）
      */
     public function createFromApplication(TeacherApplication $application): array
     {
@@ -39,7 +40,7 @@ class TeacherAccountService
     }
 
     /**
-     * 生成 12 位元隨機字串作為初始預設密碼
+     * 生成 12 碼隨機英數字串作為初始預設密碼
      *
      * @return string
      */

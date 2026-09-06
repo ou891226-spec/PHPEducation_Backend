@@ -11,7 +11,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Mail;
 
 /**
- * 審核並開通學生：可整單或勾選部分。
+ * 學生帳號開通與審核控制器
+ * 
+ * 處理學生帳號申請單審核（支援批次勾選或整單審核），並產製加密 Excel 檔發信通知教師。
  */
 class StudentApprovementController extends Controller
 {
@@ -21,7 +23,12 @@ class StudentApprovementController extends Controller
     ) {}
 
     /**
-     * 管理員：開通勾選的學生（全選或幾個）。
+     * 管理員：開通勾選的學生申請項目
+     * 
+     * 支援勾選同一課程下的多名學生進行審核開通，並自動分組寄送通知信給教師。
+     *
+     * @param ApproveStudentItemsRequest $request
+     * @return JsonResponse
      */
     public function approveSelected(ApproveStudentItemsRequest $request): JsonResponse
     {
@@ -43,7 +50,10 @@ class StudentApprovementController extends Controller
     }
 
     /**
-     * 整張申請單一次開通尚未開通的人。
+     * 整張申請單一次審核開通尚未開通的學生
+     *
+     * @param int $id 學生申請單 ID
+     * @return JsonResponse
      */
     public function approve(int $id): JsonResponse
     {
@@ -59,7 +69,7 @@ class StudentApprovementController extends Controller
 
         $this->notifyTeachers($result['created_by_teacher']);
 
-        // 做測試用
+        // 整理本次新增的學生清單（供測試案例斷言驗證）
         $newStudents = collect($result['created_by_teacher'])->flatMap(fn ($group) => $group['students'])->values();
 
         return response()->json([
@@ -67,29 +77,31 @@ class StudentApprovementController extends Controller
             'data' => [
                 'application_id' => $application->id,
                 'activated_count' => $result['activated_count'],
-                'students' => $newStudents, // 測試用
+                'students' => $newStudents,
             ],
         ]);
     }
 
     /**
-     * @param  array<int, array{teacher_email: string, teacher_name: string, class_name: string, students: array<int, array<string, mixed>>}>  $createdByTeacher
+     * 產製加密 Excel 檔案並以電子郵件通知相關教師
+     *
+     * @param  array<int, array{teacher_account: string, teacher_email: string, teacher_name: string, class_name: string, course_name: string, students: array<int, array<string, mixed>>}>  $createdByTeacher
+     * @return void
      */
     private function notifyTeachers(array $createdByTeacher): void
     {
         foreach ($createdByTeacher as $group) {
-
-            // 計算 N 學生總數
             $studentCount = count($group['students'] ?? []);
         
-            // N > 0 才寄信、才做附件。N = 0 不寄、不做空白檔
+            // 若該教師組別沒有新建立的學生，則不產製附件亦不寄送郵件
             if ($group['students'] === []) {
                 continue;
             }
 
+            // 以教師帳號作為密碼加密 Excel
             $excelContent = $this->excelService->generate(
                 students: $group['students'],
-                password: (string) ($group['teacher_account'] ?? ''), // 使用教師登入帳號作為 Excel 解鎖密碼
+                password: (string) ($group['teacher_account'] ?? ''),
             );
 
             Mail::to($group['teacher_email'])->send(new StudentAccountCreated(

@@ -26,16 +26,23 @@ use App\Http\Controllers\StudentApprovementController;
 
 Route::prefix('v1')->group(function () {
 
+    // -------------------------------------------------------------------------
+    // 認證與帳號申請公開路由 (無需 Token)
+    // -------------------------------------------------------------------------
     Route::post('/teacher-applications', [TeacherApplicationController::class, 'store']);
     Route::post('/teacher/student-applications', [StudentAccountApplicationController::class, 'store']);
 
     Route::post('/auth/login', [AuthController::class, 'login']);
     Route::post('/auth/student/forgot-password', [AuthController::class, 'studentForgotPassword']);
     Route::post('/auth/teacher/forgot-password', [AuthController::class, 'teacherForgotPassword']);
-
+    
+    // -------------------------------------------------------------------------
+    // 已認證受保護路由 (需 Bearer Token)
+    // -------------------------------------------------------------------------
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('/auth/logout', [AuthController::class, 'logout']);
         Route::get('/auth/me', [AuthController::class, 'me']);
+        Route::post('/auth/change-password', [AuthController::class, 'changePassword']);
         Route::get('/dashboard', [DashboardController::class, 'show']);
 
         Route::middleware('role:admin')->group(function () {

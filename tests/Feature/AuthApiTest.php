@@ -197,8 +197,9 @@ class AuthApiTest extends TestCase
             ->getJson('/api/v1/teacher/courses')
             ->assertForbidden();
     }
-
-        public function test_student_forgot_password(): void
+    
+    // 
+    public function test_student_forgot_password(): void
     {
         Mail::fake();
 
@@ -262,5 +263,91 @@ class AuthApiTest extends TestCase
         $response->assertOk();
 
         return $response->json('token');
+    }
+
+    // 
+    public function test_teacher_can_change_password_and_login_with_new_password(): void
+    {
+        $token = $this->loginToken('teacher@school.edu.tw');
+
+        $response = $this->withToken($token)->postJson('/api/v1/auth/change-password', [
+            'current_password' => self::PASSWORD,
+            'new_password' => 'NewPassword123!',
+            'new_password_confirmation' => 'NewPassword123!',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('message', '密碼修改成功');
+
+        // 驗證舊密碼已無法登入
+        $oldLogin = $this->postJson('/api/v1/auth/login', [
+            'account' => 'teacher@school.edu.tw',
+            'password' => self::PASSWORD,
+        ]);
+        $oldLogin->assertStatus(401);
+
+        // 驗證新密碼可以正常登入
+        $newLogin = $this->postJson('/api/v1/auth/login', [
+            'account' => 'teacher@school.edu.tw',
+            'password' => 'NewPassword123!',
+        ]);
+        $newLogin->assertOk()
+            ->assertJsonPath('user.role', 'teacher');
+    }
+
+    public function test_student_can_change_password(): void
+    {
+        $token = $this->loginToken('s1411131000');
+
+        $response = $this->withToken($token)->postJson('/api/v1/auth/change-password', [
+            'current_password' => self::PASSWORD,
+            'new_password' => 'NewStudentPass123',
+            'new_password_confirmation' => 'NewStudentPass123',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('message', '密碼修改成功');
+    }
+
+    public function test_change_password_with_wrong_current_password_fails(): void
+    {
+        $token = $this->loginToken('teacher@school.edu.tw');
+
+        $response = $this->withToken($token)->postJson('/api/v1/auth/change-password', [
+            'current_password' => 'WrongCurrentPassword',
+            'new_password' => 'NewPassword123!',
+            'new_password_confirmation' => 'NewPassword123!',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['current_password']);
+    }
+
+    public function test_change_password_with_unmatched_confirmation_fails(): void
+    {
+        $token = $this->loginToken('teacher@school.edu.tw');
+
+        $response = $this->withToken($token)->postJson('/api/v1/auth/change-password', [
+            'current_password' => self::PASSWORD,
+            'new_password' => 'NewPassword123!',
+            'new_password_confirmation' => 'DifferentPassword123!',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['new_password']);
+    }
+
+    public function test_change_password_with_same_as_current_fails(): void
+    {
+        $token = $this->loginToken('teacher@school.edu.tw');
+
+        $response = $this->withToken($token)->postJson('/api/v1/auth/change-password', [
+            'current_password' => self::PASSWORD,
+            'new_password' => self::PASSWORD,
+            'new_password_confirmation' => self::PASSWORD,
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['new_password']);
     }
 }

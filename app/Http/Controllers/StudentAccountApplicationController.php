@@ -14,7 +14,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 
 /**
- * 學生帳號申請：老師送出名單、依課程看待開通、管理員勾選開通。
+ * 學生帳號申請控制器
+ * 
+ * 處理教師提交學生名單（Excel 匯入或手動多筆）、依課程檢視學生名冊、移除學生，以及管理員檢視待審核申請項目。
  */
 class StudentAccountApplicationController extends Controller
 {
@@ -24,7 +26,10 @@ class StudentAccountApplicationController extends Controller
     ) {}
 
     /**
-     * 管理員列表：每人一列。可加 ?course_id=、?status=pending、?q=。
+     * 管理員：取得所有學生帳號申請項目列表（支援多條件篩選）
+     *
+     * @param Request $request 支援 query parameters: course_id, status (預設 pending), q (搜尋姓名或學號)
+     * @return JsonResponse
      */
     public function index(Request $request): JsonResponse
     {
@@ -62,7 +67,9 @@ class StudentAccountApplicationController extends Controller
     }
 
     /**
-     * 管理員開通頁的課程下拉。
+     * 管理員：取得所有課程列表（供審核頁面下拉選單使用）
+     *
+     * @return JsonResponse
      */
     public function courses(): JsonResponse
     {
@@ -72,7 +79,13 @@ class StudentAccountApplicationController extends Controller
     }
 
     /**
-     * 該課教師：依課程取得名冊（待開通＋已開通）。可加 ?status=pending|approved；別人的課 404。
+     * 該課程授課教師：取得該課程之學生名冊（包含待開通與已開通）
+     * 
+     * 若非該課程之授課教師將回傳 403 / 404
+     *
+     * @param Request $request 支援 query parameter: status (pending / approved)
+     * @param int $courseId 課程 ID
+     * @return JsonResponse
      */
     public function indexForCourse(Request $request, int $courseId): JsonResponse
     {
@@ -100,7 +113,13 @@ class StudentAccountApplicationController extends Controller
     }
 
     /**
-     * 該課教師補學生（可一次多筆）。班級取自課程，仍須管理員開通。
+     * 該課程授課教師：手動新增/補入學生（支援一次多筆）
+     * 
+     * 班級直接沿用課程所屬班級，提交後仍需由管理員審核開通。
+     *
+     * @param StoreCourseStudentRequest $request
+     * @param int $courseId 課程 ID
+     * @return JsonResponse
      */
     public function storeOneForCourse(StoreCourseStudentRequest $request, int $courseId): JsonResponse
     {
@@ -121,7 +140,14 @@ class StudentAccountApplicationController extends Controller
     }
 
     /**
-     * 該課教師從名冊移除學生。
+     * 該課程授課教師：從課程名冊中移除學生
+     * 
+     * 若學生尚未審核開通則刪除申請明細；若已開通則解除課程選課（帳號仍保留）。
+     *
+     * @param Request $request
+     * @param int $courseId 課程 ID
+     * @param int $itemId 學生申請項目 ID
+     * @return JsonResponse
      */
     public function destroyForCourse(Request $request, int $courseId, int $itemId): JsonResponse
     {
@@ -136,7 +162,10 @@ class StudentAccountApplicationController extends Controller
     }
 
     /**
-     * 教師以 Excel 送出整班學生申請。班級取自課程。
+     * 該課程授課教師：透過 Excel 檔案批次匯入整班學生名單申請
+     *
+     * @param StoreStudentAccountApplicationRequest $request
+     * @return JsonResponse
      */
     public function store(StoreStudentAccountApplicationRequest $request): JsonResponse
     {
@@ -156,6 +185,8 @@ class StudentAccountApplicationController extends Controller
     }
 
     /**
+     * 格式化學生申請項目集合，補齊帳號與教師資訊
+     *
      * @param  Collection<int, StudentApplicationItems>  $items
      * @return Collection<int, array<string, mixed>>
      */

@@ -9,11 +9,18 @@ use App\Models\TeacherApplication;
 use App\Models\Teacher;
 
 /**
- * Class TeacherApplicationController
- * 負責處理外部使用者提交教師帳號申請的控制器
+ * 教師帳號申請控制器
+ * 
+ * 處理外部使用者提交教師申請，以及管理員檢視待審核申請清單。
  */
 class TeacherApplicationController extends Controller
 {
+    /**
+     * 管理員：取得教師帳號申請單列表
+     *
+     * @param Request $request 可透過 query parameter status (例如: ?status=pending) 進行狀態篩選
+     * @return JsonResponse
+     */
     public function index(Request $request): JsonResponse
     {
         $status = $request->query('status');
@@ -37,17 +44,17 @@ class TeacherApplicationController extends Controller
     }
 
     /**
-     * 提交教師帳號申請
+     * 外部使用者：提交教師帳號申請
      *
-     * 驗證流程：
-     * 1. 確認該 Email/Account 是否已為正式教師
-     * 2. 確認該 Email/Account 是否已有尚未審核的申請案件（避免重複申請）
-     * 3. 建立待審核（status: pending）的申請記錄
+     * 業務驗證流程：
+     * 1. 確認該 Email / Account 是否已存在於正式教師資料庫中（不可重複註冊）
+     * 2. 確認該 Email / Account 是否已有待審核（status: pending）的申請案件（避免重複提交）
+     * 3. 建立待審核的申請記錄
      *
      * @param StoreTeacherApplicationRequest $request
      * @return JsonResponse
      */
-    public function store(StoreTeacherApplicationRequest $request)
+    public function store(StoreTeacherApplicationRequest $request): JsonResponse
     {
         $validatedData = $request->validated();
 
@@ -62,7 +69,7 @@ class TeacherApplicationController extends Controller
             ], 422);
         }
         
-        // 2. 確認該 Email / Account 是否已有尚未審核的申請案件（避免重複申請）
+        // 2. 確認該 Email / Account 是否已有尚未審核的申請案件
         $hasPendingApplication = TeacherApplication::where(function ($query) use ($validatedData) {
                 $query->where('email', $validatedData['email'])
                     ->orWhere('account', $validatedData['account']);
