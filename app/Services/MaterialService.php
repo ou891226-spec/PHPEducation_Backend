@@ -277,14 +277,7 @@ class MaterialService
 
     public function deleteKnowledgeCard(Teacher $teacher, int $cardId): void
     {
-        $card = $this->ownedCard($teacher, $cardId);
-        if ($card->questions()->exists()) {
-            throw ValidationException::withMessages([
-                'knowledge_card' => ['此知識卡已有題目使用，無法刪除'],
-            ]);
-        }
-
-        $card->delete();
+        $this->ownedCard($teacher, $cardId)->delete();
     }
 
     public function ownedCourse(Teacher $teacher, int $courseId): Course
@@ -372,11 +365,7 @@ class MaterialService
                 continue;
             }
 
-            if ($card->questions()->exists()) {
-                $card->update(['unit_id' => null]);
-                continue;
-            }
-
+            // 教材刪除＝真刪：題目關聯隨 knowledge_card cascade 一併拿掉
             $card->delete();
         }
     }

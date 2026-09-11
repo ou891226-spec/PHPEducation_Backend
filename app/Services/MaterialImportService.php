@@ -148,11 +148,7 @@ class MaterialImportService
                 continue;
             }
 
-            if ($card->questions()->exists()) {
-                $card->update(['unit_id' => null]);
-                continue;
-            }
-
+            // 新 Excel 沒出現的卡直接刪；題目關聯隨 cascade 拿掉
             $card->delete();
         }
     }

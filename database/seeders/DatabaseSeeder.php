@@ -18,7 +18,7 @@ class DatabaseSeeder extends Seeder
         $password = Hash::make(self::TEST_PASSWORD);
 
         Admin::query()->create([
-            'account' => 'admin@school.edu.tw',
+            'account' => 'admin@nutc.edu.tw',
             'password' => $password,
         ]);
 

@@ -297,12 +297,12 @@ Seeder 已讓王小明選修「網際系統設計」（班級資應）。
 例如：第一章 PHP 簡介 → 1-1 PHP 是什麼、1-2 PHP 的特色、1-3 PHP 的應用。
 
 ### knowledge_cards 知識卡資料
-知識卡可掛在多個單元（`knowledge_card_unit`）。`unit_id` 仍表示主要單元；脫離教材樹時為空。
+知識卡可掛在多個單元（`knowledge_card_unit`）。`unit_id` 表示主要單元；覆蓋匯入過程中會暫時清空，重建後再寫回。
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
 | id | bigint | 知識卡 ID（PK） |
-| unit_id | bigint（可空） | 主要單元 ID（FK → units.id）。有題目使用而從教材樹刪除時改為空 |
+| unit_id | bigint（可空） | 主要單元 ID（FK → units.id） |
 | course_id | bigint（可空） | 所屬課程（覆蓋匯入時用來對回同一張卡） |
 | title | string | 知識卡名稱（Excel `card_name`） |
 | type | string | 類型，例如 `keyword`、`function`（Excel `card_type`） |
@@ -335,7 +335,7 @@ questions ↔ knowledge_cards（question_knowledge_cards）
 ```
 
 畫面採一層一層點進去（鑽層）：課程 → 章節 → 單元 → 知識卡。  
-列表的 `item_count` 代表下一層有幾筆（對應畫面上的「N 項」）。知識卡沒有下一層，回傳 `title`、`content`、`example`。刪除章節／單元時，沒有題目使用的知識卡會一併刪除；**已掛在 `question_knowledge_cards` 的知識卡會保留**（`unit_id` 改為空，脫離教材樹），題目關聯不斷。直接刪單張知識卡若已有題目使用會 **422**。
+列表的 `item_count` 代表下一層有幾筆（對應畫面上的「N 項」）。知識卡沒有下一層，回傳 `title`、`content`、`example`。刪除章節／單元／知識卡時會**硬刪**該段教材；若知識卡已掛在題目上，`question_knowledge_cards` 關聯會一併 cascade 刪除（題目本體保留）。若同一張卡還掛在其他單元，只拿掉被刪單元的關聯。
 
 ### questions 題目資料
 
@@ -398,7 +398,7 @@ questions ↔ knowledge_cards（question_knowledge_cards）
 | created_at | timestamp | 建立時間 |
 | updated_at | timestamp | 更新時間 |
 
-同一題對同一張知識卡不可重複（`question_id` + `knowledge_card_id` unique）。刪題目時，對應關聯會一併刪除。刪知識卡時若仍有題目使用則拒絕；從教材樹刪除章節／單元時，有題目使用的知識卡會保留（關聯不斷）。
+同一題對同一張知識卡不可重複（`question_id` + `knowledge_card_id` unique）。刪題目時，對應關聯會一併刪除。刪知識卡（含刪章節／單元導致的硬刪）時，題目與知識卡的關聯會 cascade 刪除，題目本體保留。
 
 ### question_records / question_record_subs 作答
 
@@ -1074,7 +1074,7 @@ Authorization: Bearer {token}
 流程（前端不要自己解析 Excel）：
 
 1. 上傳 xlsx → 後端寫入該課程的正式章／單元／知識卡。
-2. 該課程已有章節或知識卡時須再帶 `overwrite=true`（確認覆蓋）。有題目使用的知識卡不會硬刪，只脫離樹。
+2. 該課程已有章節或知識卡時須再帶 `overwrite=true`（確認覆蓋）。新 Excel 沒出現的知識卡會硬刪（題目關聯一併拿掉）。
 3. 單張卡 PUT「儲存變更」立刻給學生看。圖譜用 tree／graph 一次撈整棵樹。
 
 Excel：一份檔對應一門課程。第 1 列欄位：`chapter_title`、`chapter_order`、`unit_title`、`unit_order`、`card_name`、`card_type`、`card_content`、`code_example`。第 2 列公版範例整列不讀，第 3 列起才是內容。任一格以 `ex：` 或 `ex:` 開頭的列也整列不讀。空白章節／單元沿用上一列。同課程、同名＋同 type 只建一張卡，可掛多個單元。`code_example` 存成知識卡 `example`。
@@ -1121,7 +1121,7 @@ public/templates/course_template.xlsx
 | 課程已有教材但沒帶 overwrite | 422 |
 | 不是該課教師 | 404 |
 
-覆蓋時：該課程章／單元換成這份 Excel。已有題目關聯、卻沒再出現在 Excel 的知識卡不會刪，改為脫離教材樹（`unit_id` 設為 null）。
+覆蓋時：該課程章／單元換成這份 Excel。同名＋同 type 的知識卡會沿用並更新；新 Excel 沒出現的知識卡會硬刪（含題目關聯）。
 
 ### 學生教材（已選課）
 
@@ -1146,9 +1146,9 @@ public/templates/course_template.xlsx
 | POST | `/api/v1/teacher/courses/{courseId}/questions` | 新增題目 |
 | GET | `/api/v1/teacher/questions/{questionId}` | 單題（含正解） |
 | PUT | `/api/v1/teacher/questions/{questionId}` | 整題覆寫（含子項與知識卡） |
-| DELETE | `/api/v1/teacher/questions/{questionId}` | 刪題；已有作答紀錄則 **422** |
+| DELETE | `/api/v1/teacher/questions/{questionId}` | 刪題（含作答紀錄一併刪除） |
 
-不是該課教師 **404**。非教師 **403**。知識卡必須屬於此課（或已脫離教材樹但仍掛在此課題目上），否則 **422**。
+不是該課教師 **404**。非教師 **403**。知識卡必須屬於此課，否則 **422**。
 
 列表回傳 `questions`；單題 `question` 底下是 `options`、`sub_answers`、`knowledge_card_ids` / `knowledge_cards`。
 
@@ -1257,7 +1257,7 @@ public/templates/course_template.xlsx
 | GET | `/api/v1/teacher/courses/{courseId}/chapters` | 列出該課程的章節 |
 | POST | `/api/v1/teacher/courses/{courseId}/chapters` | 新增章節 |
 | PUT | `/api/v1/teacher/chapters/{chapterId}` | 修改章節 |
-| DELETE | `/api/v1/teacher/chapters/{chapterId}` | 刪除章節（有題目使用的知識卡會保留並脫離教材樹） |
+| DELETE | `/api/v1/teacher/chapters/{chapterId}` | 刪除章節（底下單元／知識卡硬刪；題目關聯 cascade） |
 
 Request（新增／修改）：
 
@@ -1279,7 +1279,7 @@ Request（新增／修改）：
 | GET | `/api/v1/teacher/chapters/{chapterId}/units` | 列出該章節的單元 |
 | POST | `/api/v1/teacher/chapters/{chapterId}/units` | 新增單元 |
 | PUT | `/api/v1/teacher/units/{unitId}` | 修改單元 |
-| DELETE | `/api/v1/teacher/units/{unitId}` | 刪除單元（有題目使用的知識卡會保留並脫離教材樹） |
+| DELETE | `/api/v1/teacher/units/{unitId}` | 刪除單元（底下知識卡硬刪；仍掛其他單元者只脫關聯） |
 
 Request 同章節，欄位為 `name`、`sort_order`。`item_count` 為底下知識卡數量。同一章節內單元的 `sort_order` 不可重複；不同章節可以同號。
 
@@ -1291,7 +1291,7 @@ Request 同章節，欄位為 `name`、`sort_order`。`item_count` 為底下知�
 | GET | `/api/v1/teacher/units/{unitId}/knowledge-cards` | 列出該單元的知識卡 |
 | POST | `/api/v1/teacher/units/{unitId}/knowledge-cards` | 新增知識卡 |
 | PUT | `/api/v1/teacher/knowledge-cards/{cardId}` | 修改知識卡 |
-| DELETE | `/api/v1/teacher/knowledge-cards/{cardId}` | 刪除知識卡（已有題目使用則 422） |
+| DELETE | `/api/v1/teacher/knowledge-cards/{cardId}` | 刪除知識卡（硬刪；題目關聯 cascade） |
 
 Request（新增／修改）：
 
@@ -1315,7 +1315,7 @@ Request（新增／修改）：
 }
 ```
 
-知識卡已有題目關聯時刪除會 **422**（`knowledge_card`）。請先從題目拿掉該知識卡，或改刪上層章節／單元：有題的卡會保留、沒題的卡會刪。
+刪除知識卡會一併拿掉 `question_knowledge_cards` 關聯；題目本體保留。刪章節／單元同理：該段教材硬刪，不再留下「脫離樹」的孤兒知識卡。
 
 ---
 
@@ -1338,7 +1338,7 @@ Request（新增／修改）：
 
 | 身分 | 帳號 | 密碼 |
 |------|------|------|
-| 管理員 | admin@school.edu.tw | Password123! |
+| 管理員 | admin@nutc.edu.tw | Password123! |
 | 教師 | teacher@school.edu.tw | Password123! |
 | 教師 | teacher2@school.edu.tw | Password123! |
 | 學生 | 1411131000 | Password123! |

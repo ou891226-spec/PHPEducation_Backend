@@ -99,7 +99,7 @@ class MaterialImportApiTest extends TestCase
             ->assertJsonValidationErrors('overwrite');
     }
 
-    public function test_reimport_with_overwrite_replaces_tree_but_keeps_question_cards(): void
+    public function test_reimport_with_overwrite_hard_deletes_cards_missing_from_excel(): void
     {
         $first = $this->xlsxPath([
             ['第一章 留下', '1', '變數', '1', '變數宣告', 'keyword', '留下的內容', ''],
@@ -137,11 +137,9 @@ class MaterialImportApiTest extends TestCase
             ->assertJsonPath('course.chapters.0.units.0.knowledge_cards.0.content', '更新後的內容')
             ->assertJsonPath('course.chapters.0.units.0.knowledge_cards.0.id', $kept->id);
 
-        $this->assertDatabaseHas('knowledge_cards', [
-            'id' => $removed->id,
-            'unit_id' => null,
-        ]);
-        $this->assertTrue($question->knowledgeCards()->whereKey($removed->id)->exists());
+        $this->assertDatabaseMissing('knowledge_cards', ['id' => $removed->id]);
+        $this->assertFalse($question->knowledgeCards()->whereKey($removed->id)->exists());
+        $this->assertDatabaseHas('questions', ['id' => $question->id]);
         $this->assertSame('$x = 1;', KnowledgeCard::query()->whereKey($kept->id)->value('example'));
     }
 

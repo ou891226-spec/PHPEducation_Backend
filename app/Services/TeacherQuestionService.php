@@ -104,13 +104,11 @@ class TeacherQuestionService
     {
         $question = $this->ownedQuestion($teacher, $questionId);
 
-        if ($question->records()->exists()) {
-            throw ValidationException::withMessages([
-                'question' => ['此題已有學生作答，無法刪除'],
-            ]);
-        }
-
-        $question->delete();
+        DB::transaction(function () use ($question): void {
+            // 有作答也直接刪：先清作答（subs／ai_feedback 靠 FK cascade）
+            $question->records()->delete();
+            $question->delete();
+        });
     }
 
     /**

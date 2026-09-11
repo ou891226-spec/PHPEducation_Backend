@@ -489,14 +489,14 @@ class TeacherQuestionApiTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_teacher_cannot_delete_question_with_records(): void
+    public function test_teacher_can_delete_question_with_records(): void
     {
         [$courseId, $cardIds] = $this->seedCourseWithCards(1);
         $questionId = $this->withToken($this->teacherToken())
             ->postJson("/api/v1/teacher/courses/{$courseId}/questions", $this->choicePayload($cardIds))
             ->json('question.id');
 
-        QuestionRecord::query()->create([
+        $record = QuestionRecord::query()->create([
             'student_id' => 1,
             'question_id' => $questionId,
             'result' => '1',
@@ -506,8 +506,11 @@ class TeacherQuestionApiTest extends TestCase
 
         $this->withToken($this->teacherToken())
             ->deleteJson("/api/v1/teacher/questions/{$questionId}")
-            ->assertStatus(422)
-            ->assertJsonValidationErrors('question');
+            ->assertOk()
+            ->assertJson(['message' => '題目已刪除']);
+
+        $this->assertDatabaseMissing('questions', ['id' => $questionId]);
+        $this->assertDatabaseMissing('question_records', ['id' => $record->id]);
     }
 
     public function test_teacher_can_review_coding_record_manually(): void

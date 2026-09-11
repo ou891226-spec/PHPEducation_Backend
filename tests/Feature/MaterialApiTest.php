@@ -219,10 +219,10 @@ class MaterialApiTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_deleting_chapter_keeps_knowledge_cards_used_by_questions(): void
+    public function test_deleting_chapter_hard_deletes_knowledge_cards_even_if_used_by_questions(): void
     {
         $token = $this->loginToken('teacher@school.edu.tw');
-        [$courseId, $chapterId, $keptCardId, $unusedCardId] = $this->seedChapterWithLinkedAndUnusedCards($token);
+        [$courseId, $chapterId, $linkedCardId, $unusedCardId, $questionId] = $this->seedChapterWithLinkedAndUnusedCards($token);
 
         $this->withToken($token)
             ->deleteJson("/api/v1/teacher/chapters/{$chapterId}")
@@ -235,36 +235,38 @@ class MaterialApiTest extends TestCase
             ->assertJsonCount(0, 'chapters');
 
         $this->assertDatabaseMissing('knowledge_cards', ['id' => $unusedCardId]);
-        $this->assertDatabaseHas('knowledge_cards', [
-            'id' => $keptCardId,
-            'unit_id' => null,
+        $this->assertDatabaseMissing('knowledge_cards', ['id' => $linkedCardId]);
+        $this->assertDatabaseMissing('question_knowledge_cards', [
+            'knowledge_card_id' => $linkedCardId,
         ]);
-        $this->assertDatabaseHas('question_knowledge_cards', [
-            'knowledge_card_id' => $keptCardId,
-        ]);
+        $this->assertDatabaseHas('questions', ['id' => $questionId]);
     }
 
-    public function test_deleting_knowledge_card_used_by_question_is_rejected(): void
+    public function test_deleting_knowledge_card_used_by_question_hard_deletes_and_detaches(): void
     {
         $token = $this->loginToken('teacher@school.edu.tw');
-        [, , $keptCardId] = $this->seedChapterWithLinkedAndUnusedCards($token);
+        [, , $linkedCardId, , $questionId] = $this->seedChapterWithLinkedAndUnusedCards($token);
 
         $this->withToken($token)
-            ->deleteJson("/api/v1/teacher/knowledge-cards/{$keptCardId}")
-            ->assertStatus(422)
-            ->assertJsonValidationErrors('knowledge_card');
+            ->deleteJson("/api/v1/teacher/knowledge-cards/{$linkedCardId}")
+            ->assertOk()
+            ->assertJson(['message' => '知識卡已刪除']);
 
-        $this->assertDatabaseHas('knowledge_cards', ['id' => $keptCardId]);
+        $this->assertDatabaseMissing('knowledge_cards', ['id' => $linkedCardId]);
+        $this->assertDatabaseMissing('question_knowledge_cards', [
+            'knowledge_card_id' => $linkedCardId,
+        ]);
+        $this->assertDatabaseHas('questions', ['id' => $questionId]);
     }
 
     /**
-     * @return array{0: int, 1: int, 2: int, 3: int} courseId, chapterId, linkedCardId, unusedCardId
+     * @return array{0: int, 1: int, 2: int, 3: int, 4: int} courseId, chapterId, linkedCardId, unusedCardId, questionId
      */
     private function seedChapterWithLinkedAndUnusedCards(string $token): array
     {
         $courseId = $this->withToken($token)->postJson('/api/v1/teacher/courses', [
             'name' => '知識卡刪除測試',
-            'description' => '保留有題目關聯的知識卡',
+            'description' => '刪教材時硬刪知識卡',
             'semester' => '115-1',
             'class_name' => '資應二甲',
         ])->json('course.id');
@@ -277,9 +279,9 @@ class MaterialApiTest extends TestCase
             'name' => '變數',
         ])->json('unit.id');
 
-        $keptCardId = $this->withToken($token)->postJson("/api/v1/teacher/units/{$unitId}/knowledge-cards", [
+        $linkedCardId = $this->withToken($token)->postJson("/api/v1/teacher/units/{$unitId}/knowledge-cards", [
             'title' => '有題目的卡',
-            'content' => '會被保留',
+            'content' => '會被硬刪',
         ])->json('knowledge_card.id');
 
         $unusedCardId = $this->withToken($token)->postJson("/api/v1/teacher/units/{$unitId}/knowledge-cards", [
@@ -295,9 +297,9 @@ class MaterialApiTest extends TestCase
             'type' => Question::TYPE_CHOICE,
             'question_content' => '題幹',
         ]);
-        $question->knowledgeCards()->attach($keptCardId);
+        $question->knowledgeCards()->attach($linkedCardId);
 
-        return [$courseId, $chapterId, $keptCardId, $unusedCardId];
+        return [$courseId, $chapterId, $linkedCardId, $unusedCardId, $question->id];
     }
 
     private function loginToken(string $account): string
