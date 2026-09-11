@@ -23,9 +23,7 @@ class StudentApprovementController extends Controller
     ) {}
 
     /**
-     * 管理員：開通勾選的學生申請項目
-     * 
-     * 支援勾選同一課程下的多名學生進行審核開通，並自動分組寄送通知信給教師。
+     * 管理員：開通勾選的學生，並寫入一門或多門課程選課
      *
      * @param ApproveStudentItemsRequest $request
      * @return JsonResponse
@@ -33,16 +31,24 @@ class StudentApprovementController extends Controller
     public function approveSelected(ApproveStudentItemsRequest $request): JsonResponse
     {
         $validated = $request->validated();
+        $courseIds = $validated['course_ids'];
 
-        $result = $this->studentAccountService->approveItems(
-            (int) $validated['course_id'],
-            $validated['item_ids'],
-        );
+        if (! empty($validated['source_course_id']) && empty($validated['item_ids'])) {
+            $result = $this->studentAccountService->approvePendingForSourceCourse(
+                (int) $validated['source_course_id'],
+                $courseIds,
+            );
+        } else {
+            $result = $this->studentAccountService->approveItems(
+                $courseIds,
+                $validated['item_ids'],
+            );
+        }
 
         $this->notifyTeachers($result['created_by_teacher']);
 
         return response()->json([
-            'message' => '已開通學生。',
+            'message' => '已開通課程。',
             'activated_count' => $result['activated_count'],
             'created_count' => $result['created_count'],
             'enrolled_count' => $result['enrolled_count'],

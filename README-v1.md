@@ -714,7 +714,7 @@ POST /student-applications/approve
 POST /teacher/student-applications/{id}/approve
 ```
 
-流程：教師選課程並上傳 Excel 名冊，或單筆補漏掉的學生（僅學號、姓名；班級取自該門課）→ 管理員審核開通。沒帳號就建 `students`（以學號自動產生校園信箱）並寫 `enrollments`；已有帳號只寫選課。可勾選指定學生開通或整單一鍵開通。本次若有新建帳號，會寄 `StudentAccountCreated` 給該課教師（本文不含明文密碼，附件為本次新建學生的姓名／學號／初始密碼 Excel）；沒有新建則不寄信、不附空檔。
+流程：教師選課程並上傳 Excel 名冊，或單筆／多筆補學生（**只要學號**，姓名選填；班級取自該門課）→ **一律待管理員審核**（即使學生已有帳號，加到新課也要審）。開通時：沒帳號就建 `students`（姓名空白時先用學號）並寫 `enrollments`；已有帳號只寫選課（並帶出帳號姓名）。可依來源課整班開通。本次若有新建帳號，會寄 `StudentAccountCreated` 給該課教師（本文不含明文密碼，附件為本次新建學生的姓名／學號／初始密碼 Excel）；沒有新建則不寄信、不附空檔。
 
 ### GET `/api/v1/teacher/student-applications/template`
 
@@ -753,20 +753,20 @@ Request（`multipart/form-data`）：
 
 ### POST `/api/v1/teacher/courses/{courseId}/student-applications`
 
-功能：該課教師補學生，可一次多筆。需要教師 Token。欄位與 Excel 相同（學號、姓名），班級取自課程，送出後仍是待開通。一次最多 100 人。
+功能：該課教師補學生，可一次多筆。需要教師 Token。**只要學號**（姓名選填），班級取自課程，送出後一律待開通（已有帳號會帶出姓名，但仍須管理員審核後才加選課）。一次最多 100 人。
 
 Request（JSON，建議）：
 
 ```json
 {
   "students": [
-    { "student_no": "1411131001", "name": "王小明" },
+    { "student_no": "1411131001" },
     { "student_no": "1411131002", "name": "陳小華" }
   ]
 }
 ```
 
-也可只傳一筆：`student_no`、`name`（不必加 `s`）。
+也可只傳一筆：`student_no`（`name` 選填；不必加 `s`）。
 
 成功回應 **201**，格式與上傳 Excel 相同。該課已有相同學號、學號重複、超過 100 人、或不是自己的課會 **422** / **404**。
 
@@ -782,7 +782,7 @@ Request（JSON，建議）：
 
 ### GET `/api/v1/courses`
 
-管理員開通頁的課程下拉。需要管理員 Token。每筆含 `name`、`class_name`、`semester`；畫面上可顯示成「課程名稱 (班級)」。
+管理員開通頁的課程清單。需要管理員 Token。每筆含 `name`、`class_name`、`semester`、`teacher_id`、`teacher_name`。開通區以「一班一列」列出待開通來源（含申請教師），再選目標課程。
 
 ### GET `/api/v1/teacher/courses/{courseId}/student-applications`
 
@@ -815,36 +815,40 @@ Request（JSON，建議）：
 
 ### POST `/api/v1/student-applications/approve`
 
-功能：管理員開通勾選的學生。需要管理員 Token。
+功能：管理員開通勾選的學生，並寫入**一門或多門**課程選課。需要管理員 Token。
 
 Request：
 
 ```json
 {
-  "course_id": 1,
-  "item_ids": [1, 2]
+  "source_course_id": 1,
+  "course_ids": [1, 2]
 }
 ```
 
 | 欄位 | 必填 | 說明 |
 |------|------|------|
-| course_id | ✓ | 課程 ID |
-| item_ids | ✓ | 欲開通之學生明細 ID 陣列（`student_application_items.id`） |
+| source_course_id | 與 item_ids 二擇一 | 申請來源課程；後端自動抓該課全部 pending 學生 |
+| course_ids | ✓ | 欲開通（選課）的課程 ID 陣列，至少 1 門 |
+| item_ids | 與 source_course_id 二擇一 | 舊欄位：手動指定明細 ID |
+| course_id | 否 | 舊欄位；可轉成 `course_ids`／`source_course_id` |
 
 成功回應 **200**：
 
 ```json
 {
-  "message": "已開通學生。",
+  "message": "已開通課程。",
   "activated_count": 2,
   "created_count": 2,
-  "enrolled_count": 2
+  "enrolled_count": 4
 }
 ```
 
+`activated_count`＝處理的學生數；`created_count`＝新建帳號數；`enrolled_count`＝**新建的選課筆數**（學生 × 課程，已選過的課不重算）。
+
 非管理員 **403**。未登入 **401**。
 
-本次有新建帳號才寄信給該課教師。信件本文不列學生密碼；附件 `學生帳號名單.xlsx` 依 `public/templates/student_account_template.xlsx`（第 1 列說明、第 2 列姓名／帳號／密碼、第 3 列起為本次新建學生）。工作表保護密碼為老師登入帳號 `teachers.account`。沒有新建帳號則不寄、不附空檔。
+本次有新建帳號才寄信給申請該學生的教師。信件本文不列學生密碼；附件 `學生帳號名單.xlsx` 依 `public/templates/student_account_template.xlsx`（第 1 列說明、第 2 列姓名／帳號／密碼、第 3 列起為本次新建學生）。工作表保護密碼為老師登入帳號 `teachers.account`。沒有新建帳號則不寄、不附空檔。
 
 ### POST `/api/v1/teacher/student-applications/{id}/approve`
 

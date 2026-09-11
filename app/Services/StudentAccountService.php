@@ -71,6 +71,9 @@ class StudentAccountService
      * 3. 提交的學號不可重複
      * 4. 該課程下不可有重複學號的申請中項目
      *
+     * 行為：一律寫入 pending，等管理員審核後才選課／建帳。
+     * 若學生已有帳號且未填姓名，自動帶入帳號姓名（仍待審核）。
+     *
      * @param string $tid 授課教師 ID
      * @param array{course_id: int, students: list<array{student_no: string, name: string}>} $data 申請資料
      * @return StudentApplications
@@ -122,6 +125,11 @@ class StudentAccountService
                 ]);
             }
 
+            $existingStudents = Student::query()
+                ->whereIn('student_no', $studentNos)
+                ->get()
+                ->keyBy('student_no');
+
             $application = StudentApplications::create([
                 'tid' => $tid,
                 'course_id' => $course->id,
@@ -130,10 +138,16 @@ class StudentAccountService
             ]);
 
             foreach ($data['students'] as $studentData) {
+                $existing = $existingStudents->get($studentData['student_no']);
+                $name = trim((string) ($studentData['name'] ?? ''));
+                if ($name === '' && $existing !== null) {
+                    $name = (string) $existing->name;
+                }
+
                 StudentApplicationItems::create([
                     'application_id' => $application->id,
                     'student_no' => $studentData['student_no'],
-                    'name' => $studentData['name'],
+                    'name' => $name,
                     'status' => 'pending',
                 ]);
             }
@@ -204,41 +218,74 @@ class StudentAccountService
     }
 
     /**
-     * 管理員：批次審核開通勾選的學生項目
-     * 
-     * 處理邏輯：
-     * 1. 若學生帳號不存在，自動建立 Student 實體與初始密碼（累計至通知教師清單）。
-     * 2. 若學生尚未選修該課程，自動建立 Enrollment 選課關聯。
-     * 3. 更新申請項目狀態為 approved，若主單所有項目皆已審核，將主單狀態亦更新為 approved。
+     * 管理員：開通一門申請來源課底下全部待審學生，並寫入一門或多門課程選課
      *
-     * @param int $courseId 課程 ID
-     * @param array<int, int> $itemIds 欲開通的申請項目 ID 陣列
-     * @return array{activated_count: int, created_count: int, enrolled_count: int, created_by_teacher: array<int, array{course_name: string, teacher_account: string, teacher_email: string, teacher_name: string, class_name: string, students: array<int, array{sid: int, class_name: string, student_no: string, name: string, password: string, email: string}>}>}
-     * @throws ValidationException 當項目不存在、已開通或不屬於該課程時拋出
+     * @param  int  $sourceCourseId 教師申請時綁定的課程（名冊來源）
+     * @param  list<int>  $courseIds 欲開通（選課）的課程
+     * @return array{activated_count: int, created_count: int, enrolled_count: int, created_by_teacher: array<int, mixed>}
      */
-    public function approveItems(int $courseId, array $itemIds): array
+    public function approvePendingForSourceCourse(int $sourceCourseId, array $courseIds): array
     {
-        $course = Course::query()->findOrFail($courseId);
+        Course::query()->findOrFail($sourceCourseId);
+
+        $itemIds = StudentApplicationItems::query()
+            ->where('status', 'pending')
+            ->whereHas('application', fn ($query) => $query->where('course_id', $sourceCourseId))
+            ->pluck('id')
+            ->all();
+
+        if ($itemIds === []) {
+            throw ValidationException::withMessages([
+                'source_course_id' => ['此課程目前沒有待開通學生。'],
+            ]);
+        }
+
+        return $this->approveItems($courseIds, $itemIds);
+    }
+
+    /**
+     * 管理員：批次審核開通勾選的學生，並寫入一門或多門課程選課
+     *
+     * 處理邏輯：
+     * 1. 若學生帳號不存在，自動建立 Student 與初始密碼（累計至通知教師清單）。
+     * 2. 對每個選定課程，若尚未選修則建立 Enrollment。
+     * 3. 更新申請項目為 approved；主單無待審項目時一併改為 approved。
+     *
+     * @param  list<int>  $courseIds 欲開通（選課）的課程 ID
+     * @param  list<int>  $itemIds 欲開通的申請項目 ID
+     * @return array{activated_count: int, created_count: int, enrolled_count: int, created_by_teacher: array<int, array{course_name: string, teacher_account: string, teacher_email: string, teacher_name: string, class_name: string, students: array<int, array{sid: int, class_name: string, student_no: string, name: string, password: string, email: string}>}>}
+     * @throws ValidationException 當項目不存在／已開通，或課程無效時拋出
+     */
+    public function approveItems(array $courseIds, array $itemIds): array
+    {
+        $uniqueCourseIds = array_values(array_unique(array_map('intval', $courseIds)));
         $uniqueIds = array_values(array_unique(array_map('intval', $itemIds)));
 
-        return DB::transaction(function () use ($course, $uniqueIds) {
+        $courses = Course::query()->whereIn('id', $uniqueCourseIds)->get();
+        if ($courses->count() !== count($uniqueCourseIds)) {
+            throw ValidationException::withMessages([
+                'course_ids' => ['部分課程不存在。'],
+            ]);
+        }
+
+        return DB::transaction(function () use ($courses, $uniqueIds) {
             $items = StudentApplicationItems::query()
                 ->with('application.teacher')
                 ->whereIn('id', $uniqueIds)
                 ->where('status', 'pending')
-                ->whereHas('application', fn ($query) => $query->where('course_id', $course->id))
                 ->get();
 
             if ($items->count() !== count($uniqueIds)) {
                 throw ValidationException::withMessages([
-                    'item_ids' => ['部分學生不存在、已開通，或不屬於這門課。'],
+                    'item_ids' => ['部分學生不存在或已開通。'],
                 ]);
             }
 
             $createdByTeacher = [];
             $createdCount = 0;
+            $enrolledCount = 0;
+            $courseNames = $courses->pluck('name')->unique()->implode('、');
 
-            // 若學生帳號不存在，自動建立 Student 實體與初始密碼（累計至通知教師清單）。
             foreach ($items as $item) {
                 $student = Student::query()
                     ->where('student_no', $item->student_no)
@@ -253,7 +300,7 @@ class StudentAccountService
                     $student = Student::create([
                         'class_name' => $item->application?->class_name,
                         'student_no' => $item->student_no,
-                        'name' => $item->name,
+                        'name' => $item->name !== '' ? $item->name : $item->student_no,
                         'password' => $plainPassword,
                         'email' => $email,
                     ]);
@@ -261,22 +308,23 @@ class StudentAccountService
                     $createdCount++;
                 }
 
-                // 若學生尚未選修該課程，自動建立 Enrollment 選課關聯。
-                $alreadyEnrolled = Enrollment::query()
-                    ->where('student_id', $student->id)
-                    ->where('course_id', $course->id)
-                    ->exists();
+                foreach ($courses as $course) {
+                    $alreadyEnrolled = Enrollment::query()
+                        ->where('student_id', $student->id)
+                        ->where('course_id', $course->id)
+                        ->exists();
 
-                if (! $alreadyEnrolled) {
-                    Enrollment::query()->create([
-                        'student_id' => $student->id,
-                        'course_id' => $course->id,
-                    ]);
+                    if (! $alreadyEnrolled) {
+                        Enrollment::query()->create([
+                            'student_id' => $student->id,
+                            'course_id' => $course->id,
+                        ]);
+                        $enrolledCount++;
+                    }
                 }
 
                 $item->update(['status' => 'approved']);
 
-                // 若主單所有項目皆已審核，將主單狀態亦更新為 approved。
                 $application = $item->application;
                 if ($application !== null && ! $application->items()->where('status', 'pending')->exists()) {
                     $application->update(['status' => 'approved']);
@@ -285,8 +333,8 @@ class StudentAccountService
                 if ($plainPassword !== null && $application?->teacher !== null) {
                     $teacherId = $application->tid;
                     $createdByTeacher[$teacherId] ??= [
-                        'course_name' => $course->name, // 取得當前課程
-                        'teacher_account' => $application->teacher->account, // 取得教師登入帳號 (作為解鎖 Excel 密碼)
+                        'course_name' => $courseNames,
+                        'teacher_account' => $application->teacher->account,
                         'teacher_email' => $application->teacher->email,
                         'teacher_name' => $application->teacher->name,
                         'class_name' => $application->class_name,
@@ -306,7 +354,7 @@ class StudentAccountService
             return [
                 'activated_count' => $items->count(),
                 'created_count' => $createdCount,
-                'enrolled_count' => $items->count(),
+                'enrolled_count' => $enrolledCount,
                 'created_by_teacher' => array_values($createdByTeacher),
             ];
         });
@@ -338,7 +386,7 @@ class StudentAccountService
             ]);
         }
 
-        return $this->approveItems((int) $application->course_id, $itemIds);
+        return $this->approveItems([(int) $application->course_id], $itemIds);
     }
 
     /**

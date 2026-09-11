@@ -115,7 +115,7 @@ class StudentAccountApplicationController extends Controller
     /**
      * 該課程授課教師：手動新增/補入學生（支援一次多筆）
      * 
-     * 班級直接沿用課程所屬班級，提交後仍需由管理員審核開通。
+     * 班級直接沿用課程所屬班級，提交後仍需由管理員審核開通（含已有帳號學生）。
      *
      * @param StoreCourseStudentRequest $request
      * @param int $courseId 課程 ID
@@ -192,24 +192,30 @@ class StudentAccountApplicationController extends Controller
      */
     private function formatItems(Collection $items): Collection
     {
-        $existingNos = Student::query()
+        $studentsByNo = Student::query()
             ->whereIn('student_no', $items->pluck('student_no')->filter()->all())
-            ->pluck('student_no')
-            ->all();
+            ->get(['student_no', 'name'])
+            ->keyBy('student_no');
 
-        $existing = array_flip($existingNos);
+        return $items->map(function (StudentApplicationItems $item) use ($studentsByNo) {
+            $account = $studentsByNo->get($item->student_no);
+            $name = trim((string) $item->name);
+            if ($name === '' && $account !== null) {
+                $name = (string) $account->name;
+            }
 
-        return $items->map(fn (StudentApplicationItems $item) => [
-            'id' => $item->id,
-            'student_no' => $item->student_no,
-            'name' => $item->name,
-            'email' => Student::emailFromStudentNo($item->student_no),
-            'application_id' => $item->application_id,
-            'class_name' => $item->application?->class_name,
-            'status' => $item->status,
-            'course_id' => $item->application?->course_id,
-            'provider_teacher_name' => $item->application?->teacher?->name,
-            'has_account' => isset($existing[$item->student_no]),
-        ]);
+            return [
+                'id' => $item->id,
+                'student_no' => $item->student_no,
+                'name' => $name,
+                'email' => Student::emailFromStudentNo($item->student_no),
+                'application_id' => $item->application_id,
+                'class_name' => $item->application?->class_name,
+                'status' => $item->status,
+                'course_id' => $item->application?->course_id,
+                'provider_teacher_name' => $item->application?->teacher?->name,
+                'has_account' => $account !== null,
+            ];
+        });
     }
 }

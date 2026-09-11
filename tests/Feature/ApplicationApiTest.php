@@ -29,7 +29,7 @@ class ApplicationApiTest extends TestCase
             'status' => 'pending',
         ]);
 
-        $token = $this->loginToken('admin@school.edu.tw');
+        $token = $this->loginToken('admin@nutc.edu.tw');
 
         $this->withToken($token)
             ->getJson('/api/v1/teacher-applications?status=pending')
@@ -59,7 +59,7 @@ class ApplicationApiTest extends TestCase
         $appId = $storeResponse->json('data.id');
 
         // 2. 審核教師申請（需 Admin 權限）
-        $adminToken = $this->loginToken('admin@school.edu.tw');
+        $adminToken = $this->loginToken('admin@nutc.edu.tw');
 
         $approveResponse = $this->withToken($adminToken)
             ->postJson("/api/v1/teacher-applications/{$appId}/approve");
@@ -157,7 +157,7 @@ class ApplicationApiTest extends TestCase
             'status' => 'pending',
         ]);
 
-        $token = $this->loginToken('admin@school.edu.tw');
+        $token = $this->loginToken('admin@nutc.edu.tw');
 
         $this->withToken($token)
             ->getJson('/api/v1/student-applications?status=pending&course_id='.$course->id)
@@ -287,6 +287,56 @@ class ApplicationApiTest extends TestCase
         $this->withToken($token)
             ->getJson("/api/v1/teacher/courses/{$course->id}/student-applications")
             ->assertNotFound();
+    }
+
+    public function test_teacher_can_add_one_student_with_student_no_only(): void
+    {
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
+        $token = $this->loginToken('teacher2@school.edu.tw');
+
+        $this->withToken($token)
+            ->postJson("/api/v1/teacher/courses/{$course->id}/student-applications", [
+                'student_no' => '1411139999',
+            ])
+            ->assertCreated();
+
+        $this->assertDatabaseHas('student_application_items', [
+            'student_no' => '1411139999',
+            'name' => '',
+            'status' => 'pending',
+        ]);
+    }
+
+    public function test_teacher_adding_existing_student_stays_pending_with_account_name(): void
+    {
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資管')->firstOrFail();
+        $existing = Student::query()->where('student_no', '1411131000')->firstOrFail();
+        $token = $this->loginToken('teacher2@school.edu.tw');
+
+        $this->withToken($token)
+            ->postJson("/api/v1/teacher/courses/{$course->id}/student-applications", [
+                'student_no' => $existing->student_no,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.status', 'pending');
+
+        $this->assertDatabaseHas('student_application_items', [
+            'student_no' => $existing->student_no,
+            'name' => $existing->name,
+            'status' => 'pending',
+        ]);
+
+        $this->assertDatabaseMissing('enrollments', [
+            'student_id' => $existing->id,
+            'course_id' => $course->id,
+        ]);
+
+        $this->withToken($token)
+            ->getJson("/api/v1/teacher/courses/{$course->id}/student-applications?status=pending")
+            ->assertOk()
+            ->assertJsonPath('items.0.student_no', $existing->student_no)
+            ->assertJsonPath('items.0.name', $existing->name)
+            ->assertJsonPath('items.0.has_account', true);
     }
 
     public function test_teacher_can_add_one_student_for_own_course(): void
@@ -478,6 +528,52 @@ class ApplicationApiTest extends TestCase
         $this->assertDatabaseHas('student_application_items', ['id' => $item->id]);
     }
 
+    public function test_admin_can_approve_all_pending_by_source_course(): void
+    {
+        Mail::fake();
+
+        $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
+        $courseA = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
+        $courseB = Course::query()->where('name', '網際系統設計')->where('class_name', '資管')->firstOrFail();
+
+        $application = StudentApplications::query()->create([
+            'tid' => $teacher->id,
+            'course_id' => $courseA->id,
+            'class_name' => '資應',
+            'status' => 'pending',
+        ]);
+
+        $first = StudentApplicationItems::query()->create([
+            'application_id' => $application->id,
+            'student_no' => '1411134001',
+            'name' => '',
+            'status' => 'pending',
+        ]);
+
+        $second = StudentApplicationItems::query()->create([
+            'application_id' => $application->id,
+            'student_no' => '1411134002',
+            'name' => '',
+            'status' => 'pending',
+        ]);
+
+        $token = $this->loginToken('admin@nutc.edu.tw');
+
+        $this->withToken($token)
+            ->postJson('/api/v1/student-applications/approve', [
+                'source_course_id' => $courseA->id,
+                'course_ids' => [$courseA->id, $courseB->id],
+            ])
+            ->assertOk()
+            ->assertJsonPath('activated_count', 2)
+            ->assertJsonPath('created_count', 2)
+            ->assertJsonPath('enrolled_count', 4);
+
+        $this->assertSame('approved', $first->fresh()->status);
+        $this->assertSame('approved', $second->fresh()->status);
+        $this->assertSame('approved', $application->fresh()->status);
+    }
+
     public function test_admin_can_approve_selected_new_student(): void
     {
         Mail::fake();
@@ -499,11 +595,11 @@ class ApplicationApiTest extends TestCase
             'status' => 'pending',
         ]);
 
-        $token = $this->loginToken('admin@school.edu.tw');
+        $token = $this->loginToken('admin@nutc.edu.tw');
 
         $this->withToken($token)
             ->postJson('/api/v1/student-applications/approve', [
-                'course_id' => $course->id,
+                'course_ids' => [$course->id],
                 'item_ids' => [$item->id],
             ])
             ->assertOk()
@@ -526,12 +622,13 @@ class ApplicationApiTest extends TestCase
         Mail::fake();
 
         $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
-        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
+        $courseApplied = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
+        $courseTarget = Course::query()->where('name', '網際系統設計')->where('class_name', '資管')->firstOrFail();
         $existing = Student::query()->where('student_no', '1411131000')->firstOrFail();
 
         $application = StudentApplications::query()->create([
             'tid' => $teacher->id,
-            'course_id' => $course->id,
+            'course_id' => $courseApplied->id,
             'class_name' => '資應',
             'status' => 'pending',
         ]);
@@ -544,11 +641,11 @@ class ApplicationApiTest extends TestCase
         ]);
 
         $before = Student::query()->count();
-        $token = $this->loginToken('admin@school.edu.tw');
+        $token = $this->loginToken('admin@nutc.edu.tw');
 
         $this->withToken($token)
             ->postJson('/api/v1/student-applications/approve', [
-                'course_id' => $course->id,
+                'course_ids' => [$courseTarget->id],
                 'item_ids' => [$item->id],
             ])
             ->assertOk()
@@ -559,9 +656,10 @@ class ApplicationApiTest extends TestCase
         $this->assertTrue(
             Enrollment::query()
                 ->where('student_id', $existing->id)
-                ->where('course_id', $course->id)
+                ->where('course_id', $courseTarget->id)
                 ->exists(),
         );
+        $this->assertSame('approved', $item->fresh()->status);
     }
 
     public function test_admin_can_approve_one_student_and_leave_the_other_pending(): void
@@ -592,11 +690,11 @@ class ApplicationApiTest extends TestCase
             'status' => 'pending',
         ]);
 
-        $token = $this->loginToken('admin@school.edu.tw');
+        $token = $this->loginToken('admin@nutc.edu.tw');
 
         $this->withToken($token)
             ->postJson('/api/v1/student-applications/approve', [
-                'course_id' => $course->id,
+                'course_ids' => [$course->id],
                 'item_ids' => [$first->id],
             ])
             ->assertOk();
@@ -613,10 +711,86 @@ class ApplicationApiTest extends TestCase
 
         $this->withToken($token)
             ->postJson('/api/v1/student-applications/approve', [
-                'course_id' => $course->id,
+                'course_ids' => [$course->id],
                 'item_ids' => [1],
             ])
             ->assertForbidden();
+    }
+
+    public function test_admin_can_approve_student_into_multiple_courses(): void
+    {
+        Mail::fake();
+
+        $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
+        $courseA = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
+        $courseB = Course::query()->where('name', '網際系統設計')->where('class_name', '資管')->firstOrFail();
+
+        $application = StudentApplications::query()->create([
+            'tid' => $teacher->id,
+            'course_id' => $courseA->id,
+            'class_name' => '資應',
+            'status' => 'pending',
+        ]);
+
+        $item = StudentApplicationItems::query()->create([
+            'application_id' => $application->id,
+            'student_no' => '1411133001',
+            'name' => '多課開通',
+            'status' => 'pending',
+        ]);
+
+        $token = $this->loginToken('admin@nutc.edu.tw');
+
+        $this->withToken($token)
+            ->postJson('/api/v1/student-applications/approve', [
+                'course_ids' => [$courseA->id, $courseB->id],
+                'item_ids' => [$item->id],
+            ])
+            ->assertOk()
+            ->assertJsonPath('created_count', 1)
+            ->assertJsonPath('enrolled_count', 2)
+            ->assertJsonPath('message', '已開通課程。');
+
+        $student = Student::query()->where('student_no', '1411133001')->firstOrFail();
+        $this->assertTrue(
+            Enrollment::query()->where('student_id', $student->id)->where('course_id', $courseA->id)->exists(),
+        );
+        $this->assertTrue(
+            Enrollment::query()->where('student_id', $student->id)->where('course_id', $courseB->id)->exists(),
+        );
+        $this->assertSame('approved', $item->fresh()->status);
+    }
+
+    public function test_admin_approve_accepts_legacy_course_id(): void
+    {
+        Mail::fake();
+
+        $teacher = Teacher::query()->where('account', 'teacher2@school.edu.tw')->firstOrFail();
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
+
+        $application = StudentApplications::query()->create([
+            'tid' => $teacher->id,
+            'course_id' => $course->id,
+            'class_name' => '資應',
+            'status' => 'pending',
+        ]);
+
+        $item = StudentApplicationItems::query()->create([
+            'application_id' => $application->id,
+            'student_no' => '1411133002',
+            'name' => '舊欄位相容',
+            'status' => 'pending',
+        ]);
+
+        $token = $this->loginToken('admin@nutc.edu.tw');
+
+        $this->withToken($token)
+            ->postJson('/api/v1/student-applications/approve', [
+                'course_id' => $course->id,
+                'item_ids' => [$item->id],
+            ])
+            ->assertOk()
+            ->assertJsonPath('enrolled_count', 1);
     }
 
     public function test_teacher_can_submit_student_application_without_email_and_approve_it(): void
@@ -643,7 +817,7 @@ class ApplicationApiTest extends TestCase
         $appId = $storeResponse->json('data.id');
 
         // 2. 審核開通學生（需 Admin 權限）
-        $adminToken = $this->loginToken('admin@school.edu.tw');
+        $adminToken = $this->loginToken('admin@nutc.edu.tw');
 
         $approveResponse = $this->withToken($adminToken)
             ->postJson("/api/v1/teacher/student-applications/{$appId}/approve");

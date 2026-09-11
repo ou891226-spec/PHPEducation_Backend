@@ -5,7 +5,7 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * 教師補學生（可一次多筆）。班級取自課程。
+ * 教師補學生（可一次多筆）。只要學號；班級取自課程。
  */
 class StoreCourseStudentRequest extends FormRequest
 {
@@ -19,7 +19,7 @@ class StoreCourseStudentRequest extends FormRequest
         return [
             'students' => ['required', 'array', 'min:1', 'max:100'],
             'students.*.student_no' => ['required', 'string', 'max:50'],
-            'students.*.name' => ['required', 'string', 'max:255'],
+            'students.*.name' => ['nullable', 'string', 'max:255'],
         ];
     }
 
@@ -49,7 +49,7 @@ class StoreCourseStudentRequest extends FormRequest
             $studentNo = $this->normalizeStudentNo((string) ($row['student_no'] ?? $row['studentNo'] ?? ''));
             $name = trim((string) ($row['name'] ?? ''));
 
-            if ($studentNo === '' && $name === '') {
+            if ($studentNo === '') {
                 continue;
             }
 

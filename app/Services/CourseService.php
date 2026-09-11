@@ -28,6 +28,7 @@ class CourseService
     public function listAll(): array
     {
         return Course::query()
+            ->with('teacher:id,name')
             ->orderByDesc('semester')
             ->orderByDesc('id')
             ->get()
@@ -119,6 +120,9 @@ class CourseService
             'semester' => $course->semester,
             'class_name' => $course->class_name,
             'teacher_id' => $course->teacher_id,
+            'teacher_name' => $course->relationLoaded('teacher')
+                ? $course->teacher?->name
+                : null,
         ];
     }
 }
