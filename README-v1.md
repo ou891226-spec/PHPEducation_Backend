@@ -1237,11 +1237,15 @@ public/templates/course_template.xlsx
 | GET | `/api/v1/student/courses/{courseId}/questions` | 列出該課題目（可加 `knowledge_card_id`） |
 | GET | `/api/v1/student/questions/{questionId}` | 取得單題 |
 | POST | `/api/v1/student/questions/{questionId}/submit` | 交卷 |
+| GET | `/api/v1/student/courses/{courseId}/question-records` | 列出自己在該課的作答紀錄（可加 `question_id`） |
+| GET | `/api/v1/student/question-records/{recordId}` | 查看自己的單筆作答紀錄 |
 
 選擇／是非：`{ "option_id": 1 }`  
 填空／解讀：`{ "answers": { "1": "define", "2": "PI" } }`  
 除錯：`{ "code_line": 2, "answer": "$name = \"Tom\";" }`（多個錯誤用 `answers`；取題只回 `debug_error_count`，不回錯誤行號）  
 實作：`{ "code": "..." }`，`system_status` 為 `pending`，等老師輸入 `bloom_id`。
+
+學生作答紀錄只回自己的資料，不含 `expected_output`／`reference_answer`。成功 **200**：`{ "records": [ ... ] }` 或 `{ "record": { ... } }`，欄位含題目標題／類型、`result`、`solo`、`bloom_id`、`system_status`、`teacher_status`、`subs`、`created_at`。未修該課或非自己的紀錄 **404**。
 
 ### 教師覆核作答
 

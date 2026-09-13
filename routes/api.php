@@ -103,6 +103,9 @@ Route::prefix('v1')->group(function () {
             Route::get('courses/{courseId}/questions', [StudentQuestionController::class, 'index']);
             Route::get('questions/{questionId}', [StudentQuestionController::class, 'show']);
             Route::post('questions/{questionId}/submit', [StudentQuestionController::class, 'submit']);
+            Route::get('courses/{courseId}/question-records', [StudentQuestionController::class, 'records']);
+            Route::get('question-records/{recordId}', [StudentQuestionController::class, 'showRecord']);
         });
     });
 });
+

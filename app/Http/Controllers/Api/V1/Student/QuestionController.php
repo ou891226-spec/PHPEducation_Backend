@@ -46,6 +46,29 @@ class QuestionController extends Controller
         );
     }
 
+    public function records(Request $request, int $courseId): JsonResponse
+    {
+        $questionId = $request->query('question_id');
+
+        return response()->json([
+            'records' => $this->studentQuestionService->listRecordsForStudent(
+                $this->student($request),
+                $courseId,
+                $questionId !== null && $questionId !== '' ? (int) $questionId : null,
+            ),
+        ]);
+    }
+
+    public function showRecord(Request $request, int $recordId): JsonResponse
+    {
+        return response()->json([
+            'record' => $this->studentQuestionService->findRecordForStudent(
+                $this->student($request),
+                $recordId,
+            ),
+        ]);
+    }
+
     private function student(Request $request): Student
     {
         $user = $request->user();

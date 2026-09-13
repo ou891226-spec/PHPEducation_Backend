@@ -271,6 +271,51 @@ class StudentQuestionService
         return $courseId;
     }
 
+    /**
+     * 學生：列出自己在該課的作答紀錄（可選 question_id 篩選）
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function listRecordsForStudent(Student $student, int $courseId, ?int $questionId = null): array
+    {
+        $this->enrolledCourseId($student, $courseId);
+
+        return QuestionRecord::query()
+            ->with(['question', 'subs'])
+            ->where('student_id', $student->id)
+            ->whereHas('question', fn ($query) => $query->where('course_id', $courseId))
+            ->when(
+                $questionId !== null,
+                fn ($query) => $query->where('question_id', $questionId),
+            )
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (QuestionRecord $record) => $this->formatHistoryRecord($record))
+            ->all();
+    }
+
+    /**
+     * 學生：查看自己的單筆作答紀錄
+     *
+     * @return array<string, mixed>
+     */
+    public function findRecordForStudent(Student $student, int $recordId): array
+    {
+        $record = QuestionRecord::query()
+            ->with(['question', 'subs'])
+            ->whereKey($recordId)
+            ->where('student_id', $student->id)
+            ->first();
+
+        if ($record === null) {
+            throw new ModelNotFoundException();
+        }
+
+        $this->enrolledCourseId($student, (int) $record->question?->course_id);
+
+        return $this->formatHistoryRecord($record);
+    }
+
     private function enrolledQuestion(Student $student, int $questionId): Question
     {
         $question = Question::query()
@@ -367,6 +412,39 @@ class StudentQuestionService
                 ])
                 ->values()
                 ->all(),
+        ];
+    }
+
+    /**
+     * 學生歷史作答（不含老師專用欄位：expected_output / reference_answer）
+     *
+     * @return array<string, mixed>
+     */
+    private function formatHistoryRecord(QuestionRecord $record): array
+    {
+        return [
+            'id' => $record->id,
+            'question_id' => $record->question_id,
+            'question_title' => $record->question?->title,
+            'question_type' => $record->question?->type,
+            'course_id' => $record->question?->course_id,
+            'result' => $this->formatStoredResult($record->result),
+            'solo' => $record->solo,
+            'bloom_id' => $record->bloom_id,
+            'question_bloom_id' => $record->question?->bloom_id,
+            'system_status' => $record->system_status,
+            'teacher_status' => $record->teacher_status,
+            'subs' => $record->subs
+                ->map(fn ($sub) => [
+                    'id' => $sub->id,
+                    'sub_id' => $sub->sub_id,
+                    'answer' => $sub->answer,
+                    'is_right' => (bool) $sub->is_right,
+                    'solo' => (int) $sub->solo,
+                ])
+                ->values()
+                ->all(),
+            'created_at' => $record->created_at,
         ];
     }
 

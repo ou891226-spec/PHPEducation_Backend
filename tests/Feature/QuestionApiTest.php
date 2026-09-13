@@ -252,6 +252,52 @@ class QuestionApiTest extends TestCase
             ->assertNotFound();
     }
 
+    public function test_student_can_list_and_show_own_question_records(): void
+    {
+        $course = $this->yingCourse();
+        $question = $this->makeChoiceQuestion($course);
+        $correct = $question->options()->where('is_answer', true)->firstOrFail();
+
+        $submit = $this->withToken($this->studentToken())
+            ->postJson("/api/v1/student/questions/{$question->id}/submit", [
+                'option_id' => $correct->id,
+            ])
+            ->assertOk();
+        $recordId = (int) $submit->json('record.id');
+
+        $this->withToken($this->studentToken())
+            ->getJson("/api/v1/student/courses/{$course->id}/question-records")
+            ->assertOk()
+            ->assertJsonCount(1, 'records')
+            ->assertJsonPath('records.0.id', $recordId)
+            ->assertJsonPath('records.0.question_id', $question->id)
+            ->assertJsonPath('records.0.question_title', $question->title)
+            ->assertJsonPath('records.0.system_status', QuestionRecord::STATUS_CORRECT)
+            ->assertJsonMissingPath('records.0.expected_output')
+            ->assertJsonMissingPath('records.0.reference_answer');
+
+        $this->withToken($this->studentToken())
+            ->getJson("/api/v1/student/courses/{$course->id}/question-records?question_id={$question->id}")
+            ->assertOk()
+            ->assertJsonCount(1, 'records');
+
+        $this->withToken($this->studentToken())
+            ->getJson("/api/v1/student/question-records/{$recordId}")
+            ->assertOk()
+            ->assertJsonPath('record.id', $recordId)
+            ->assertJsonPath('record.question_type', Question::TYPE_CHOICE)
+            ->assertJsonMissingPath('record.expected_output');
+    }
+
+    public function test_student_cannot_list_records_for_unenrolled_course(): void
+    {
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資管')->firstOrFail();
+
+        $this->withToken($this->studentToken())
+            ->getJson("/api/v1/student/courses/{$course->id}/question-records")
+            ->assertNotFound();
+    }
+
     public function test_teacher_cannot_submit_student_question(): void
     {
         $question = $this->makeChoiceQuestion($this->yingCourse());
