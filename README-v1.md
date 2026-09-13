@@ -1245,7 +1245,7 @@ public/templates/course_template.xlsx
 除錯：`{ "code_line": 2, "answer": "$name = \"Tom\";" }`（多個錯誤用 `answers`；取題只回 `debug_error_count`，不回錯誤行號）  
 實作：`{ "code": "..." }`，`system_status` 為 `pending`，等老師輸入 `bloom_id`。
 
-學生作答紀錄只回自己的資料，不含 `expected_output`／`reference_answer`。成功 **200**：`{ "records": [ ... ] }` 或 `{ "record": { ... } }`，欄位含題目標題／類型、`result`、`solo`、`bloom_id`、`system_status`、`teacher_status`、`subs`、`created_at`。未修該課或非自己的紀錄 **404**。
+學生作答紀錄只回自己的資料，不含 `expected_output`／`reference_answer`／`solo`（SOLO 只給老師看）。成功 **200**：`{ "records": [ ... ] }` 或 `{ "record": { ... } }`，欄位含題目標題／類型、`result`、`bloom_id`、`system_status`、`teacher_status`（非實作題為 `null`）、`needs_teacher_review`、`subs`、`created_at`。未修該課或非自己的紀錄 **404**。
 
 ### 教師覆核作答
 

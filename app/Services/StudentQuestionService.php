@@ -253,7 +253,10 @@ class StudentQuestionService
             'question_id' => $question->id,
             'result' => $result,
             'system_status' => $systemStatus,
-            'teacher_status' => QuestionRecord::STATUS_PENDING,
+            // 實作題等系統 pending 才要教師覆核；其餘系統已批改則同步寫入
+            'teacher_status' => $systemStatus === QuestionRecord::STATUS_PENDING
+                ? QuestionRecord::STATUS_PENDING
+                : $systemStatus,
             'solo' => $solo ?? match ($systemStatus) {
                 QuestionRecord::STATUS_CORRECT => QuestionRecord::SOLO_CORRECT,
                 QuestionRecord::STATUS_WRONG => QuestionRecord::SOLO_WRONG,
@@ -422,6 +425,8 @@ class StudentQuestionService
      */
     private function formatHistoryRecord(QuestionRecord $record): array
     {
+        $needsTeacherReview = $record->question?->type === Question::TYPE_CODING;
+
         return [
             'id' => $record->id,
             'question_id' => $record->question_id,
@@ -429,18 +434,18 @@ class StudentQuestionService
             'question_type' => $record->question?->type,
             'course_id' => $record->question?->course_id,
             'result' => $this->formatStoredResult($record->result),
-            'solo' => $record->solo,
             'bloom_id' => $record->bloom_id,
             'question_bloom_id' => $record->question?->bloom_id,
             'system_status' => $record->system_status,
-            'teacher_status' => $record->teacher_status,
+            // 非實作題：系統已批改，學生端不顯示待審（回 null 讓前端顯示 —）
+            'teacher_status' => $needsTeacherReview ? $record->teacher_status : null,
+            'needs_teacher_review' => $needsTeacherReview,
             'subs' => $record->subs
                 ->map(fn ($sub) => [
                     'id' => $sub->id,
                     'sub_id' => $sub->sub_id,
                     'answer' => $sub->answer,
                     'is_right' => (bool) $sub->is_right,
-                    'solo' => (int) $sub->solo,
                 ])
                 ->values()
                 ->all(),
