@@ -1,0 +1,1384 @@
+# PHPEducation Backend
+
+系統的登入、課程、教材與權限管理功能
+
+## 使用技術
+
+- Laravel
+- mysql（開發環境）
+
+---
+
+## 架構說明
+
+```text
+基本資料
+admins     → 管理員
+teachers   → 教師
+students   → 學生（以學校信箱 email 作為登入帳號，student_no 為學號，含 class_name 班級）
+teacher_applications → 教師帳號申請（核准後寫入 teachers）
+student_applications → 學生帳號申請（tid → teachers, course_id → courses）
+student_application_items → 學生申請明細（一筆申請多位學生，核准後寫入 students）
+
+courses    → 課程（teacher_id → teachers，含 class_name 班級）
+enrollments → 選課（students ↔ courses）
+
+教材部分
+chapters        → 章節（course_id → courses）
+units           → 單元（chapter_id → chapters）
+knowledge_cards → 知識卡（course_id、可空 unit_id；type / content HTML / example）
+knowledge_card_unit → 單元 ↔ 知識卡（同一張卡可掛多個單元）
+questions       → 題目
+question_options → 選擇／是非選項
+question_sub_answers → 填空／除錯／解讀正解
+question_knowledge_cards → 題目 ↔ 知識卡
+question_records → 學生作答總表
+question_record_subs → 填空／除錯／解讀每一格作答
+bloom           → Bloom 編碼（出題 B11–B63）
+```
+
+三者各自獨立儲存帳號與密碼，由 `AuthService` 依固定順序查詢並判斷 `role`。
+
+課程由教師建立並擁有（`courses.teacher_id`）；學生透過 `enrollments` 與課程形成多對多關聯。
+
+教材層級：教師 → 課程 → 章節 → 單元 → 知識卡。
+主題就是課程；不再有獨立的 `topics` 表。Excel 用 `course_template.xlsx`（章／單元／卡名／類型／內文／程式範例）匯入後直接寫正式教材。單張卡儲存變更學生立刻看到。同一門課再匯入須確認覆蓋。
+
+---
+
+## 目錄架構
+
+```text
+app/
+│
+├─ Exceptions/
+│  └─ 自訂例外（登入失敗、帳號未開通等）
+│
+├─ Http/
+│  ├─ Controllers/Api/V1/
+│  │  ├─ AuthController.php
+│  │  ├─ DashboardController.php
+│  │  ├─ StatsController.php
+│  │  ├─ Student/
+│  │  │  ├─ MaterialController.php
+│  │  │  └─ QuestionController.php
+│  │  └─ Teacher/
+│  │     ├─ CourseController.php
+│  │     ├─ QuestionController.php
+│  │     ├─ QuestionRecordController.php
+│  │     ├─ MaterialTemplateController.php
+│  │     ├─ StudentRosterTemplateController.php
+│  │     ├─ MaterialImportController.php
+│  │     ├─ MaterialGraphController.php
+│  │     ├─ EditorImageController.php
+│  │     ├─ ChapterController.php
+│  │     ├─ UnitController.php
+│  │     └─ KnowledgeCardController.php
+│  ├─ Middleware/
+│  │  └─ EnsureRole.php
+│  └─ Requests/
+│     ├─ Auth/
+│     ├─ Course/
+│     ├─ Material/
+│     ├─ StoreStudentAccountApplicationRequest.php
+│     └─ StoreCourseStudentRequest.php
+│
+├─ Models/
+│  └─ Admin、Teacher、Student、Course、Enrollment、
+│     Chapter、Unit、KnowledgeCard、
+│     Question、QuestionOption、QuestionSubAnswer、QuestionRecord、Bloom
+│
+├─ Providers/
+│  └─ 服務提供者
+│
+└─ Services/
+   ├─ AuthService.php
+   ├─ CourseService.php
+   ├─ MaterialService.php
+   ├─ ExcelMaterialParser.php
+   ├─ MaterialImportService.php
+   ├─ ExcelStudentRosterParser.php
+   ├─ StudentMaterialService.php
+   ├─ StudentQuestionService.php
+   ├─ TeacherQuestionService.php
+   ├─ TeacherQuestionRecordService.php
+   ├─ StudentAccountService.php
+   ├─ StudentCreateExcelService.php
+   ├─ DashboardService.php
+   └─ UserFormatterService.php
+
+bootstrap/          → 應用程式啟動與 Middleware 註冊
+config/             → 設定檔（auth、cors、sanctum、database 等）
+public/templates/
+├─ course_template.xlsx             → 教師教材匯入 Excel 範本
+├─ student_import_template.xlsx     → 教師學生名冊 Excel 範本
+└─ student_account_template.xlsx    → 開通後寄給教師的學生帳密 Excel 範本
+database/
+├─ migrations/      → 資料表結構
+└─ seeders/         → 測試帳號與示範資料
+routes/
+├─ api.php          → API 路由（/api/v1/...）
+└─ web.php
+tests/
+└─ Feature/         → API 功能測試
+```
+
+### 各層職責
+
+| 層級 | 職責 |
+|------|------|
+| `Controllers` | 接收 Request、呼叫 Service、回傳 JSON |
+| `Requests` | 驗證 Request 欄位（如登入、建立／更新課程） |
+| `Services` | 業務邏輯（登入查詢順序、Dashboard、課程 CRUD） |
+| `Models` | Eloquent 模型與資料關聯 |
+| `Middleware` | 角色權限檢查（如僅教師可存取 `/teacher/*`） |
+| `routes/api.php` | 定義 API 路徑與 Middleware 群組 |
+| `database/migrations` | 資料表結構定義 |
+| `database/seeders` | 測試帳號與示範課程 |
+
+---
+
+## 資料表
+### admins 系統管理員
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 管理員 ID（PK） |
+| account | string | 登入帳號（unique） |
+| password | string | 加密後的密碼 |
+
+固定 "name": "系統管理員"
+
+### teachers 教師資料
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 教師 ID（PK） |
+| account | string | 登入帳號（unique） |
+| password | string | 加密後的密碼 |
+| name | string | 教師姓名 |
+| email | string | Email（unique） |
+| created_at | timestamp | 建立時間 |
+| updated_at | timestamp | 更新時間 |
+
+### teacher_applications 教師帳號申請
+
+申請人填表後寫入此表；管理員核准後才建立 `teachers` 帳號。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 申請 ID（PK） |
+| name | string | 教師姓名 |
+| email | string | 教師信箱（unique） |
+| account | string | 教師自訂帳號（unique） |
+| reason | string | 申請理由 |
+| status | string | 申請狀態：`pending`（待審核）、`approved`（已通過），預設 `pending` |
+| created_at | timestamp | 建立時間 |
+| updated_at | timestamp | 更新時間 |
+
+```text
+教師申請（pending）──核准──▶ teachers
+```
+
+### students 學生資料
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 學生 ID（PK） |
+| password | string | 加密後的密碼 |
+| student_no | string | 學號（unique） |
+| name | string | 學生姓名 |
+| class_name | string | 現屬班級（可為空；開通帳號時由申請單的 `class_name` 寫入） |
+| email | string | 學校信箱（unique），**作為登入帳號** |
+| created_at | timestamp | 建立時間 |
+| updated_at | timestamp | 更新時間 |
+
+> 學生登入時，前端 Request 的 `account` 填學號即可，例如 `1411131000`，**不必加 `s`**。後端組成並比對 `students.email`（`s1411131000@nutc.edu.tw`）。若誤加 `s` 也可以。學號存在 `student_no`。若開通時只填學號，系統組成 `s{學號}@nutc.edu.tw`。
+
+### student_applications 學生帳號申請
+
+由**已核准的教師**幫班級學生申請帳號。
+老師交一份班級名單，上面可以有很多學生。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 申請 ID（PK） |
+| tid | bigint | 教師 ID（FK → teachers.id，刪除教師時一併刪除） |
+| course_id | bigint | 課程 ID（FK → courses.id，刪除課程時一併刪除） |
+| class_name | string | 申請班級（由課程 `class_name` 寫入） |
+| status | string | 申請狀態：`pending`（待審核）、`approved`（已通過），預設 `pending` |
+| created_at | timestamp | 建立時間 |
+| updated_at | timestamp | 更新時間 |
+
+### student_application_items 學生申請明細
+
+一筆申請底下可有多位學生。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 明細 ID（PK） |
+| application_id | bigint | 申請 ID（FK → student_applications.id） |
+| student_no | string | 學生學號 |
+| name | string | 學生姓名 |
+| status | string | 審核狀態：`pending`（待審核）、`approved`（已開通），預設 `pending` |
+| created_at | timestamp | 建立時間 |
+| updated_at | timestamp | 更新時間 |
+
+明細**沒有 email**。開通時後端用學號組成 `s{學號}@nutc.edu.tw` 寫入 `students.email`。
+
+同一申請內 `student_no` 不可重複（`application_id` + `student_no` unique）。
+
+```text
+teachers.id / courses.id
+    │
+    └─ student_applications.id（主單：班級與課程）
+            │
+            └─ student_application_items（多位學生：學號與姓名）
+                    │
+                    └─ 核准後寫入 students（由學號自動產生校園信箱）
+```
+
+### courses 課程資料
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 課程 ID（PK） |
+| name | string | 課程名稱 |
+| description | text | 課程介紹 |
+| semester | string | 開課學期 |
+| class_name | string | 開課班級（可空；新開課必填） |
+| teacher_id | bigint | 授課教師 ID（FK → teachers.id） |
+| created_at | timestamp | 建立時間 |
+| updated_at | timestamp | 更新時間 |
+
+### enrollments 學生選課資料
+複合主鍵，無 `timestamps`
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| student_id | bigint | 學生 ID（FK → students.id） |
+| course_id | bigint | 課程 ID（FK → courses.id） |
+
+資料關聯：
+
+```text
+students ── enrollments ── courses
+```
+
+學生 Dashboard 的「已修課程」透過 `enrollments` 關聯查詢（`Student` ↔ `Course` many-to-many）。
+Seeder 已讓王小明選修「網際系統設計」（班級資應）。
+
+### chapters 章節資料
+一門課程底下可有多個章節
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 章節 ID（PK） |
+| course_id | bigint | 所屬課程 ID（FK → courses.id） |
+| name | string | 章節名稱 |
+| sort_order | integer | 排序順序 |
+| created_at | timestamp | 建立時間 |
+| updated_at | timestamp | 更新時間 |
+
+例如：課程「PHP 程式設計」→ 第一章 PHP 簡介、第二章 PHP 環境、第三章 PHP 基本語法。
+
+### units 單元資料
+一個章節底下可有多個單元
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 單元 ID（PK） |
+| chapter_id | bigint | 所屬章節 ID（FK → chapters.id） |
+| name | string | 單元名稱 |
+| sort_order | integer | 排序順序 |
+| created_at | timestamp | 建立時間 |
+| updated_at | timestamp | 更新時間 |
+
+例如：第一章 PHP 簡介 → 1-1 PHP 是什麼、1-2 PHP 的特色、1-3 PHP 的應用。
+
+### knowledge_cards 知識卡資料
+知識卡可掛在多個單元（`knowledge_card_unit`）。`unit_id` 表示主要單元；覆蓋匯入過程中會暫時清空，重建後再寫回。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 知識卡 ID（PK） |
+| unit_id | bigint（可空） | 主要單元 ID（FK → units.id） |
+| course_id | bigint（可空） | 所屬課程（覆蓋匯入時用來對回同一張卡） |
+| title | string | 知識卡名稱（Excel `card_name`） |
+| type | string | 類型，例如 `keyword`、`function`（Excel `card_type`） |
+| content | longText | 知識卡內容，可存 HTML（Excel `card_content`） |
+| example | text | 程式範例（Excel `code_example`） |
+| sort_order | integer | 排序順序 |
+| created_at | timestamp | 建立時間 |
+| updated_at | timestamp | 更新時間 |
+
+例如：單元「變數」→ 知識卡「變數」（內容與 `example` 程式範例）。出題下拉依教材**章節**分組，顯示知識點名稱，不顯示「說明」課文或 `實作變數01`。
+
+### knowledge_card_unit 單元與知識卡
+
+同一張卡可掛在多個單元；同一單元對同一張卡不可重複。刪單元時只拿掉關聯，知識卡本體仍在（是否刪卡由上層刪除邏輯決定）。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 關聯 ID（PK） |
+| unit_id | bigint | 單元 ID（FK → units.id） |
+| knowledge_card_id | bigint | 知識卡 ID（FK → knowledge_cards.id） |
+| created_at | timestamp | 建立時間 |
+| updated_at | timestamp | 更新時間 |
+
+教材資料關聯：
+
+```text
+courses → chapters → units ↔ knowledge_cards（knowledge_card_unit）
+courses → questions
+questions ↔ knowledge_cards（question_knowledge_cards）
+```
+
+畫面採一層一層點進去（鑽層）：課程 → 章節 → 單元 → 知識卡。  
+列表的 `item_count` 代表下一層有幾筆（對應畫面上的「N 項」）。知識卡沒有下一層，回傳 `title`、`content`、`example`。刪除章節／單元／知識卡時會**硬刪**該段教材；若知識卡已掛在題目上，`question_knowledge_cards` 關聯會一併 cascade 刪除（題目本體保留）。若同一張卡還掛在其他單元，只拿掉被刪單元的關聯。
+
+### questions 題目資料
+
+題目屬於課程，不掛在單元上。與教材的對應透過知識卡。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 題目編號（PK） |
+| course_id | bigint | 所屬課程 ID（FK → courses.id） |
+| teacher_id | bigint | 建立教師 ID（FK → teachers.id） |
+| title | string | 題目標題 |
+| type | string | `choice`、`true_false`、`fill`、`debug`、`interpret`、`coding` |
+| question_content | text | 題目內容（填空用 `（1）`、`（2）` 標格子） |
+| bloom_id | string | 出題 Bloom（FK → bloom.id，可空） |
+| description | text | 要考學生什麼（可空） |
+| show_example | boolean | 是否把知識卡範例給學生看（預設否） |
+| starter_code | text | 實作題已知條件（給學生看，可空） |
+| expected_output | text | 實作題期望輸出（學生看不到，可空） |
+| reference_answer | text | 實作題參考答案（學生看不到，可空） |
+| created_at | timestamp | 建立時間 |
+| updated_at | timestamp | 更新時間 |
+
+### bloom Bloom 編碼
+
+表名 `bloom`。出題下拉用 `B11`–`B63`（第一碼 Bloom 層級 1–6，第二碼 SOLO 1–3）。下拉 `title` 只寫 Bloom 層級與用途，不顯示 SOLO。舊碼 `B1`–`B6` 仍留在表裡，給已存在的題。
+
+### question_options 選擇／是非
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 選項編號 |
+| question_id | bigint | 題目（FK → questions.id） |
+| title | string | 選項文字 |
+| description | text | 選項說明（nullable） |
+| is_answer | boolean | 是否正解 |
+| solo | tinyint | 正解 `2`、其餘 `1`（老師填正解即可，其餘自動帶 1） |
+
+### question_sub_answers 填空／除錯／解讀正解
+
+對應填空／除錯／解讀的每一格正解。填空：題幹 `（1）` ↔ `sub_id = 1`。除錯：只存有錯的行，`sub_id` 為行號，`answer` 為修正後程式。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 子題正解編號 |
+| question_id | bigint | 題目（FK → questions.id） |
+| sub_id | int | 格子編號或行號 |
+| answer | text | 這一格的標準答案 |
+| description | text | 說明（nullable） |
+| solo | tinyint | 出題配分，預設 2 |
+
+### question_knowledge_cards 題目與知識卡
+
+一題可對多張知識卡；一張知識卡也可被多題使用。關聯的知識卡應屬於同一門課。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | bigint | 流水號（PK） |
+| question_id | bigint | 題目編號（FK → questions.id） |
+| knowledge_card_id | bigint | 知識卡編號（FK → knowledge_cards.id） |
+| created_at | timestamp | 建立時間 |
+| updated_at | timestamp | 更新時間 |
+
+同一題對同一張知識卡不可重複（`question_id` + `knowledge_card_id` unique）。刪題目時，對應關聯會一併刪除。刪知識卡（含刪章節／單元導致的硬刪）時，題目與知識卡的關聯會 cascade 刪除，題目本體保留。
+
+### question_records / question_record_subs 作答
+
+A 類（選擇／是非）只寫總表；B 類（填空／除錯／解讀）總表 + 每一格子表。
+
+`question_records.solo`：A 類錯 `1`、對 `2`。B 類總表全錯 `1`、部分對 `2`、全對 `3`（`result` 記 `correct`／`total`）。逐格答對抄 `question_sub_answers.solo`，答錯為 `1`。實作題由老師寫 `bloom_id` 再判定。
+
+B 類交卷比對會把全形英數／標點轉半形（`；`＝`;`、`？>`＝`?>`），再去掉前後空白。資料庫仍存學生原字。
+
+### personal_access_tokens
+
+Laravel Sanctum 預設 Token 資料表（表名固定為 `personal_access_tokens`）。
+
+| 欄位 | 說明 |
+|------|------|
+| id | PK |
+| tokenable_type / tokenable_id | 關聯至 Admin、Teacher 或 Student |
+| name | Token 名稱 |
+| token | Token 雜湊值 |
+| abilities | 權限（nullable） |
+| last_used_at | 最後使用時間 |
+| expires_at | 過期時間 |
+| created_at / updated_at | 時間戳 |
+
+---
+
+## 登入
+
+### POST `/api/v1/auth/login`
+
+使用者只需要提供帳號與密碼，後端會自動判斷使用者身分。
+
+**查詢順序：**
+
+1. `admins.account`
+2. `teachers.account`
+3. `students.email`
+
+因此前端**不需要傳送 role**。
+
+**ps：** 若同一字串同時存在於多張表（例如 `admins` 與 `teachers` 有相同 account），後端依上述順序**先查到的表**判定身分；找到即停止，不再往下查。
+
+#### Request
+
+```json
+{
+  "account": "teacher@school.edu.tw",
+  "password": "Password123!"
+}
+```
+
+學生登入時 `account` 填學號即可，不必填完整信箱：
+
+```json
+{
+  "account": "1411131000",
+  "password": "Password123!"
+}
+```
+
+後端會組成 `s1411131000@nutc.edu.tw` 去對 `students.email`。成功時 `user.account` 仍回傳完整信箱。
+
+| 狀態碼 | 說明 |
+|--------|------|
+| 200 | 登入成功 |
+| 401 | 帳號不存在或密碼錯誤 |
+| 403 | 帳號尚未開通 |
+
+#### 成功回應 200
+
+```json
+{
+  "token": "...",
+  "token_type": "Bearer",
+  "user": {
+    "id": 1,
+    "account": "teacher@school.edu.tw",
+    "name": "許老師",
+    "role": "teacher"
+  }
+}
+```
+
+#### 登入失敗 401
+
+```json
+{
+  "statusCode": 401,
+  "message": "帳號或密碼錯誤"
+}
+```
+
+HTTP Status 與 body 中的 `statusCode` 一致。
+
+---
+
+## 忘記密碼
+
+未登入即可打。後端產生 12 碼隨機新密碼、寫入帳號（hashed），再寄到校園信箱。管理員沒有這支 API。
+
+欄位不要跟登入的 `account` 混用：學生用 `student_no`，教師用 `teacher_account`。
+
+開發環境預設 `MAIL_MAILER=log`，信件會寫進 `storage/logs/laravel.log`，不會真的寄出。正式環境請改 SMTP。
+
+### POST `/api/v1/auth/student/forgot-password`
+
+功能：重設學生密碼並寄信到 `students.email`。
+
+Request：
+
+```json
+{
+  "student_no": "1411131000"
+}
+```
+
+學號不必加 `s`。若前端送 `s1411131000` 也可以（後端會組成校園信箱再查）。
+
+| 狀態碼 | 說明 |
+|--------|------|
+| 200 | 已重設並寄信 |
+| 422 | 沒帶 `student_no`，或學號不存在 |
+
+#### 成功回應 200
+
+```json
+{
+  "message": "已寄送新密碼至學生校園信箱"
+}
+```
+
+### POST `/api/v1/auth/teacher/forgot-password`
+
+功能：重設教師密碼並寄信到 `teachers.email`。帳號對 `teachers.account`。
+
+Request：
+
+```json
+{
+  "teacher_account": "teacher@school.edu.tw"
+}
+```
+
+| 狀態碼 | 說明 |
+|--------|------|
+| 200 | 已重設並寄信 |
+| 422 | 沒帶 `teacher_account`，或帳號不存在 |
+
+#### 成功回應 200
+
+```json
+{
+  "message": "已寄送新密碼至教師校園信箱"
+}
+```
+
+---
+
+## 登出
+
+### POST `/api/v1/auth/logout`
+
+功能：登出目前登入的使用者，撤銷目前的 Sanctum Token。
+
+需要：
+
+```text
+Authorization: Bearer {token}
+```
+
+| 狀態碼 | 說明 |
+|--------|------|
+| 200 | 登出成功 |
+| 401 | 未帶 Token 或 Token 無效 |
+
+#### 成功回應 200
+
+```json
+{
+  "message": "登出成功"
+}
+```
+
+---
+
+## 教師帳號申請
+
+```text
+POST /teacher-applications
+GET  /teacher-applications
+POST /teacher-applications/{id}/approve
+```
+
+### POST `/api/v1/teacher-applications`
+
+功能：公開提交教師帳號申請。**不需要登入**。
+
+Request：
+
+```json
+{
+  "name": "陳老師",
+  "email": "chen@example.com",
+  "account": "teacher_chen",
+  "reason": "申請教師帳號"
+}
+```
+
+| 欄位 | 必填 | 說明 |
+|------|------|------|
+| name | ✓ | 教師姓名 |
+| email | ✓ | 信箱（不可與已申請或已註冊教師重複） |
+| account | ✓ | 教師自訂帳號（不可與已申請或已註冊教師重複） |
+| reason | ✓ | 申請理由 |
+
+成功回應 **201**：
+
+```json
+{
+  "message": "Teacher application submitted successfully.",
+  "data": {
+    "id": 1,
+    "name": "陳老師",
+    "email": "chen@example.com",
+    "account": "teacher_chen",
+    "reason": "申請教師帳號",
+    "status": "pending"
+  }
+}
+```
+
+| 狀態碼 | 說明 |
+|--------|------|
+| 201 | 申請成功，狀態為 `pending` |
+| 422 | 欄位錯誤，或帳號／信箱已被申請／已是教師 |
+
+### GET `/api/v1/teacher-applications`
+
+功能：管理員取得申請列表（使用者管理頁「教師申請核准」）。
+
+需要：
+
+```text
+Authorization: Bearer {token}
+```
+
+僅限管理員。可加 `?status=pending` 只看待審核。
+成功回應 **200**：
+
+```json
+{
+  "applications": [
+    {
+      "id": 1,
+      "name": "陳老師",
+      "email": "chen@example.com",
+      "account": "teacher_chen",
+      "reason": "申請教師帳號",
+      "status": "pending"
+    }
+  ]
+}
+```
+
+### POST `/api/v1/teacher-applications/{id}/approve`
+
+功能：管理員核准申請。核准後建立 `teachers` 帳號，申請 `status` 改為 `approved`，並寄發開通通知信（含帳號與初始密碼）。
+
+需要管理員 Token。
+
+**帳號：** 使用教師申請時填寫之自訂帳號 `account`。
+
+**密碼：** 系統隨機生成 12 碼，以 `password => hashed` cast 存進 `teachers.password`，**明文只在此次回應與信件發送一次**。
+
+成功回應 **200**：
+
+```json
+{
+  "message": "Teacher application approved.",
+  "data": {
+    "tid": 3,
+    "name": "陳老師",
+    "email": "chen@example.com",
+    "account": "teacher_chen",
+    "password": "xY8zR9wP2qTs"
+  }
+}
+```
+
+`tid` 為新建 `teachers.id`。
+
+| 狀態碼 | 說明 |
+|--------|------|
+| 200 | 核准成功 |
+| 401 | 未登入 |
+| 403 | 非管理員 |
+| 404 | 申請不存在 |
+| 422 | 已處理完畢，或無法建立帳號 |
+
+---
+
+## 學生帳號申請
+
+```text
+GET  /teacher/student-applications/template
+POST /teacher/student-applications
+POST /teacher/courses/{courseId}/student-applications
+DELETE /teacher/courses/{courseId}/student-applications/{itemId}
+GET  /courses
+GET  /teacher/courses/{courseId}/student-applications
+GET  /student-applications
+POST /student-applications/approve
+POST /teacher/student-applications/{id}/approve
+```
+
+流程：教師選課程並上傳 Excel 名冊，或單筆／多筆補學生（**只要學號**，姓名選填；班級取自該門課）→ **一律待管理員審核**（即使學生已有帳號，加到新課也要審）。開通時：沒帳號就建 `students`（姓名空白時先用學號）並寫 `enrollments`；已有帳號只寫選課（並帶出帳號姓名）。可依來源課整班開通。本次若有新建帳號，會寄 `StudentAccountCreated` 給該課教師（本文不含明文密碼，附件為本次新建學生的姓名／學號／初始密碼 Excel）；沒有新建則不寄信、不附空檔。
+
+### GET `/api/v1/teacher/student-applications/template`
+
+功能：教師下載學生名冊 Excel 範本。需要教師 Token。
+
+Excel 列規則：第 1 列說明、第 2 列欄位（`學號`、`姓名`）、第 3 列範本示範整列不讀、第 4 列起才是名冊。多出來的欄（性別、備註等）會忽略。
+
+### POST `/api/v1/teacher/student-applications`
+
+功能：教師上傳 Excel 送出學生帳號申請名冊。**不需要提供學生信箱與班級**。班級由 `courses.class_name` 寫入申請單。
+
+Request（`multipart/form-data`）：
+
+| 欄位 | 必填 | 說明 |
+|------|------|------|
+| tid | ✓ | 教師 ID（FK → teachers.id） |
+| course_id | ✓ | 課程 ID（FK → courses.id，必須為該教師所開課程） |
+| file | ✓ | xlsx 名冊（學號、姓名） |
+
+成功回應 **201**：
+
+```json
+{
+  "message": "Student account application submitted successfully.",
+  "data": {
+    "id": 1,
+    "tid": 2,
+    "course_id": 1,
+    "class_name": "資應二甲",
+    "status": "pending"
+  }
+}
+```
+
+課程尚未填班級、只上傳範本示範列、檔內學號重複、該課已有相同學號、或一次超過 100 人會 **422**。
+
+### POST `/api/v1/teacher/courses/{courseId}/student-applications`
+
+功能：該課教師補學生，可一次多筆。需要教師 Token。**只要學號**（姓名選填），班級取自課程，送出後一律待開通（已有帳號會帶出姓名，但仍須管理員審核後才加選課）。一次最多 100 人。
+
+Request（JSON，建議）：
+
+```json
+{
+  "students": [
+    { "student_no": "1411131001" },
+    { "student_no": "1411131002", "name": "陳小華" }
+  ]
+}
+```
+
+也可只傳一筆：`student_no`（`name` 選填；不必加 `s`）。
+
+成功回應 **201**，格式與上傳 Excel 相同。該課已有相同學號、學號重複、超過 100 人、或不是自己的課會 **422** / **404**。
+
+### DELETE `/api/v1/teacher/courses/{courseId}/student-applications/{itemId}`
+
+功能：該課教師從名冊移除一位學生。需要教師 Token。`itemId` 為名冊列的 `id`（`GET` 名冊回傳的 `items[].id`）。
+
+- 待開通：刪掉申請列
+- 已開通：取消這門課的選課，**帳號保留**（其他課不受影響）
+- 移除後同一學號可再加回這門課
+
+成功 **200**：`{ "message": "已從課程移除" }`。不是自己的課、或這列不屬於這門課 **404**。
+
+### GET `/api/v1/courses`
+
+管理員開通頁的課程清單。需要管理員 Token。每筆含 `name`、`class_name`、`semester`、`teacher_id`、`teacher_name`。開通區以「一班一列」列出待開通來源（含申請教師），再選目標課程。
+
+### GET `/api/v1/teacher/courses/{courseId}/student-applications`
+
+該課教師取得這門課的名冊（每人一列）。預設回待開通＋已開通，依學號由小到大。可加 `?status=pending` 或 `?status=approved`。別人的課 **404**。
+
+### GET `/api/v1/student-applications`
+
+管理員取得待開通／申請明細（每人一列）。需要管理員 Token。可加 `?course_id=`、`?status=pending`、`?q=`（學號或姓名）。
+
+成功回應 **200**：
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "student_no": "1411131001",
+      "name": "李小華",
+      "email": "s1411131001@nutc.edu.tw",
+      "application_id": 1,
+      "class_name": "資應二甲",
+      "status": "pending",
+      "course_id": 1,
+      "provider_teacher_name": "陳老師",
+      "has_account": false
+    }
+  ]
+}
+```
+
+### POST `/api/v1/student-applications/approve`
+
+功能：管理員開通勾選的學生，並寫入**一門或多門**課程選課。需要管理員 Token。
+
+Request：
+
+```json
+{
+  "source_course_id": 1,
+  "course_ids": [1, 2]
+}
+```
+
+| 欄位 | 必填 | 說明 |
+|------|------|------|
+| source_course_id | 與 item_ids 二擇一 | 申請來源課程；後端自動抓該課全部 pending 學生 |
+| course_ids | ✓ | 欲開通（選課）的課程 ID 陣列，至少 1 門 |
+| item_ids | 與 source_course_id 二擇一 | 舊欄位：手動指定明細 ID |
+| course_id | 否 | 舊欄位；可轉成 `course_ids`／`source_course_id` |
+
+成功回應 **200**：
+
+```json
+{
+  "message": "已開通課程。",
+  "activated_count": 2,
+  "created_count": 2,
+  "enrolled_count": 4
+}
+```
+
+`activated_count`＝處理的學生數；`created_count`＝新建帳號數；`enrolled_count`＝**新建的選課筆數**（學生 × 課程，已選過的課不重算）。
+
+非管理員 **403**。未登入 **401**。
+
+本次有新建帳號才寄信給申請該學生的教師。信件本文不列學生密碼；附件 `學生帳號名單.xlsx` 依 `public/templates/student_account_template.xlsx`（第 1 列說明、第 2 列姓名／帳號／密碼、第 3 列起為本次新建學生）。工作表保護密碼為老師登入帳號 `teachers.account`。沒有新建帳號則不寄、不附空檔。
+
+### POST `/api/v1/teacher/student-applications/{id}/approve`
+
+功能：管理員將整張申請單一次全數審核開通。需要管理員 Token。寄信規則與勾選開通相同。
+
+成功回應 **200**：
+
+```json
+{
+  "message": "Student account application approved.",
+  "data": {
+    "application_id": 1,
+    "activated_count": 2
+  }
+}
+```
+
+非管理員 **403**。未登入 **401**。
+
+### GET `/api/v1/stats`
+
+管理員取得老師、學生、課程數量。需要管理員 Token。
+
+`semester_course_count` 以資料裡最新的 `semester` 計算（例如 `115-1`）。
+
+成功回應 **200**：
+
+```json
+{
+  "teacher_count": 2,
+  "student_count": 1,
+  "course_count": 2,
+  "semester_course_count": 2,
+  "semester": "115-1"
+}
+```
+
+非管理員 **403**。未登入 **401**。
+
+登入時學生只填學號（例如 `1411131000`，不必加 `s`），後端對應學校信箱 `s{學號}@nutc.edu.tw`（`students.email`）。
+
+---
+
+## 目前使用者
+
+### GET `/api/v1/auth/me`
+
+功能：依 Token 查詢目前登入的使用者資料。教師／管理員為 id、account、name、role；學生另含 `student_no`、`class_name`。
+
+需要：
+
+```text
+Authorization: Bearer {token}
+```
+
+| 狀態碼 | 說明 |
+|--------|------|
+| 200 | 成功 |
+| 401 | 未帶 Token 或 Token 無效 |
+
+#### 成功回應 200
+
+```json
+{
+  "user": {
+    "id": 1,
+    "account": "teacher@school.edu.tw",
+    "name": "許老師",
+    "role": "teacher"
+  }
+}
+```
+
+學生：
+
+```json
+{
+  "user": {
+    "id": 1,
+    "account": "s1411131000@nutc.edu.tw",
+    "student_no": "1411131000",
+    "name": "王小明",
+    "class_name": "資應二甲",
+    "role": "student"
+  }
+}
+```
+
+---
+
+## Dashboard
+
+### GET `/api/v1/dashboard`
+
+功能：取得目前登入使用者的基本資料及相關課程。
+
+需要：
+
+```text
+Authorization: Bearer {token}
+```
+
+| 狀態碼 | 說明 |
+|--------|------|
+| 200 | 成功 |
+| 401 | 未帶 Token 或 Token 無效 |
+
+依角色回傳不同內容：
+
+| 角色 | 回傳 | 資料來源 |
+|------|------|----------|
+| 教師 | `user` + `courses` | `courses.teacher_id = 目前教師 id`（課程含 `class_name`） |
+| 學生 | `user` + `courses` | `enrollments` 關聯（student_id ↔ course_id，課程含 `class_name`） |
+| 管理員 | `user` + `pending_count` | `pending_count` 目前固定為 0 |
+
+---
+
+## 教師課程管理
+
+以下 API 僅限教師使用。
+
+需要：
+
+```text
+Authorization: Bearer {token}
+```
+
+| 狀態碼 | 說明 |
+|--------|------|
+| 200 / 201 | 成功 |
+| 401 | 未登入 |
+| 403 | 非教師角色 |
+| 404 | 課程不存在或不屬於目前教師 |
+| 422 | Request 欄位驗證失敗 |
+
+### GET `/api/v1/teacher/courses`
+
+功能：取得目前教師自己的課程列表。依開課學期由新到舊排序。每筆含 `class_name`；畫面上可顯示成「課程名稱 (班級)」。
+
+### POST `/api/v1/teacher/courses`
+
+功能：建立課程。
+
+Request：
+
+```json
+{
+  "name": "PHP 程式設計",
+  "description": "從基礎語法到實作練習",
+  "semester": "115-1",
+  "class_name": "資應二甲"
+}
+```
+
+`description` 為必填，最多 2000 字。  
+`class_name` 為必填（開課班級）。  
+`teacher_id` 不需要由前端傳送，後端會從登入 Token 判斷目前教師。
+
+成功回應 **201**。
+
+### GET `/api/v1/teacher/courses/{id}`
+
+功能：取得指定課程資料。只能查看自己的課程。
+
+### PUT `/api/v1/teacher/courses/{id}`
+
+功能：修改指定課程。只能修改自己的課程。
+
+Request：
+
+```json
+{
+  "name": "PHP 進階",
+  "description": "進階主題與專案實作",
+  "semester": "115-1",
+  "class_name": "資應二甲"
+}
+```
+
+`description` 為必填，最多 2000 字。  
+`class_name` 為必填。
+
+### DELETE `/api/v1/teacher/courses/{id}`
+
+功能：刪除指定課程。只能刪除自己的課程。
+
+成功回應 200：
+
+```json
+{
+  "message": "課程已刪除"
+}
+```
+
+---
+
+## 教師教材管理
+
+以下 API 除「下載 Excel 範本」外，僅限教師操作**自己課程**底下的教材。
+
+需要：
+
+```text
+Authorization: Bearer {token}
+```
+
+| 狀態碼 | 說明 |
+|--------|------|
+| 200 / 201 | 成功 |
+| 401 | 未登入 |
+| 403 | 非教師角色，或不是該課教師 |
+| 404 | 資料不存在或不屬於目前教師 |
+| 422 | Request 欄位驗證失敗 |
+
+### 教材匯入流程（權限）
+
+範本是系統給所有教師的固定檔，**不綁某一門課**。匯入直接寫正式教材，學生立刻看得到。
+
+| 功能 | API | 權限 |
+|------|-----|------|
+| 下載 Excel 範本 | `GET /api/v1/teacher/materials/template` | 教師 |
+| 匯入教材 | `POST /api/v1/teacher/courses/{courseId}/materials/import` | 該課教師 |
+| 教師圖譜樹 | `GET /api/v1/teacher/courses/{courseId}/tree` | 該課教師 |
+| 上傳編輯器圖片 | `POST /api/v1/teacher/upload-image` | 教師 |
+| 學生圖譜 | `GET /api/v1/student/courses/{courseId}/graph` | 修課學生 |
+
+流程（前端不要自己解析 Excel）：
+
+1. 上傳 xlsx → 後端寫入該課程的正式章／單元／知識卡。
+2. 該課程已有章節或知識卡時須再帶 `overwrite=true`（確認覆蓋）。新 Excel 沒出現的知識卡會硬刪（題目關聯一併拿掉）。
+3. 單張卡 PUT「儲存變更」立刻給學生看。圖譜用 tree／graph 一次撈整棵樹。
+
+Excel：一份檔對應一門課程。第 1 列欄位：`chapter_title`、`chapter_order`、`unit_title`、`unit_order`、`card_name`、`card_type`、`card_content`、`code_example`。第 2 列公版範例整列不讀，第 3 列起才是內容。任一格以 `ex：` 或 `ex:` 開頭的列也整列不讀。空白章節／單元沿用上一列。同課程、同名＋同 type 只建一張卡，可掛多個單元。`code_example` 存成知識卡 `example`。
+
+### 教材匯入範本
+
+檔案位置（專案內固定這一份，下載 API 直接讀這個檔）：
+
+```text
+public/templates/course_template.xlsx
+```
+
+老師下載後檔名會顯示為 `教材匯入範本.xlsx`。範本**沒有主題欄**。
+
+| Method | URL | 說明 |
+|--------|-----|------|
+| GET | `/api/v1/teacher/materials/template` | 下載 Excel 匯入範本 |
+
+任何已登入教師皆可下載。學生會得到 403。
+
+### 匯入、圖譜
+
+`multipart/form-data`：
+
+| 欄位 | 必填 | 說明 |
+|------|------|------|
+| file | 是 | `.xlsx` |
+| overwrite | 否 | 課程已有內容時必須為 true |
+
+副檔名必須是 `.xlsx`。
+
+| Method | URL | 說明 |
+|--------|-----|------|
+| POST | `/api/v1/teacher/courses/{courseId}/materials/import` | 後端解析 Excel，直接寫正式教材，回 `{ course }`（**201**） |
+| GET | `/api/v1/teacher/courses/{courseId}/tree` | 該課整棵樹，回 `{ course }` |
+| POST | `/api/v1/teacher/upload-image` | 編輯器圖片。`multipart` 欄位 `image`（圖檔，最大 5MB），回 `{ url }`（**201**；需 `php artisan storage:link`） |
+| GET | `/api/v1/student/courses/{courseId}/graph` | 修課學生圖譜，回 `{ graph }` |
+
+知識卡欄位：`title`（別名 `name`）、`type`、`content`、`example`（別名 `code_example`）、`sort_order`。章／單元另給 `title` 別名方便 vis-network。圖片實際檔在 `storage/app/public/editor_images/`，網址為 `/storage/editor_images/...`，寫進知識卡 `content` HTML，沒有獨立圖片欄。
+
+| 情況 | 狀態 |
+|------|------|
+| 只上傳範本示範列 | 422 |
+| 課程已有教材但沒帶 overwrite | 422 |
+| 不是該課教師 | 404 |
+
+覆蓋時：該課程章／單元換成這份 Excel。同名＋同 type 的知識卡會沿用並更新；新 Excel 沒出現的知識卡會硬刪（含題目關聯）。
+
+### 學生教材（已選課）
+
+學生看正式教材。未選課回 **404**。非學生打這些路由 **403**。
+
+| Method | URL | 說明 |
+|--------|-----|------|
+| GET | `/api/v1/student/courses/{courseId}/graph` | 一次回整棵樹給圖譜 |
+| GET | `/api/v1/student/courses/{courseId}/chapters` | 列出該課章節 |
+| GET | `/api/v1/student/chapters/{chapterId}/units` | 列出該章節單元 |
+| GET | `/api/v1/student/units/{unitId}/knowledge-cards` | 列出該單元知識卡 |
+
+### 教師出題
+
+題目掛在課程，再透過知識卡對教材。一題可掛多張卡。實作批改由老師輸入 Bloom，沒有自動 AI 批改。
+
+| Method | URL | 說明 |
+|--------|-----|------|
+| GET | `/api/v1/teacher/blooms` | Bloom 對照（出題用 B11–B63） |
+| GET | `/api/v1/teacher/courses/{courseId}/knowledge-cards` | 該課知識點（依章節分組、去重；出題下拉） |
+| GET | `/api/v1/teacher/courses/{courseId}/questions` | 列出該課題目（含正解） |
+| POST | `/api/v1/teacher/courses/{courseId}/questions` | 新增題目 |
+| GET | `/api/v1/teacher/questions/{questionId}` | 單題（含正解） |
+| PUT | `/api/v1/teacher/questions/{questionId}` | 整題覆寫（含子項與知識卡） |
+| DELETE | `/api/v1/teacher/questions/{questionId}` | 刪題（含作答紀錄一併刪除） |
+
+不是該課教師 **404**。非教師 **403**。知識卡必須屬於此課，否則 **422**。
+
+列表回傳 `questions`；單題 `question` 底下是 `options`、`sub_answers`、`knowledge_card_ids` / `knowledge_cards`。
+
+共通 Request：
+
+```json
+{
+  "title": "php註解",
+  "type": "choice",
+  "question_content": "PHP網頁的多行註解是用哪一個符號？",
+  "bloom_id": "B11",
+  "description": "可空",
+  "show_example": false,
+  "knowledge_card_ids": [4, 11]
+}
+```
+
+`type`：`choice`（選擇）、`true_false`（是非）、`fill`（填空）、`debug`（除錯）、`interpret`（解讀）、`coding`（實作）。`bloom_id` 用 `B11`–`B63`（大小寫皆可，`b11`＝`B11`）。舊碼 `B1`–`B6` 僅相容已存在的題。
+
+選擇／是非另帶 `options`（是非剛好 2 個，必須剛好一個 `is_answer: true`）。正解自動 `solo=2`，其餘 `solo=1`，前端不用傳 `solo`。
+
+```json
+{
+  "options": [
+    { "title": "/* */", "is_answer": true },
+    { "title": "//", "is_answer": false }
+  ]
+}
+```
+
+填空／除錯／解讀另帶 `sub_answers`。填空 `sub_id` 對題幹 `（1）（2）`。除錯：題幹放完整有錯程式，`sub_answers` **只填有錯的行**（`sub_id`＝行號、`answer`＝修正後那一行、`description`＝錯誤原因），不要把每一行都建成答案。解讀：提問方式與程式碼分開存（中間 `<!--code-stem-->`），`sub_answers` 為預期輸出（`answer` 答案、`description` 解釋；解釋交卷後才給學生看）。可多個小題。
+
+```json
+{
+  "sub_answers": [
+    { "sub_id": 1, "answer": "define" },
+    { "sub_id": 2, "answer": "PI" }
+  ]
+}
+```
+
+除錯例：題幹為 `<?php` / `$name = "Tom"` / `echo $name;`，只存第 2 行正解：
+
+```json
+{
+  "type": "debug",
+  "question_content": "請找出錯誤並修正。\n<?php\n$name = \"Tom\"\necho $name;",
+  "sub_answers": [
+    { "sub_id": 2, "answer": "$name = \"Tom\";", "description": "PHP 敘述結尾缺少分號 ;" }
+  ]
+}
+```
+
+解讀例：提問方式 + 程式碼，答案是執行結果：
+
+```json
+{
+  "type": "interpret",
+  "question_content": "請解讀以下 PHP 程式，說明最後會輸出什麼。\n<!--code-stem-->\n$a = 5;\n$b = 10;\nif ($a < $b) {\n    echo \"A\";\n}",
+  "sub_answers": [
+    { "sub_id": 1, "answer": "A", "description": "$a 為 5、$b 為 10，條件成立所以輸出 A。" }
+  ]
+}
+```
+
+```json
+{
+  "type": "coding",
+  "question_content": "請使用 PHP 撰寫程式，將兩個數字相加後輸出結果。",
+  "starter_code": "$a = 10;\n$b = 20;",
+  "expected_output": "30",
+  "reference_answer": "$a = 10;\n$b = 20;\n$result = $a + $b;\necho $result;"
+}
+```
+
+實作不自動比對。`starter_code` 給學生當已知條件；`expected_output`、`reference_answer` 只回老師（出題與作答紀錄）。AI 批改仍不接，欄位也不存。學生交程式後，老師覆核時輸入 Bloom 編碼。
+
+學生取題依**課程**。未選課 **404**。非學生 **403**。取題不回正解、也不回選項 `description`（說明在交卷後以 `explanation` 回傳）。交卷紀錄不回 `solo`（SOLO 只給老師看）。實作題取題可回 `starter_code`，不回 `expected_output`、`reference_answer`。知識卡 `example` 預設不給學生；老師出題時設 `show_example: true` 才以 `examples` 回傳。
+
+| Method | URL | 說明 |
+|--------|-----|------|
+| GET | `/api/v1/student/courses/{courseId}/questions` | 列出該課題目（可加 `knowledge_card_id`） |
+| GET | `/api/v1/student/questions/{questionId}` | 取得單題 |
+| POST | `/api/v1/student/questions/{questionId}/submit` | 交卷 |
+| GET | `/api/v1/student/courses/{courseId}/question-records` | 列出自己在該課的作答紀錄（可加 `question_id`） |
+| GET | `/api/v1/student/question-records/{recordId}` | 查看自己的單筆作答紀錄 |
+
+選擇／是非：`{ "option_id": 1 }`  
+填空／解讀：`{ "answers": { "1": "define", "2": "PI" } }`  
+除錯：`{ "code_line": 2, "answer": "$name = \"Tom\";" }`（多個錯誤用 `answers`；取題只回 `debug_error_count`，不回錯誤行號）  
+實作：`{ "code": "..." }`，`system_status` 為 `pending`，等老師輸入 `bloom_id`。
+
+學生作答紀錄只回自己的資料，不含 `expected_output`／`reference_answer`。成功 **200**：`{ "records": [ ... ] }` 或 `{ "record": { ... } }`，欄位含題目標題／類型、`result`、`solo`、`bloom_id`、`system_status`、`teacher_status`、`subs`、`created_at`。未修該課或非自己的紀錄 **404**。
+
+### 教師覆核作答
+
+實作題：學生交程式後，老師選 Bloom（`{ "bloom_id": "B42" }`，大小寫皆可）。後端比對第一碼（Bloom 1–6）：老師給的 ≥ 出題 Bloom → `solo=2` 對，否則 `solo=1` 錯。只能看自己課程的紀錄，非該課教師 **404**。
+
+| Method | URL | 說明 |
+|--------|-----|------|
+| GET | `/api/v1/teacher/courses/{courseId}/question-records` | 列出該課學生作答（`records`，含子項 `subs`） |
+| PUT | `/api/v1/teacher/question-records/{recordId}` | 實作：`bloom_id`；其餘：`solo` 1 錯／2 對 |
+
+### chapters 章節
+
+這段是**正式教材**的鑽層 API（`MaterialService`）。Excel 匯入會直接寫正式表；單張卡 PUT 也是改正式資料。
+
+| Method | URL | 說明 |
+|--------|-----|------|
+| GET | `/api/v1/teacher/courses/{courseId}/chapters` | 列出該課程的章節 |
+| POST | `/api/v1/teacher/courses/{courseId}/chapters` | 新增章節 |
+| PUT | `/api/v1/teacher/chapters/{chapterId}` | 修改章節 |
+| DELETE | `/api/v1/teacher/chapters/{chapterId}` | 刪除章節（底下單元／知識卡硬刪；題目關聯 cascade） |
+
+Request（新增／修改）：
+
+```json
+{
+  "name": "第一章 PHP 簡介",
+  "sort_order": 1
+}
+```
+
+`sort_order` 選填；不傳則自動接在最後（`max + 1`）。同一課程內章節的 `sort_order` 不可重複；重複回 **422**：`sort_order 已存在`。更新時維持原值不算重複。
+
+列表／單筆會含 `item_count`（底下單元數量）以及 `created_at`、`updated_at`。
+
+### units 單元
+
+| Method | URL | 說明 |
+|--------|-----|------|
+| GET | `/api/v1/teacher/chapters/{chapterId}/units` | 列出該章節的單元 |
+| POST | `/api/v1/teacher/chapters/{chapterId}/units` | 新增單元 |
+| PUT | `/api/v1/teacher/units/{unitId}` | 修改單元 |
+| DELETE | `/api/v1/teacher/units/{unitId}` | 刪除單元（底下知識卡硬刪；仍掛其他單元者只脫關聯） |
+
+Request 同章節，欄位為 `name`、`sort_order`。`item_count` 為底下知識卡數量。同一章節內單元的 `sort_order` 不可重複；不同章節可以同號。
+
+### knowledge_cards 知識卡
+
+| Method | URL | 說明 |
+|--------|-----|------|
+| GET | `/api/v1/teacher/courses/{courseId}/knowledge-cards` | 該課出題用知識點（依章節去重） |
+| GET | `/api/v1/teacher/units/{unitId}/knowledge-cards` | 列出該單元的知識卡 |
+| POST | `/api/v1/teacher/units/{unitId}/knowledge-cards` | 新增知識卡 |
+| PUT | `/api/v1/teacher/knowledge-cards/{cardId}` | 修改知識卡 |
+| DELETE | `/api/v1/teacher/knowledge-cards/{cardId}` | 刪除知識卡（硬刪；題目關聯 cascade） |
+
+Request（新增／修改）：
+
+```json
+{
+  "title": "變數",
+  "type": "keyword",
+  "content": "變數是用來儲存資料的容器，PHP 使用 $ 符號宣告變數。",
+  "example": "$name = \"PHP\";",
+  "sort_order": 1
+}
+```
+
+`title`、`content` 必填，`type`、`example` 選填（`type` 預設 `keyword`）。也接受 `name`、`code_example` 別名。畫面上一層用 `name`，知識卡請用 `title`。`sort_order` 選填；不傳則接在該單元最後。同一單元內知識卡的 `sort_order` 不可重複。
+
+成功建立為 **201**。刪除成功 200：
+
+```json
+{
+  "message": "知識卡已刪除"
+}
+```
+
+刪除知識卡會一併拿掉 `question_knowledge_cards` 關聯；題目本體保留。刪章節／單元同理：該段教材硬刪，不再留下「脫離樹」的孤兒知識卡。
+
+---
+
+## 權限
+
+| 使用者 | 登入 | Dashboard | 教師申請（送出） | 教師申請（列表／核准） | 學生申請（送出） | 學生申請（開通） | 教師課程管理 | 教師教材管理 |
+|--------|------|-----------|------------------|------------------------|------------------|------------------|--------------|--------------|
+| 未登入 | — | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| 管理員 | ✓ | ✓ | — | ✓ | ✗ | ✓ | ✗ | ✗ |
+| 教師 | ✓ | ✓ | — | ✗ | ✓ | ✗ | ✓ | ✓ |
+| 學生 | ✓ | ✓ | — | ✗ | ✗ | ✗ | ✗ | ✗ |
+
+教師只能管理自己建立的課程，無法查看、修改或刪除其他教師的課程（**404**）。  
+非教師存取 `/teacher/*` 回傳 **403**。  
+學生只能看自己有選課的課程教材（未選課 **404**）。匯入後立刻看得到。
+
+---
+
+## 測試帳號
+
+| 身分 | 帳號 | 密碼 |
+|------|------|------|
+| 管理員 | admin@nutc.edu.tw | Password123! |
+| 教師 | teacher@school.edu.tw | Password123! |
+| 教師 | teacher2@school.edu.tw | Password123! |
+| 學生 | 1411131000 | Password123! |
+
+Seeder 已為 `teacher2`（陳老師）建立兩門「網際系統設計」（班級分別為資應、資管），並讓王小明選修資應那門。
+
+---
+
+## 安裝與執行
+
+開發環境使用 MySQL。請先確認 MySQL 已啟動，並建立資料庫 `php_education`。
+
+```bash
+composer install
+copy .env.example .env
+php artisan key:generate
+```
+
+接著編輯 `.env` 的資料庫帳密（`DB_USERNAME`、`DB_PASSWORD`），再執行：
+
+```bash
+php artisan migrate
+php artisan storage:link
+php artisan serve
+```
+
+測試帳號見上方。
+
+API 網址：
+
+```text
+http://127.0.0.1:8000
+```
+
+前端若開在 `http://localhost:9000`，對這個網址打 API 即可。

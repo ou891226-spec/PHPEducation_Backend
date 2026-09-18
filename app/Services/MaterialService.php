@@ -1,0 +1,478 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Chapter;
+use App\Models\Course;
+use App\Models\KnowledgeCard;
+use App\Models\Teacher;
+use App\Models\Unit;
+use App\Support\KnowledgeConcept;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+
+/**
+ * 正式教材鑽層 CRUD（chapters / units / knowledge_cards）。
+ */
+class MaterialService
+{
+    /**
+     * @return array<string, mixed>
+     */
+    public function courseTree(Teacher $teacher, int $courseId): array
+    {
+        $course = $this->ownedCourse($teacher, $courseId);
+        $course->load([
+            'chapters.units.knowledgeCards' => fn ($query) => $query->orderBy('sort_order'),
+        ]);
+
+        return [
+            'id' => $course->id,
+            'name' => $course->name,
+            'chapters' => $this->formatChapters($course->chapters),
+        ];
+    }
+
+    public function listChapters(Teacher $teacher, int $courseId): array
+    {
+        $course = $this->ownedCourse($teacher, $courseId);
+
+        return $course->chapters()
+            ->withCount('units')
+            ->get()
+            ->map(fn (Chapter $chapter) => $this->formatNamedNode($chapter, (int) $chapter->units_count))
+            ->all();
+    }
+
+    public function createChapter(Teacher $teacher, int $courseId, array $data): array
+    {
+        $course = $this->ownedCourse($teacher, $courseId);
+        $siblings = Chapter::query()->where('course_id', $course->id);
+        $sortOrder = $this->resolveSortOrder($siblings, $data['sort_order'] ?? null);
+
+        $chapter = Chapter::query()->create([
+            'course_id' => $course->id,
+            'name' => $data['name'],
+            'sort_order' => $sortOrder,
+        ]);
+
+        return $this->formatNamedNode($chapter, 0);
+    }
+
+    public function updateChapter(Teacher $teacher, int $chapterId, array $data): array
+    {
+        $chapter = $this->ownedChapter($teacher, $chapterId);
+        $this->updateNamedNode(
+            $chapter,
+            $data,
+            Chapter::query()->where('course_id', $chapter->course_id),
+        );
+        $chapter = $chapter->fresh()->loadCount('units');
+
+        return $this->formatNamedNode($chapter, (int) $chapter->units_count);
+    }
+
+    public function deleteChapter(Teacher $teacher, int $chapterId): void
+    {
+        $chapter = $this->ownedChapter($teacher, $chapterId);
+
+        DB::transaction(function () use ($chapter): void {
+            $this->detachOrDeleteCardsInChapter($chapter);
+            $chapter->delete();
+        });
+    }
+
+    public function listUnits(Teacher $teacher, int $chapterId): array
+    {
+        $chapter = $this->ownedChapter($teacher, $chapterId);
+
+        return $chapter->units()
+            ->withCount('knowledgeCards')
+            ->get()
+            ->map(fn (Unit $unit) => $this->formatNamedNode($unit, (int) $unit->knowledge_cards_count))
+            ->all();
+    }
+
+    public function createUnit(Teacher $teacher, int $chapterId, array $data): array
+    {
+        $chapter = $this->ownedChapter($teacher, $chapterId);
+        $siblings = Unit::query()->where('chapter_id', $chapter->id);
+        $sortOrder = $this->resolveSortOrder($siblings, $data['sort_order'] ?? null);
+
+        $unit = Unit::query()->create([
+            'chapter_id' => $chapter->id,
+            'name' => $data['name'],
+            'sort_order' => $sortOrder,
+        ]);
+
+        return $this->formatNamedNode($unit, 0);
+    }
+
+    public function updateUnit(Teacher $teacher, int $unitId, array $data): array
+    {
+        $unit = $this->ownedUnit($teacher, $unitId);
+        $this->updateNamedNode(
+            $unit,
+            $data,
+            Unit::query()->where('chapter_id', $unit->chapter_id),
+        );
+        $unit = $unit->fresh()->loadCount('knowledgeCards');
+
+        return $this->formatNamedNode($unit, (int) $unit->knowledge_cards_count);
+    }
+
+    public function deleteUnit(Teacher $teacher, int $unitId): void
+    {
+        $unit = $this->ownedUnit($teacher, $unitId);
+
+        DB::transaction(function () use ($unit): void {
+            $this->detachOrDeleteCardsInUnit($unit);
+            $unit->delete();
+        });
+    }
+
+    public function listKnowledgeCards(Teacher $teacher, int $unitId): array
+    {
+        $unit = $this->ownedUnit($teacher, $unitId);
+
+        return $unit->knowledgeCards()
+            ->get()
+            ->map(fn (KnowledgeCard $card) => $this->formatCard($card))
+            ->all();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listKnowledgeCardsForCourse(Teacher $teacher, int $courseId): array
+    {
+        $course = $this->ownedCourse($teacher, $courseId);
+
+        $cardRelations = ['unit.chapter', 'unit.chapter.units', 'units.chapter', 'units.chapter.units', 'course'];
+
+        $fromTree = KnowledgeCard::query()
+            ->with($cardRelations)
+            ->where(function (Builder $query) use ($course): void {
+                $query->where('course_id', $course->id)
+                    ->orWhereHas(
+                        'unit.chapter',
+                        fn (Builder $chapters) => $chapters->where('course_id', $course->id)
+                    )->orWhereHas(
+                        'units.chapter',
+                        fn (Builder $chapters) => $chapters->where('course_id', $course->id)
+                    );
+            })
+            ->orderBy('id')
+            ->get();
+
+        $fromQuestions = KnowledgeCard::query()
+            ->with($cardRelations)
+            ->whereHas(
+                'questions',
+                fn (Builder $questions) => $questions->where('course_id', $course->id)
+            )
+            ->whereNotIn('id', $fromTree->modelKeys())
+            ->orderBy('id')
+            ->get();
+
+        $best = [];
+        foreach ($fromTree->concat($fromQuestions) as $card) {
+            $title = KnowledgeConcept::displayTitle($card);
+            if ($title === null) {
+                continue;
+            }
+
+            $unit = $card->primaryUnit();
+            $item = [
+                'id' => $card->id,
+                'title' => $title,
+                'example' => $card->example,
+                'unit_name' => $unit?->name,
+                'chapter_name' => $unit?->chapter?->name,
+                'practice' => KnowledgeConcept::isPracticeSection((string) $unit?->name),
+                'content_len' => mb_strlen((string) $card->content),
+            ];
+
+            if (! isset($best[$title])) {
+                $best[$title] = $item;
+
+                continue;
+            }
+
+            $newScore = $this->pickerCardScore($item);
+            $oldScore = $this->pickerCardScore($best[$title]);
+            if ($newScore > $oldScore || ($newScore === $oldScore && $item['id'] < $best[$title]['id'])) {
+                $best[$title] = $item;
+            }
+        }
+
+        return collect($best)
+            ->sortBy('title')
+            ->map(fn (array $item) => [
+                'id' => $item['id'],
+                'title' => $item['title'],
+                'example' => $item['example'],
+                'unit_name' => $item['unit_name'],
+                'chapter_name' => $item['chapter_name'],
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array{practice: bool, example: mixed, content_len: int}  $item
+     */
+    private function pickerCardScore(array $item): int
+    {
+        return ($item['practice'] ? 0 : 8)
+            + ($item['example'] ? 4 : 0)
+            + min(3, intdiv($item['content_len'], 40));
+    }
+
+    public function createKnowledgeCard(Teacher $teacher, int $unitId, array $data): array
+    {
+        $unit = $this->ownedUnit($teacher, $unitId);
+        $unit->loadMissing('chapter');
+        $siblings = KnowledgeCard::query()->where('unit_id', $unit->id);
+        $sortOrder = $this->resolveSortOrder($siblings, $data['sort_order'] ?? null);
+
+        $card = KnowledgeCard::query()->create([
+            'unit_id' => $unit->id,
+            'course_id' => $unit->chapter->course_id,
+            'title' => $data['title'],
+            'type' => $data['type'] ?? 'keyword',
+            'content' => $data['content'],
+            'example' => $data['example'] ?? null,
+            'sort_order' => $sortOrder,
+        ]);
+        $card->units()->syncWithoutDetaching([$unit->id]);
+
+        return $this->formatCard($card);
+    }
+
+    public function updateKnowledgeCard(Teacher $teacher, int $cardId, array $data): array
+    {
+        $card = $this->ownedCard($teacher, $cardId);
+
+        $payload = [
+            'title' => $data['title'],
+            'type' => $data['type'] ?? $card->type ?? 'keyword',
+            'content' => $data['content'],
+            'example' => $data['example'] ?? null,
+        ];
+
+        if (array_key_exists('sort_order', $data) && $data['sort_order'] !== null) {
+            $siblings = KnowledgeCard::query()->where('unit_id', $card->unit_id);
+            $this->assertUniqueSortOrder($siblings, (int) $data['sort_order'], (int) $card->id);
+            $payload['sort_order'] = (int) $data['sort_order'];
+        }
+
+        $card->update($payload);
+
+        return $this->formatCard($card->fresh());
+    }
+
+    public function deleteKnowledgeCard(Teacher $teacher, int $cardId): void
+    {
+        $this->ownedCard($teacher, $cardId)->delete();
+    }
+
+    public function ownedCourse(Teacher $teacher, int $courseId): Course
+    {
+        $course = Course::query()
+            ->where('teacher_id', $teacher->id)
+            ->where('id', $courseId)
+            ->first();
+
+        if ($course === null) {
+            throw new ModelNotFoundException();
+        }
+
+        return $course;
+    }
+
+    private function ownedChapter(Teacher $teacher, int $chapterId): Chapter
+    {
+        $chapter = Chapter::query()
+            ->whereKey($chapterId)
+            ->whereHas('course', fn (Builder $query) => $query->where('teacher_id', $teacher->id))
+            ->first();
+
+        if ($chapter === null) {
+            throw new ModelNotFoundException();
+        }
+
+        return $chapter;
+    }
+
+    private function ownedUnit(Teacher $teacher, int $unitId): Unit
+    {
+        $unit = Unit::query()
+            ->whereKey($unitId)
+            ->whereHas('chapter.course', fn (Builder $query) => $query->where('teacher_id', $teacher->id))
+            ->first();
+
+        if ($unit === null) {
+            throw new ModelNotFoundException();
+        }
+
+        return $unit;
+    }
+
+    private function ownedCard(Teacher $teacher, int $cardId): KnowledgeCard
+    {
+        $ownsCourse = fn (Builder $query) => $query->where('teacher_id', $teacher->id);
+
+        $card = KnowledgeCard::query()
+            ->whereKey($cardId)
+            ->where(function (Builder $query) use ($ownsCourse): void {
+                $query->whereHas('course', $ownsCourse)
+                    ->orWhereHas('unit.chapter.course', $ownsCourse)
+                    ->orWhereHas('units.chapter.course', $ownsCourse)
+                    ->orWhereHas('questions.course', $ownsCourse);
+            })
+            ->first();
+
+        if ($card === null) {
+            throw new ModelNotFoundException();
+        }
+
+        return $card;
+    }
+
+    private function detachOrDeleteCardsInChapter(Chapter $chapter): void
+    {
+        $chapter->loadMissing('units.knowledgeCards');
+        foreach ($chapter->units as $unit) {
+            $this->detachOrDeleteCardsInUnit($unit);
+        }
+    }
+
+    private function detachOrDeleteCardsInUnit(Unit $unit): void
+    {
+        $unit->loadMissing('knowledgeCards');
+        foreach ($unit->knowledgeCards as $card) {
+            $unit->knowledgeCards()->detach($card->id);
+            $remaining = $card->units()->count();
+
+            if ($remaining > 0) {
+                if ((int) $card->unit_id === (int) $unit->id) {
+                    $card->update(['unit_id' => $card->units()->orderBy('units.id')->value('units.id')]);
+                }
+                continue;
+            }
+
+            // 教材刪除＝真刪：題目關聯隨 knowledge_card cascade 一併拿掉
+            $card->delete();
+        }
+    }
+
+    private function nextSortOrder(Builder $query): int
+    {
+        return (int) $query->max('sort_order') + 1;
+    }
+
+    /**
+     * 沒傳 sort_order 就接在最後；有傳則同一父層不可重複。
+     */
+    private function resolveSortOrder(Builder $siblings, mixed $sortOrder): int
+    {
+        if ($sortOrder === null) {
+            return $this->nextSortOrder(clone $siblings);
+        }
+
+        $order = (int) $sortOrder;
+        $this->assertUniqueSortOrder($siblings, $order);
+
+        return $order;
+    }
+
+    private function assertUniqueSortOrder(Builder $siblings, int $sortOrder, ?int $ignoreId = null): void
+    {
+        $query = clone $siblings;
+        $query->where('sort_order', $sortOrder);
+
+        if ($ignoreId !== null) {
+            $query->whereKeyNot($ignoreId);
+        }
+
+        if ($query->exists()) {
+            throw ValidationException::withMessages([
+                'sort_order' => ['sort_order 已存在'],
+            ]);
+        }
+    }
+
+    private function updateNamedNode(Model $model, array $data, Builder $siblings): void
+    {
+        $payload = [
+            'name' => $data['name'],
+        ];
+
+        if (array_key_exists('sort_order', $data) && $data['sort_order'] !== null) {
+            $order = (int) $data['sort_order'];
+            $this->assertUniqueSortOrder($siblings, $order, (int) $model->getKey());
+            $payload['sort_order'] = $order;
+        }
+
+        $model->update($payload);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function formatNamedNode(Model $model, int $itemCount): array
+    {
+        return [
+            'id' => $model->getKey(),
+            'name' => $model->getAttribute('name'),
+            'sort_order' => $model->getAttribute('sort_order'),
+            'item_count' => $itemCount,
+            'created_at' => $model->getAttribute('created_at'),
+            'updated_at' => $model->getAttribute('updated_at'),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function formatCard(KnowledgeCard $card): array
+    {
+        return [
+            'id' => $card->id,
+            'title' => $card->title,
+            'name' => $card->title,
+            'type' => $card->type ?: 'keyword',
+            'content' => $card->content,
+            'example' => $card->example,
+            'code_example' => $card->example,
+            'sort_order' => $card->sort_order,
+            'created_at' => $card->created_at,
+            'updated_at' => $card->updated_at,
+        ];
+    }
+
+    /**
+     * @param  iterable<int, Chapter>  $chapters
+     * @return list<array<string, mixed>>
+     */
+    public function formatChapters(iterable $chapters): array
+    {
+        return collect($chapters)->map(fn (Chapter $chapter) => [
+            'id' => $chapter->id,
+            'name' => $chapter->name,
+            'title' => $chapter->name,
+            'sort_order' => $chapter->sort_order,
+            'units' => $chapter->units->map(fn (Unit $unit) => [
+                'id' => $unit->id,
+                'name' => $unit->name,
+                'title' => $unit->name,
+                'sort_order' => $unit->sort_order,
+                'knowledge_cards' => $unit->knowledgeCards->map(fn (KnowledgeCard $card) => $this->formatCard($card))->values()->all(),
+            ])->values()->all(),
+        ])->values()->all();
+    }
+}
