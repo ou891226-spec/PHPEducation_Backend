@@ -109,3 +109,12 @@ Route::prefix('v1')->group(function () {
     });
 });
 
+// CI/CD 測試路由，僅用於確認部署是否成功
+Route::get('/cicd-test', function () {
+    return response()->json([
+        'message' => 'CI/CD deployment works!',
+        'version' => 'v1.0.1',
+        'server_time' => now()->format('Y-m-d H:i:s'),
+        'timezone' => config('app.timezone'),
+    ]);
+});
