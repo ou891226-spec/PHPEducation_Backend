@@ -62,10 +62,12 @@ Route::prefix('v1')->group(function () {
             Route::get('materials/template', [MaterialTemplateController::class, 'download']);
             Route::post('upload-image', [EditorImageController::class, 'store']);
             Route::get('student-applications/template', [StudentRosterTemplateController::class, 'download']);
+            Route::get('students/lookup', [StudentAccountApplicationController::class, 'lookupStudent']);
             Route::post('courses/{courseId}/materials/import', [MaterialImportController::class, 'store']);
             Route::get('courses/{courseId}/tree', [MaterialGraphController::class, 'courseTree']);
             Route::get('courses/{courseId}/student-applications', [StudentAccountApplicationController::class, 'indexForCourse']);
             Route::post('courses/{courseId}/student-applications', [StudentAccountApplicationController::class, 'storeOneForCourse']);
+            Route::put('courses/{courseId}/student-applications/{itemId}', [StudentAccountApplicationController::class, 'updateForCourse']);
             Route::delete('courses/{courseId}/student-applications/{itemId}', [StudentAccountApplicationController::class, 'destroyForCourse']);
 
             Route::get('courses/{courseId}/knowledge-cards', [KnowledgeCardController::class, 'indexForCourse']);

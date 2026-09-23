@@ -20,8 +20,10 @@ class StudentMaterialService
         $course = $this->enrolledCourse($student, $courseId);
 
         return $course->chapters()
-            ->withCount('units')
+            ->withCount(['units as units_count' => fn (Builder $query) => $query->where('status', 'published')])
             ->get()
+            ->filter(fn (Chapter $chapter) => (int) $chapter->units_count > 0)
+            ->values()
             ->map(fn (Chapter $chapter) => $this->formatNamedNode($chapter, (int) $chapter->units_count))
             ->all();
     }
@@ -34,6 +36,7 @@ class StudentMaterialService
         $chapter = $this->enrolledChapter($student, $chapterId);
 
         return $chapter->units()
+            ->where('status', 'published')
             ->withCount('knowledgeCards')
             ->get()
             ->map(fn (Unit $unit) => $this->formatNamedNode($unit, (int) $unit->knowledge_cards_count))
@@ -45,7 +48,7 @@ class StudentMaterialService
      */
     public function listKnowledgeCards(Student $student, int $unitId): array
     {
-        $unit = $this->enrolledUnit($student, $unitId);
+        $unit = $this->enrolledPublishedUnit($student, $unitId);
 
         return $unit->knowledgeCards()
             ->get()
@@ -71,34 +74,40 @@ class StudentMaterialService
     {
         $course = $this->enrolledCourse($student, $courseId);
         $course->load([
+            'chapters.units' => fn ($query) => $query->where('status', 'published')->orderBy('sort_order'),
             'chapters.units.knowledgeCards' => fn ($query) => $query->orderBy('sort_order'),
         ]);
 
         return [
             'id' => $course->id,
             'name' => $course->name,
-            'chapters' => $course->chapters->map(fn (Chapter $chapter) => [
-                'id' => $chapter->id,
-                'name' => $chapter->name,
-                'title' => $chapter->name,
-                'sort_order' => $chapter->sort_order,
-                'units' => $chapter->units->map(fn (Unit $unit) => [
-                    'id' => $unit->id,
-                    'name' => $unit->name,
-                    'title' => $unit->name,
-                    'sort_order' => $unit->sort_order,
-                    'knowledge_cards' => $unit->knowledgeCards->map(fn (KnowledgeCard $card) => [
-                        'id' => $card->id,
-                        'title' => $card->title,
-                        'name' => $card->title,
-                        'type' => $card->type ?: 'keyword',
-                        'content' => $card->content,
-                        'example' => $card->example,
-                        'code_example' => $card->example,
-                        'sort_order' => $card->sort_order,
+            'chapters' => $course->chapters
+                ->map(fn (Chapter $chapter) => [
+                    'id' => $chapter->id,
+                    'name' => $chapter->name,
+                    'title' => $chapter->name,
+                    'sort_order' => $chapter->sort_order,
+                    'units' => $chapter->units->map(fn (Unit $unit) => [
+                        'id' => $unit->id,
+                        'name' => $unit->name,
+                        'title' => $unit->name,
+                        'sort_order' => $unit->sort_order,
+                        'status' => 'published',
+                        'knowledge_cards' => $unit->knowledgeCards->map(fn (KnowledgeCard $card) => [
+                            'id' => $card->id,
+                            'title' => $card->title,
+                            'name' => $card->title,
+                            'type' => $card->type ?: 'keyword',
+                            'content' => $card->content,
+                            'example' => $card->example,
+                            'code_example' => $card->example,
+                            'sort_order' => $card->sort_order,
+                        ])->values()->all(),
                     ])->values()->all(),
-                ])->values()->all(),
-            ])->values()->all(),
+                ])
+                ->filter(fn (array $chapter) => count($chapter['units']) > 0)
+                ->values()
+                ->all(),
         ];
     }
 
@@ -130,10 +139,11 @@ class StudentMaterialService
         return $chapter;
     }
 
-    private function enrolledUnit(Student $student, int $unitId): Unit
+    private function enrolledPublishedUnit(Student $student, int $unitId): Unit
     {
         $unit = Unit::query()
             ->whereKey($unitId)
+            ->where('status', 'published')
             ->whereHas('chapter.course.students', fn (Builder $query) => $query->where('students.id', $student->id))
             ->first();
 
@@ -149,7 +159,7 @@ class StudentMaterialService
      */
     private function formatNamedNode(\Illuminate\Database\Eloquent\Model $model, int $itemCount): array
     {
-        return [
+        $payload = [
             'id' => $model->getKey(),
             'name' => $model->getAttribute('name'),
             'sort_order' => $model->getAttribute('sort_order'),
@@ -157,5 +167,12 @@ class StudentMaterialService
             'created_at' => $model->getAttribute('created_at'),
             'updated_at' => $model->getAttribute('updated_at'),
         ];
+
+        if ($model instanceof Unit) {
+            $payload['status'] = $model->status === 'draft' ? 'draft' : 'published';
+            $payload['title'] = $model->getAttribute('name');
+        }
+
+        return $payload;
     }
 }

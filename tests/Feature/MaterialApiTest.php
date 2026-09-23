@@ -49,7 +49,8 @@ class MaterialApiTest extends TestCase
         ]);
 
         $unit->assertCreated()
-            ->assertJsonPath('unit.name', '變數');
+            ->assertJsonPath('unit.name', '變數')
+            ->assertJsonPath('unit.status', 'draft');
 
         $unitId = $unit->json('unit.id');
 
@@ -302,8 +303,114 @@ class MaterialApiTest extends TestCase
         return [$courseId, $chapterId, $linkedCardId, $unusedCardId, $question->id];
     }
 
+    public function test_teacher_can_toggle_unit_status_and_student_only_sees_published(): void
+    {
+        $token = $this->loginToken('teacher@school.edu.tw');
+
+        $courseId = $this->withToken($token)->postJson('/api/v1/teacher/courses', [
+            'name' => '草稿單元測試課',
+            'semester' => '115-1',
+            'class_name' => '資應',
+            'description' => '單元草稿測試',
+        ])->assertCreated()->json('course.id');
+
+        $chapterId = $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/chapters", [
+            'name' => '第一章',
+        ])->assertCreated()->json('chapter.id');
+
+        $draftUnitId = $this->withToken($token)->postJson("/api/v1/teacher/chapters/{$chapterId}/units", [
+            'name' => '草稿單元',
+        ])->assertCreated()->assertJsonPath('unit.status', 'draft')->json('unit.id');
+
+        $publishedUnitId = $this->withToken($token)->postJson("/api/v1/teacher/chapters/{$chapterId}/units", [
+            'name' => '開放單元',
+            'status' => 'published',
+        ])->assertCreated()->assertJsonPath('unit.status', 'published')->json('unit.id');
+
+        $this->withToken($token)
+            ->postJson("/api/v1/teacher/units/{$draftUnitId}/knowledge-cards", [
+                'title' => '草稿卡',
+                'content' => '學生不該看到',
+            ])
+            ->assertCreated();
+
+        $this->withToken($token)
+            ->postJson("/api/v1/teacher/units/{$publishedUnitId}/knowledge-cards", [
+                'title' => '開放卡',
+                'content' => '學生看得到',
+            ])
+            ->assertCreated();
+
+        $this->withToken($token)
+            ->getJson("/api/v1/teacher/courses/{$courseId}/tree")
+            ->assertOk()
+            ->assertJsonPath('course.chapters.0.units.0.status', 'draft')
+            ->assertJsonPath('course.chapters.0.units.1.status', 'published');
+
+        $student = \App\Models\Student::query()->where('student_no', '1411131000')->firstOrFail();
+        \App\Models\Enrollment::query()->firstOrCreate([
+            'student_id' => $student->id,
+            'course_id' => $courseId,
+        ]);
+
+        $studentToken = $this->loginToken('s1411131000');
+
+        $this->withToken($studentToken)
+            ->getJson("/api/v1/student/courses/{$courseId}/graph")
+            ->assertOk()
+            ->assertJsonCount(1, 'graph.chapters.0.units')
+            ->assertJsonPath('graph.chapters.0.units.0.name', '開放單元')
+            ->assertJsonPath('graph.chapters.0.units.0.status', 'published');
+
+        $this->withToken($studentToken)
+            ->getJson("/api/v1/student/chapters/{$chapterId}/units")
+            ->assertOk()
+            ->assertJsonCount(1, 'units')
+            ->assertJsonPath('units.0.name', '開放單元');
+
+        $this->withToken($studentToken)
+            ->getJson("/api/v1/student/units/{$draftUnitId}/knowledge-cards")
+            ->assertNotFound();
+
+        $token = $this->loginToken('teacher@school.edu.tw');
+
+        $this->withToken($token)
+            ->putJson("/api/v1/teacher/units/{$draftUnitId}", [
+                'name' => '草稿單元',
+                'status' => 'published',
+            ])
+            ->assertOk()
+            ->assertJsonPath('unit.status', 'published');
+
+        $studentToken = $this->loginToken('s1411131000');
+
+        $this->withToken($studentToken)
+            ->getJson("/api/v1/student/courses/{$courseId}/graph")
+            ->assertOk()
+            ->assertJsonCount(2, 'graph.chapters.0.units');
+
+        $token = $this->loginToken('teacher@school.edu.tw');
+
+        $this->withToken($token)
+            ->putJson("/api/v1/teacher/units/{$publishedUnitId}", [
+                'name' => '開放單元',
+                'status' => 'draft',
+            ])
+            ->assertOk()
+            ->assertJsonPath('unit.status', 'draft');
+
+        $studentToken = $this->loginToken('s1411131000');
+
+        $this->withToken($studentToken)
+            ->getJson("/api/v1/student/units/{$publishedUnitId}/knowledge-cards")
+            ->assertNotFound();
+    }
+
     private function loginToken(string $account): string
     {
+        $this->flushHeaders();
+        $this->app['auth']->forgetGuards();
+
         $response = $this->postJson('/api/v1/auth/login', [
             'account' => $account,
             'password' => self::PASSWORD,

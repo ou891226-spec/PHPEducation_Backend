@@ -12,6 +12,7 @@ class Unit extends Model
         'chapter_id',
         'name',
         'sort_order',
+        'status',
     ];
 
     protected function casts(): array
@@ -19,6 +20,11 @@ class Unit extends Model
         return [
             'sort_order' => 'integer',
         ];
+    }
+
+    public function isPublished(): bool
+    {
+        return $this->status !== 'draft';
     }
 
     public function chapter(): BelongsTo

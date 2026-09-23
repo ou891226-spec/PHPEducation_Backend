@@ -71,8 +71,9 @@ class StudentAccountService
      * 3. 提交的學號不可重複
      * 4. 該課程下不可有重複學號的申請中項目
      *
-     * 行為：一律寫入 pending，等管理員審核後才選課／建帳。
-     * 若學生已有帳號且未填姓名，自動帶入帳號姓名（仍待審核）。
+     * 行為：
+     * - 已有學生帳號：以帳號姓名為準寫入（前端可自動帶入），申請列直接 approved，並立刻寫入本課選課
+     * - 尚無帳號：申請列 pending，等管理員開通後才建帳／選課
      *
      * @param string $tid 授課教師 ID
      * @param array{course_id: int, students: list<array{student_no: string, name: string}>} $data 申請資料
@@ -130,29 +131,284 @@ class StudentAccountService
                 ->get()
                 ->keyBy('student_no');
 
+            $pendingCount = 0;
+            foreach ($data['students'] as $studentData) {
+                if (! $existingStudents->has($studentData['student_no'])) {
+                    $pendingCount++;
+                }
+            }
+
             $application = StudentApplications::create([
                 'tid' => $tid,
                 'course_id' => $course->id,
                 'class_name' => $className,
-                'status' => 'pending',
+                'status' => $pendingCount > 0 ? 'pending' : 'approved',
             ]);
 
             foreach ($data['students'] as $studentData) {
                 $existing = $existingStudents->get($studentData['student_no']);
                 $name = trim((string) ($studentData['name'] ?? ''));
-                if ($name === '' && $existing !== null) {
-                    $name = (string) $existing->name;
+                $email = filled($studentData['email'] ?? null)
+                    ? strtolower(trim((string) $studentData['email']))
+                    : Student::emailFromStudentNo((string) $studentData['student_no']);
+
+                if ($existing !== null) {
+                    // 已有帳號：以帳號姓名／信箱為準（前端可自動帶入；打錯也不擋）
+                    $accountName = trim((string) $existing->name);
+                    $name = $accountName !== '' ? $accountName : $name;
+                    $accountEmail = trim((string) $existing->email);
+                    $email = $accountEmail !== '' ? $accountEmail : $email;
+
+                    StudentApplicationItems::create([
+                        'application_id' => $application->id,
+                        'student_no' => $studentData['student_no'],
+                        'name' => $name,
+                        'email' => $email,
+                        'status' => 'approved',
+                    ]);
+
+                    Enrollment::query()->firstOrCreate([
+                        'student_id' => $existing->id,
+                        'course_id' => $course->id,
+                    ]);
+
+                    continue;
                 }
 
                 StudentApplicationItems::create([
                     'application_id' => $application->id,
                     'student_no' => $studentData['student_no'],
                     'name' => $name,
+                    'email' => $email,
                     'status' => 'pending',
                 ]);
             }
 
-            return $application;
+            return $application->fresh();
+        });
+    }
+
+    /**
+     * 依學號或姓名查詢是否已有學生帳號（供教師新增時自動帶入）。
+     *
+     * - student_no：精確比對，最多 1 筆
+     * - name：精確比對姓名；可能多人同名，回傳 matches
+     *
+     * @return array{
+     *   has_account: bool,
+     *   student_no: string|null,
+     *   name: string|null,
+     *   matches: list<array{student_no: string, name: string}>
+     * }
+     */
+    public function lookupStudent(?string $studentNo, ?string $name): array
+    {
+        $normalizedNo = $this->normalizeStudentNo((string) ($studentNo ?? ''));
+        $normalizedName = trim((string) ($name ?? ''));
+
+        if ($normalizedNo !== '') {
+            $student = Student::query()->where('student_no', $normalizedNo)->first();
+
+            if ($student === null) {
+                return [
+                    'has_account' => false,
+                    'student_no' => $normalizedNo,
+                    'name' => null,
+                    'matches' => [],
+                ];
+            }
+
+            return [
+                'has_account' => true,
+                'student_no' => $student->student_no,
+                'name' => $student->name,
+                'matches' => [[
+                    'student_no' => $student->student_no,
+                    'name' => $student->name,
+                ]],
+            ];
+        }
+
+        if ($normalizedName !== '') {
+            $students = Student::query()
+                ->where('name', $normalizedName)
+                ->orderBy('student_no')
+                ->get(['student_no', 'name']);
+
+            $matches = $students
+                ->map(fn (Student $student) => [
+                    'student_no' => $student->student_no,
+                    'name' => $student->name,
+                ])
+                ->values()
+                ->all();
+
+            if (count($matches) === 1) {
+                return [
+                    'has_account' => true,
+                    'student_no' => $matches[0]['student_no'],
+                    'name' => $matches[0]['name'],
+                    'matches' => $matches,
+                ];
+            }
+
+            return [
+                'has_account' => count($matches) > 0,
+                'student_no' => null,
+                'name' => $normalizedName,
+                'matches' => $matches,
+            ];
+        }
+
+        return [
+            'has_account' => false,
+            'student_no' => null,
+            'name' => null,
+            'matches' => [],
+        ];
+    }
+
+    /**
+     * @deprecated 改用 lookupStudent()
+     * @return array{has_account: bool, student_no: string, name: string|null}
+     */
+    public function lookupByStudentNo(string $studentNo): array
+    {
+        $result = $this->lookupStudent($studentNo, null);
+
+        return [
+            'has_account' => $result['has_account'],
+            'student_no' => (string) ($result['student_no'] ?? ''),
+            'name' => $result['name'],
+        ];
+    }
+
+    private function normalizeStudentNo(string $value): string
+    {
+        $studentNo = preg_replace('/\s+/u', '', $value) ?? '';
+        if (preg_match('/^[sS](\d+)$/', $studentNo, $matches) === 1) {
+            return $matches[1];
+        }
+
+        return $studentNo;
+    }
+
+    /**
+     * 授課教師修改課程名冊中的一位學生（學號、姓名、信箱）。
+     *
+     * - pending：更新申請列（含信箱）；開通時會沿用此信箱
+     * - approved 且已有帳號：可改學號／信箱；姓名以帳號為準，不覆寫正式帳號姓名
+     * - 有帶 email：寫入申請列（及帳號）；未帶且改了學號：同步為預設 s{學號}@nutc.edu.tw
+     *
+     * @param  array{student_no: string, name: string, email?: string|null}  $data
+     */
+    public function updateItemForCourse(Teacher $teacher, int $courseId, int $itemId, array $data): StudentApplicationItems
+    {
+        return DB::transaction(function () use ($teacher, $courseId, $itemId, $data) {
+            $course = Course::query()
+                ->whereKey($courseId)
+                ->where('teacher_id', $teacher->id)
+                ->firstOrFail();
+
+            $item = StudentApplicationItems::query()
+                ->with('application')
+                ->whereKey($itemId)
+                ->whereHas(
+                    'application',
+                    fn ($query) => $query->where('course_id', $course->id),
+                )
+                ->firstOrFail();
+
+            $newStudentNo = $data['student_no'];
+            $newName = trim($data['name']);
+            $emailProvided = array_key_exists('email', $data) && filled($data['email']);
+            $newEmail = $emailProvided
+                ? strtolower(trim((string) $data['email']))
+                : null;
+
+            $duplicateOnCourse = StudentApplicationItems::query()
+                ->where('student_no', $newStudentNo)
+                ->where('id', '!=', $item->id)
+                ->whereHas(
+                    'application',
+                    fn ($query) => $query->where('course_id', $course->id),
+                )
+                ->exists();
+
+            if ($duplicateOnCourse) {
+                throw ValidationException::withMessages([
+                    'student_no' => ['該課已有相同學號'],
+                ]);
+            }
+
+            $oldStudentNo = (string) $item->student_no;
+            $studentNoChanged = $oldStudentNo !== $newStudentNo;
+
+            $resolvedEmail = $newEmail;
+            if ($resolvedEmail === null) {
+                if ($studentNoChanged) {
+                    $resolvedEmail = Student::emailFromStudentNo($newStudentNo);
+                } elseif (filled($item->email)) {
+                    $resolvedEmail = strtolower(trim((string) $item->email));
+                } else {
+                    $resolvedEmail = Student::emailFromStudentNo($newStudentNo);
+                }
+            }
+
+            $student = null;
+            if ($item->status === 'approved') {
+                $student = Student::query()->where('student_no', $oldStudentNo)->first();
+            }
+
+            $emailConflictQuery = Student::query()->where('email', $resolvedEmail);
+            if ($student !== null) {
+                $emailConflictQuery->where('id', '!=', $student->id);
+            }
+
+            if ($emailConflictQuery->exists()) {
+                throw ValidationException::withMessages([
+                    'email' => ['此信箱已被其他學生帳號使用'],
+                ]);
+            }
+
+            if ($student !== null) {
+                $accountUpdates = [];
+
+                if ($studentNoChanged) {
+                    $conflict = Student::query()
+                        ->where('student_no', $newStudentNo)
+                        ->where('id', '!=', $student->id)
+                        ->exists();
+
+                    if ($conflict) {
+                        throw ValidationException::withMessages([
+                            'student_no' => ['此學號已有其他學生帳號，無法修改'],
+                        ]);
+                    }
+
+                    $accountUpdates['student_no'] = $newStudentNo;
+                }
+
+                if ($resolvedEmail !== (string) $student->email) {
+                    $accountUpdates['email'] = $resolvedEmail;
+                }
+
+                if ($accountUpdates !== []) {
+                    $student->update($accountUpdates);
+                }
+
+                // 已有正式帳號：名冊姓名跟帳號走，避免課程端打錯覆寫帳號
+                $accountName = trim((string) $student->fresh()->name);
+                $newName = $accountName !== '' ? $accountName : $newName;
+            }
+
+            $item->update([
+                'student_no' => $newStudentNo,
+                'name' => $newName,
+                'email' => $resolvedEmail,
+            ]);
+
+            return $item->fresh(['application.teacher']);
         });
     }
 
@@ -292,7 +548,11 @@ class StudentAccountService
                     ->first();
 
                 $plainPassword = null;
-                $email = Student::emailFromStudentNo($item->student_no);
+                // 申請列有信箱（新增／修改時填過）→ 開通建帳用該信箱
+                // 申請列沒有 → 用學號組成預設 s{學號}@nutc.edu.tw
+                $email = filled($item->email)
+                    ? strtolower(trim((string) $item->email))
+                    : Student::emailFromStudentNo($item->student_no);
 
                 if ($student === null) {
                     $plainPassword = $this->generatePassword();

@@ -106,6 +106,7 @@ class MaterialService
             'chapter_id' => $chapter->id,
             'name' => $data['name'],
             'sort_order' => $sortOrder,
+            'status' => ($data['status'] ?? null) === 'published' ? 'published' : 'draft',
         ]);
 
         return $this->formatNamedNode($unit, 0);
@@ -119,6 +120,13 @@ class MaterialService
             $data,
             Unit::query()->where('chapter_id', $unit->chapter_id),
         );
+
+        if (array_key_exists('status', $data) && filled($data['status'])) {
+            $unit->update([
+                'status' => $data['status'] === 'draft' ? 'draft' : 'published',
+            ]);
+        }
+
         $unit = $unit->fresh()->loadCount('knowledgeCards');
 
         return $this->formatNamedNode($unit, (int) $unit->knowledge_cards_count);
@@ -426,7 +434,7 @@ class MaterialService
      */
     private function formatNamedNode(Model $model, int $itemCount): array
     {
-        return [
+        $payload = [
             'id' => $model->getKey(),
             'name' => $model->getAttribute('name'),
             'sort_order' => $model->getAttribute('sort_order'),
@@ -434,6 +442,13 @@ class MaterialService
             'created_at' => $model->getAttribute('created_at'),
             'updated_at' => $model->getAttribute('updated_at'),
         ];
+
+        if ($model instanceof Unit) {
+            $payload['status'] = $model->status === 'draft' ? 'draft' : 'published';
+            $payload['title'] = $model->getAttribute('name');
+        }
+
+        return $payload;
     }
 
     /**
@@ -471,6 +486,7 @@ class MaterialService
                 'name' => $unit->name,
                 'title' => $unit->name,
                 'sort_order' => $unit->sort_order,
+                'status' => $unit->status === 'draft' ? 'draft' : 'published',
                 'knowledge_cards' => $unit->knowledgeCards->map(fn (KnowledgeCard $card) => $this->formatCard($card))->values()->all(),
             ])->values()->all(),
         ])->values()->all();

@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api\V1\Teacher;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Material\MaterialNameRequest;
+use App\Http\Requests\Material\MaterialUnitRequest;
 use App\Models\Teacher;
 use App\Services\MaterialService;
 use Illuminate\Http\JsonResponse;
@@ -22,14 +22,14 @@ class UnitController extends Controller
         ]);
     }
 
-    public function store(MaterialNameRequest $request, int $chapterId): JsonResponse
+    public function store(MaterialUnitRequest $request, int $chapterId): JsonResponse
     {
         return response()->json([
             'unit' => $this->materialService->createUnit($this->teacher($request), $chapterId, $request->validated()),
         ], 201);
     }
 
-    public function update(MaterialNameRequest $request, int $unitId): JsonResponse
+    public function update(MaterialUnitRequest $request, int $unitId): JsonResponse
     {
         return response()->json([
             'unit' => $this->materialService->updateUnit($this->teacher($request), $unitId, $request->validated()),

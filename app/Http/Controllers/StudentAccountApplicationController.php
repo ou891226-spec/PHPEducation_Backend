@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreCourseStudentRequest;
 use App\Http\Requests\StoreStudentAccountApplicationRequest;
+use App\Http\Requests\UpdateCourseStudentRequest;
 use App\Models\Student;
 use App\Models\StudentApplicationItems;
 use App\Models\Teacher;
@@ -140,6 +141,48 @@ class StudentAccountApplicationController extends Controller
     }
 
     /**
+     * 該課程授課教師：依學號或姓名查詢是否已有帳號（自動帶入用）
+     */
+    public function lookupStudent(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user instanceof Teacher, 403, 'Forbidden');
+
+        $studentNo = $request->query('student_no');
+        $name = $request->query('name');
+
+        return response()->json(
+            $this->studentAccountService->lookupStudent(
+                is_string($studentNo) ? $studentNo : null,
+                is_string($name) ? $name : null,
+            ),
+        );
+    }
+
+    /**
+     * 該課程授課教師：修改名冊中的一位學生（學號、姓名、信箱）
+     *
+     * pending 可改申請列信箱（開通時沿用）；approved 已有帳號時可改學號／信箱，姓名以帳號為準不覆寫。
+     */
+    public function updateForCourse(UpdateCourseStudentRequest $request, int $courseId, int $itemId): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user instanceof Teacher, 403, 'Forbidden');
+
+        $item = $this->studentAccountService->updateItemForCourse(
+            $user,
+            $courseId,
+            $itemId,
+            $request->validated(),
+        );
+
+        return response()->json([
+            'message' => '學生資料已更新',
+            'item' => $this->formatItems(collect([$item]))->first(),
+        ]);
+    }
+
+    /**
      * 該課程授課教師：從課程名冊中移除學生
      * 
      * 若學生尚未審核開通則刪除申請明細；若已開通則解除課程選課（帳號仍保留）。
@@ -194,7 +237,7 @@ class StudentAccountApplicationController extends Controller
     {
         $studentsByNo = Student::query()
             ->whereIn('student_no', $items->pluck('student_no')->filter()->all())
-            ->get(['student_no', 'name'])
+            ->get(['student_no', 'name', 'email'])
             ->keyBy('student_no');
 
         return $items->map(function (StudentApplicationItems $item) use ($studentsByNo) {
@@ -204,11 +247,17 @@ class StudentAccountApplicationController extends Controller
                 $name = (string) $account->name;
             }
 
+            $email = $account !== null && filled($account->email)
+                ? (string) $account->email
+                : (filled($item->email)
+                    ? (string) $item->email
+                    : Student::emailFromStudentNo((string) $item->student_no));
+
             return [
                 'id' => $item->id,
                 'student_no' => $item->student_no,
                 'name' => $name,
-                'email' => Student::emailFromStudentNo($item->student_no),
+                'email' => $email,
                 'application_id' => $item->application_id,
                 'class_name' => $item->application?->class_name,
                 'status' => $item->status,

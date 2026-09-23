@@ -11,6 +11,10 @@ use Illuminate\Support\Facades\DB;
 
 class CourseService
 {
+    public function __construct(
+        private readonly CourseCloneService $courseCloneService,
+    ) {}
+
     public function listForTeacher(Teacher $teacher): array
     {
         return Course::query()
@@ -36,15 +40,38 @@ class CourseService
             ->all();
     }
 
+    /**
+     * @param  array<string, mixed>  $data
+     */
     public function create(Teacher $teacher, array $data): array
     {
-        $course = Course::query()->create([
-            'teacher_id' => $teacher->id,
-            'name' => $data['name'],
-            'description' => $data['description'],
-            'semester' => $data['semester'],
-            'class_name' => $data['class_name'],
-        ]);
+        $sourceCourseId = isset($data['source_course_id']) ? (int) $data['source_course_id'] : null;
+        $copyMaterials = (bool) ($data['copy_materials'] ?? false);
+        $copyQuestions = (bool) ($data['copy_questions'] ?? false);
+
+        $source = null;
+        if ($sourceCourseId !== null && ($copyMaterials || $copyQuestions)) {
+            $source = $this->findOwnedCourse($teacher, $sourceCourseId);
+        }
+
+        $course = DB::transaction(function () use ($teacher, $data, $source, $copyMaterials, $copyQuestions): Course {
+            $course = Course::query()->create([
+                'teacher_id' => $teacher->id,
+                'name' => $data['name'],
+                'description' => $data['description'],
+                'semester' => $data['semester'],
+                'class_name' => $data['class_name'],
+            ]);
+
+            if ($source !== null) {
+                $this->courseCloneService->cloneInto($teacher, $source, $course, [
+                    'copy_materials' => $copyMaterials,
+                    'copy_questions' => $copyQuestions,
+                ]);
+            }
+
+            return $course;
+        });
 
         return $this->formatCourse($course);
     }

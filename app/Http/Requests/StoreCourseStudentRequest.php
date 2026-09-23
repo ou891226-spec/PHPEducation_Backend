@@ -5,7 +5,7 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * 教師補學生（可一次多筆）。只要學號；班級取自課程。
+ * 教師補學生（可一次多筆）。學號必填；姓名、信箱選填；班級取自課程。
  */
 class StoreCourseStudentRequest extends FormRequest
 {
@@ -20,6 +20,7 @@ class StoreCourseStudentRequest extends FormRequest
             'students' => ['required', 'array', 'min:1', 'max:100'],
             'students.*.student_no' => ['required', 'string', 'max:50'],
             'students.*.name' => ['nullable', 'string', 'max:255'],
+            'students.*.email' => ['nullable', 'string', 'email', 'max:255'],
         ];
     }
 
@@ -30,10 +31,12 @@ class StoreCourseStudentRequest extends FormRequest
         if (! is_array($rows) || $rows === []) {
             $studentNo = $this->input('student_no');
             $name = $this->input('name');
-            if ($studentNo !== null || $name !== null) {
+            $email = $this->input('email');
+            if ($studentNo !== null || $name !== null || $email !== null) {
                 $rows = [[
                     'student_no' => $studentNo,
                     'name' => $name,
+                    'email' => $email,
                 ]];
             } else {
                 $rows = [];
@@ -48,6 +51,7 @@ class StoreCourseStudentRequest extends FormRequest
 
             $studentNo = $this->normalizeStudentNo((string) ($row['student_no'] ?? $row['studentNo'] ?? ''));
             $name = trim((string) ($row['name'] ?? ''));
+            $email = strtolower(trim((string) ($row['email'] ?? '')));
 
             if ($studentNo === '') {
                 continue;
@@ -56,6 +60,7 @@ class StoreCourseStudentRequest extends FormRequest
             $students[] = [
                 'student_no' => $studentNo,
                 'name' => $name,
+                'email' => $email !== '' ? $email : null,
             ];
         }
 

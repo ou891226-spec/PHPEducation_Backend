@@ -15,6 +15,7 @@ class StudentApplicationItems extends Model
         'application_id',
         'student_no',
         'name',
+        'email',
         'status',
     ];
 

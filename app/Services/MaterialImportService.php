@@ -111,6 +111,8 @@ class MaterialImportService
                     'chapter_id' => $chapter->id,
                     'name' => $unitNode['name'],
                     'sort_order' => $unitNode['sort_order'] ?: 1,
+                    // 匯入覆蓋整課教材時維持對學生可見，避免整批變草稿
+                    'status' => 'published',
                 ]);
 
                 foreach ($unitNode['knowledge_cards'] as $cardNode) {

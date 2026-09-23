@@ -220,11 +220,12 @@ tests/
 | application_id | bigint | 申請 ID（FK → student_applications.id） |
 | student_no | string | 學生學號 |
 | name | string | 學生姓名 |
+| email | string | 信箱（可空；開通前可先指定，開通時寫入帳號） |
 | status | string | 審核狀態：`pending`（待審核）、`approved`（已開通），預設 `pending` |
 | created_at | timestamp | 建立時間 |
 | updated_at | timestamp | 更新時間 |
 
-明細**沒有 email**。開通時後端用學號組成 `s{學號}@nutc.edu.tw` 寫入 `students.email`。
+明細可有 `email`（開通前可先改）。若未指定，開通時後端用學號組成 `s{學號}@nutc.edu.tw` 寫入 `students.email`。
 
 同一申請內 `student_no` 不可重複（`application_id` + `student_no` unique）。
 
@@ -291,6 +292,7 @@ Seeder 已讓王小明選修「網際系統設計」（班級資應）。
 | chapter_id | bigint | 所屬章節 ID（FK → chapters.id） |
 | name | string | 單元名稱 |
 | sort_order | integer | 排序順序 |
+| status | string | `draft`（草稿，僅教師可見）／`published`（已開放給學生）；**手動新增預設 draft**；既有／Excel 匯入預設 `published` |
 | created_at | timestamp | 建立時間 |
 | updated_at | timestamp | 更新時間 |
 
@@ -704,8 +706,10 @@ Authorization: Bearer {token}
 
 ```text
 GET  /teacher/student-applications/template
+GET  /teacher/students/lookup
 POST /teacher/student-applications
 POST /teacher/courses/{courseId}/student-applications
+PUT  /teacher/courses/{courseId}/student-applications/{itemId}
 DELETE /teacher/courses/{courseId}/student-applications/{itemId}
 GET  /courses
 GET  /teacher/courses/{courseId}/student-applications
@@ -714,13 +718,36 @@ POST /student-applications/approve
 POST /teacher/student-applications/{id}/approve
 ```
 
-流程：教師選課程並上傳 Excel 名冊，或單筆／多筆補學生（**只要學號**，姓名選填；班級取自該門課）→ **一律待管理員審核**（即使學生已有帳號，加到新課也要審）。開通時：沒帳號就建 `students`（姓名空白時先用學號）並寫 `enrollments`；已有帳號只寫選課（並帶出帳號姓名）。可依來源課整班開通。本次若有新建帳號，會寄 `StudentAccountCreated` 給該課教師（本文不含明文密碼，附件為本次新建學生的姓名／學號／初始密碼 Excel）；沒有新建則不寄信、不附空檔。
+流程：教師選課程並上傳 Excel 名冊，或單筆／多筆補學生（**學號必填**，姓名／信箱選填；班級取自該門課）→ **已有帳號的學生直接寫入選課並標為已開通**；**尚無帳號的學生進入待審**，由管理員開通後才建 `students`（姓名空白時先用學號；信箱未填則用 `s{學號}@nutc.edu.tw`）並寫 `enrollments`。可依來源課整班開通。本次若有新建帳號，會寄 `StudentAccountCreated` 給該課教師（本文不含明文密碼，附件為本次新建學生的姓名／學號／初始密碼 Excel）；沒有新建則不寄信、不附空檔。
 
 ### GET `/api/v1/teacher/student-applications/template`
 
 功能：教師下載學生名冊 Excel 範本。需要教師 Token。
 
 Excel 列規則：第 1 列說明、第 2 列欄位（`學號`、`姓名`）、第 3 列範本示範整列不讀、第 4 列起才是名冊。多出來的欄（性別、備註等）會忽略。
+
+### GET `/api/v1/teacher/students/lookup`
+
+功能：教師依學號或姓名查詢是否已有學生帳號（新增學生時自動帶入）。需要教師 Token。
+
+Query（擇一）：
+- `?student_no=1411131000`（可加前綴 `s`）
+- `?name=王小明`（精確比對；同名多人時 `matches` 會有多筆，`student_no` 為 `null`）
+
+成功 **200**：
+
+```json
+{
+  "has_account": true,
+  "student_no": "1411131000",
+  "name": "王小明",
+  "matches": [
+    { "student_no": "1411131000", "name": "王小明" }
+  ]
+}
+```
+
+尚無帳號時 `has_account` 為 `false`，`matches` 為 `[]`。
 
 ### POST `/api/v1/teacher/student-applications`
 
@@ -753,7 +780,7 @@ Request（`multipart/form-data`）：
 
 ### POST `/api/v1/teacher/courses/{courseId}/student-applications`
 
-功能：該課教師補學生，可一次多筆。需要教師 Token。**只要學號**（姓名選填），班級取自課程，送出後一律待開通（已有帳號會帶出姓名，但仍須管理員審核後才加選課）。一次最多 100 人。
+功能：該課教師補學生，可一次多筆。需要教師 Token。**學號必填**（姓名、信箱選填），班級取自課程。**已有帳號 → 以帳號姓名／信箱為準直接選課並標為已開通**（前端可依學號自動帶入姓名）；**尚無帳號 → 待管理員開通**。一次最多 100 人。
 
 Request（JSON，建議）：
 
@@ -761,14 +788,56 @@ Request（JSON，建議）：
 {
   "students": [
     { "student_no": "1411131001" },
-    { "student_no": "1411131002", "name": "陳小華" }
+    { "student_no": "1411131002", "name": "陳小華" },
+    { "student_no": "1411131003", "name": "林小美", "email": "lin@example.com" }
   ]
 }
 ```
 
-也可只傳一筆：`student_no`（`name` 選填；不必加 `s`）。
+也可只傳一筆：`student_no`（`name`、`email` 選填；學號不必加 `s`）。
+
+- 未填 `email`：開通／建帳用預設 `s{學號}@nutc.edu.tw`
+- 有填 `email`：申請列與開通建帳用該信箱
 
 成功回應 **201**，格式與上傳 Excel 相同。該課已有相同學號、學號重複、超過 100 人、或不是自己的課會 **422** / **404**。
+
+### PUT `/api/v1/teacher/courses/{courseId}/student-applications/{itemId}`
+
+功能：該課教師修改名冊中一位學生的學號、姓名與信箱。需要教師 Token。`itemId` 為名冊列的 `id`。
+
+Request：
+
+```json
+{
+  "student_no": "1411131001",
+  "name": "陳小華",
+  "email": "s1411131001@nutc.edu.tw"
+}
+```
+
+`student_no`、`name` 必填（學號不必加 `s`）。`email` 選填。
+
+- 待開通：更新申請列（含信箱；開通時沿用）
+- 已開通且已有帳號：可改學號／信箱；姓名以正式帳號為準，不會被課程端覆寫
+- 有帶 `email`：寫入申請列（及帳號）；未帶且改了學號：同步為預設 `s{學號}@nutc.edu.tw`
+- 該課已有相同學號、新學號／信箱已有其他學生帳號 → **422**
+- 不是自己的課、或這列不屬於這門課 → **404**
+
+成功 **200**：
+
+```json
+{
+  "message": "學生資料已更新",
+  "item": {
+    "id": 12,
+    "student_no": "1411131001",
+    "name": "陳小華",
+    "email": "s1411131001@nutc.edu.tw",
+    "status": "pending",
+    "has_account": false
+  }
+}
+```
 
 ### DELETE `/api/v1/teacher/courses/{courseId}/student-applications/{itemId}`
 
@@ -990,9 +1059,9 @@ Authorization: Bearer {token}
 
 ### POST `/api/v1/teacher/courses`
 
-功能：建立課程。
+功能：建立課程。可選從**自己的**既有課程帶入教材／題目（深拷貝，獨立新 ID，不共用）。
 
-Request：
+Request（空白建立）：
 
 ```json
 {
@@ -1003,9 +1072,37 @@ Request：
 }
 ```
 
+Request（帶入既有課）：
+
+```json
+{
+  "name": "PHP 程式設計",
+  "description": "從基礎語法到實作練習",
+  "semester": "115-2",
+  "class_name": "資應二乙",
+  "source_course_id": 12,
+  "copy_materials": true,
+  "copy_questions": true
+}
+```
+
 `description` 為必填，最多 2000 字。  
 `class_name` 為必填（開課班級）。  
 `teacher_id` 不需要由前端傳送，後端會從登入 Token 判斷目前教師。
+
+選填欄位：
+
+| 欄位 | 說明 |
+|------|------|
+| `source_course_id` | 來源課程（必須屬於目前教師） |
+| `copy_materials` | 是否深拷貝章／單元／知識卡（預設 false） |
+| `copy_questions` | 是否深拷貝題目／選項／子答案，並把知識卡關聯映射到新卡（預設 false） |
+
+規則：
+
+- `copy_questions=true` 時必須同時 `copy_materials=true`，否則 **422**。
+- 勾選複製時一定在同一個 DB transaction 內建立獨立副本（舊 ID → 新 ID mapping）；來源課資料不動。
+- **不**複製學生、作答紀錄、審核資料；**不**建立一對多共用。
 
 成功回應 **201**。
 
@@ -1129,14 +1226,14 @@ public/templates/course_template.xlsx
 
 ### 學生教材（已選課）
 
-學生看正式教材。未選課回 **404**。非學生打這些路由 **403**。
+學生只看 **已開放（published）** 的單元；草稿單元不回傳。全章皆草稿時該章也不出現。未選課回 **404**。非學生打這些路由 **403**。
 
 | Method | URL | 說明 |
 |--------|-----|------|
-| GET | `/api/v1/student/courses/{courseId}/graph` | 一次回整棵樹給圖譜 |
-| GET | `/api/v1/student/courses/{courseId}/chapters` | 列出該課章節 |
-| GET | `/api/v1/student/chapters/{chapterId}/units` | 列出該章節單元 |
-| GET | `/api/v1/student/units/{unitId}/knowledge-cards` | 列出該單元知識卡 |
+| GET | `/api/v1/student/courses/{courseId}/graph` | 一次回整棵樹給圖譜（僅 published 單元） |
+| GET | `/api/v1/student/courses/{courseId}/chapters` | 列出該課章節（底下至少有一個 published 單元） |
+| GET | `/api/v1/student/chapters/{chapterId}/units` | 列出該章節已開放單元 |
+| GET | `/api/v1/student/units/{unitId}/knowledge-cards` | 列出該單元知識卡（草稿單元 **404**） |
 
 ### 教師出題
 
@@ -1289,7 +1386,14 @@ Request（新增／修改）：
 | PUT | `/api/v1/teacher/units/{unitId}` | 修改單元 |
 | DELETE | `/api/v1/teacher/units/{unitId}` | 刪除單元（底下知識卡硬刪；仍掛其他單元者只脫關聯） |
 
-Request 同章節，欄位為 `name`、`sort_order`。`item_count` 為底下知識卡數量。同一章節內單元的 `sort_order` 不可重複；不同章節可以同號。
+Request 欄位：`name`（必填）、`sort_order`（選填）、`status`（選填：`draft`／`published`）。
+
+- **新增**：未傳 `status` 時預設 `draft`（學生端看不到，教師需再改成 `published` 才開放）
+- **修改**：可只改名稱／排序，或一併改 `status`
+- 列表／樹狀／單筆單元會回傳 `status`
+- `item_count` 為底下知識卡數量。同一章節內單元的 `sort_order` 不可重複；不同章節可以同號
+
+題目不受單元草稿影響（題庫仍可掛該單元知識卡）。
 
 ### knowledge_cards 知識卡
 
