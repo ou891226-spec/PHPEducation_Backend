@@ -16,20 +16,37 @@ class MaterialImportController extends Controller
     ) {}
 
     /**
-     * 接收教師上傳的 Excel，直接寫入正式教材。前端不要自己解析檔案。
+     * 接收教師上傳的 Excel，依匯入方式寫入正式教材。前端不要自己解析檔案。
      */
     public function store(ImportMaterialRequest $request, int $courseId): JsonResponse
     {
-        $path = $request->file('file')->getRealPath();
-
-        return response()->json([
-            'course' => $this->materialImportService->import(
+        return response()->json(
+            $this->materialImportService->import(
                 $this->teacher($request),
                 $courseId,
-                $path,
-                $request->boolean('overwrite'),
+                $request->file('file')->getRealPath(),
+                $request->importMode(),
+                $request->chapterId(),
+                $request->fingerprint(),
             ),
-        ], 201);
+            201,
+        );
+    }
+
+    /**
+     * 匯入預覽：回傳匯入後的教材樹與影響範圍，不寫入資料庫。
+     */
+    public function preview(ImportMaterialRequest $request, int $courseId): JsonResponse
+    {
+        return response()->json(
+            $this->materialImportService->preview(
+                $this->teacher($request),
+                $courseId,
+                $request->file('file')->getRealPath(),
+                $request->importMode(),
+                $request->chapterId(),
+            ),
+        );
     }
 
     private function teacher(Request $request): Teacher

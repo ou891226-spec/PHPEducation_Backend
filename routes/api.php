@@ -63,6 +63,7 @@ Route::prefix('v1')->group(function () {
             Route::post('upload-image', [EditorImageController::class, 'store']);
             Route::get('student-applications/template', [StudentRosterTemplateController::class, 'download']);
             Route::get('students/lookup', [StudentAccountApplicationController::class, 'lookupStudent']);
+            Route::post('courses/{courseId}/materials/import/preview', [MaterialImportController::class, 'preview']);
             Route::post('courses/{courseId}/materials/import', [MaterialImportController::class, 'store']);
             Route::get('courses/{courseId}/tree', [MaterialGraphController::class, 'courseTree']);
             Route::get('courses/{courseId}/student-applications', [StudentAccountApplicationController::class, 'indexForCourse']);

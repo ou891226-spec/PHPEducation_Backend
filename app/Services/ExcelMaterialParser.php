@@ -12,12 +12,23 @@ use ZipArchive;
  */
 class ExcelMaterialParser
 {
+    public const MAX_DATA_ROWS = 5000;
+
+    private const MAX_NAME_LENGTH = 255;
+
+    private const MAX_TYPE_LENGTH = 50;
+
+    // MySQL TEXT 欄位上限（bytes）
+    private const MAX_TEXT_BYTES = 65535;
+
     /**
      * @return array{chapters: list<array<string, mixed>>}
      */
     public function parse(string $path): array
     {
-        $rows = $this->readRows($path);
+        $sheet = $this->readRows($path);
+        $rows = array_column($sheet, 'cells');
+        $rowNumbers = array_column($sheet, 'number');
         if ($rows === []) {
             throw new InvalidArgumentException('找不到教材內容');
         }
@@ -32,6 +43,18 @@ class ExcelMaterialParser
             throw new InvalidArgumentException('找不到欄位列（chapter_title / unit_title / card_name）');
         }
 
+        $dataRows = 0;
+        for ($i = $headerIndex + 1, $count = count($rows); $i < $count; $i++) {
+            if (! $this->isExampleRow($rows[$i])) {
+                $dataRows++;
+            }
+        }
+        if ($dataRows > self::MAX_DATA_ROWS) {
+            throw new InvalidArgumentException(
+                '教材資料超過 '.self::MAX_DATA_ROWS.' 列（目前 '.$dataRows.' 列），請分批匯入'
+            );
+        }
+
         $chapters = [];
         $lastChapter = '';
         $lastUnit = '';
@@ -44,6 +67,7 @@ class ExcelMaterialParser
                 continue;
             }
 
+            $rowNumber = $rowNumbers[$i];
             $chapter = $this->cell($row, $map['chapter_title']);
             $unit = $this->cell($row, $map['unit_title']);
             $chapterOrder = $this->intCell($row, $map['chapter_order'] ?? null);
@@ -52,6 +76,11 @@ class ExcelMaterialParser
             $type = $this->cell($row, $map['card_type'] ?? null);
             $content = $this->cell($row, $map['card_content'] ?? null);
             $example = $this->cell($row, $map['code_example'] ?? null);
+
+            $this->assertMaxLength($rowNumber, '章節名稱', $chapter, self::MAX_NAME_LENGTH);
+            $this->assertMaxLength($rowNumber, '單元名稱', $unit, self::MAX_NAME_LENGTH);
+            $this->assertMaxLength($rowNumber, '知識卡標題', $title, self::MAX_NAME_LENGTH);
+            $this->assertMaxLength($rowNumber, '類型', $type, self::MAX_TYPE_LENGTH);
 
             if ($chapter !== '') {
                 $lastChapter = $chapter;
@@ -93,6 +122,7 @@ class ExcelMaterialParser
                 $type !== '' ? $type : 'keyword',
                 $content,
                 $example !== '' ? $example : null,
+                $rowNumber,
             );
         }
 
@@ -174,6 +204,7 @@ class ExcelMaterialParser
         string $type,
         string $content,
         ?string $example,
+        int $rowNumber,
     ): void {
         $this->ensureUnit($chapters, $chapter, $unit, null);
         $cards = &$chapters[$chapter]['units'][$unit]['knowledge_cards'];
@@ -190,10 +221,15 @@ class ExcelMaterialParser
                     ? $existing['example']."\n\n".$example
                     : $example;
             }
+            $this->assertMaxBytes($rowNumber, '知識卡內容', $existing['content']);
+            $this->assertMaxBytes($rowNumber, '程式範例', (string) $existing['example']);
 
             return;
         }
         unset($existing);
+
+        $this->assertMaxBytes($rowNumber, '知識卡內容', $content);
+        $this->assertMaxBytes($rowNumber, '程式範例', (string) $example);
 
         $cards[] = [
             'title' => $title,
@@ -284,6 +320,20 @@ class ExcelMaterialParser
         return false;
     }
 
+    private function assertMaxLength(int $rowNumber, string $label, string $value, int $max): void
+    {
+        if (mb_strlen($value) > $max) {
+            throw new InvalidArgumentException("第 {$rowNumber} 列：{$label}超過 {$max} 字");
+        }
+    }
+
+    private function assertMaxBytes(int $rowNumber, string $label, string $value): void
+    {
+        if (strlen($value) > self::MAX_TEXT_BYTES) {
+            throw new InvalidArgumentException("第 {$rowNumber} 列：{$label}過長（上限 ".self::MAX_TEXT_BYTES.' bytes）');
+        }
+    }
+
     /**
      * @param  array<string, string>  $row
      */
@@ -310,7 +360,7 @@ class ExcelMaterialParser
     }
 
     /**
-     * @return list<array<string, string>>
+     * @return list<array{number: int, cells: array<string, string>}>
      */
     private function readRows(string $path): array
     {
@@ -341,7 +391,11 @@ class ExcelMaterialParser
                 $column = preg_replace('/\d+/', '', $ref) ?? '';
                 $cells[$column] = $this->cellValue($cell, $strings);
             }
-            $rows[] = $cells;
+            $number = (int) $row['r'];
+            $rows[] = [
+                'number' => $number > 0 ? $number : count($rows) + 1,
+                'cells' => $cells,
+            ];
         }
 
         return $rows;
