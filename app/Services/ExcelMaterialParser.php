@@ -56,6 +56,7 @@ class ExcelMaterialParser
         }
 
         $chapters = [];
+        $orderClaims = [];
         $lastChapter = '';
         $lastUnit = '';
         $lastChapterOrder = null;
@@ -102,12 +103,18 @@ class ExcelMaterialParser
                 continue;
             }
 
+            if ($chapterOrder !== null) {
+                $this->claimOrder($orderClaims, "chapter\0", $chapter, $chapterOrder, $rowNumber, '章節', 'chapter_order');
+            }
             $this->ensureChapter($chapters, $chapter, $chapterOrder);
 
             if ($unit === '') {
                 continue;
             }
 
+            if ($unitOrder !== null) {
+                $this->claimOrder($orderClaims, "unit\0".$chapter, $unit, $unitOrder, $rowNumber, '單元', 'unit_order');
+            }
             $this->ensureUnit($chapters, $chapter, $unit, $unitOrder);
 
             if ($title === '') {
@@ -163,6 +170,39 @@ class ExcelMaterialParser
         usort($list, fn (array $a, array $b) => $a['sort_order'] <=> $b['sort_order']);
 
         return $list;
+    }
+
+    /**
+     * 名稱決定是哪一章／哪個單元，順序欄決定排序：同名必須同順序，不同名不可同順序。
+     *
+     * @param  array<string, array<string, int>>  $claims
+     */
+    private function claimOrder(
+        array &$claims,
+        string $scope,
+        string $name,
+        int $order,
+        int $rowNumber,
+        string $label,
+        string $column,
+    ): void {
+        $titleColumn = str_replace('_order', '_title', $column);
+        $error = "第 {$rowNumber} 列：請確認{$label}名稱（{$titleColumn}）與{$label}順序（{$column}）是否有輸入錯誤";
+
+        $claimed = $claims[$scope][$name] ?? null;
+        if ($claimed !== null) {
+            if ($claimed !== $order) {
+                throw new InvalidArgumentException($error);
+            }
+
+            return;
+        }
+
+        if (in_array($order, $claims[$scope] ?? [], true)) {
+            throw new InvalidArgumentException($error);
+        }
+
+        $claims[$scope][$name] = $order;
     }
 
     /**

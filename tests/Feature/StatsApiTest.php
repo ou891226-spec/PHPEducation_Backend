@@ -11,7 +11,7 @@ class StatsApiTest extends TestCase
 
     public function test_admin_can_get_counts(): void
     {
-        $token = $this->loginToken('admin@school.edu.tw');
+        $token = $this->loginToken('admin@nutc.edu.tw');
 
         $this->withToken($token)
             ->getJson('/api/v1/stats')

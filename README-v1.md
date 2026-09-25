@@ -624,7 +624,7 @@ Request：`name`（必填）、`sort_order`、`status`（`draft`／`published`�
 | fingerprint | 否（建議帶） | 只有 import 用 |
 | overwrite | 否 | 舊版參數，`true` 等同 `mode=overwrite` |
 
-**Excel 格式**：第 1 列欄位 `chapter_title`、`chapter_order`、`unit_title`、`unit_order`、`card_name`、`card_type`、`card_content`、`code_example`；第 2 列示範不讀，第 3 列起是內容。以 `ex：` 或 `ex:` 開頭的列不讀；章節／單元空白沿用上一列；同名＋同 type 的卡只建一張，可掛多個單元。
+**Excel 格式**：第 1 列欄位 `chapter_title`、`chapter_order`、`unit_title`、`unit_order`、`card_name`、`card_type`、`card_content`、`code_example`；第 2 列示範不讀，第 3 列起是內容。以 `ex：` 或 `ex:` 開頭的列不讀；章節／單元空白沿用上一列；同名＋同 type 的卡只建一張，可掛多個單元。`chapter_title`／`unit_title` 決定是哪一章／哪個單元，排序以 `chapter_order`／`unit_order` 為準（章名寫「第二章」不代表順序是 2）；同名卻寫不同順序、或不同名用同一個順序都回 422。
 
 **限制**：最多 5000 列；名稱 255 字、`card_type` 50 字、`card_content`／`code_example` 各 65535 bytes。
 

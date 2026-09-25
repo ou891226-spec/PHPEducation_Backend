@@ -253,6 +253,51 @@ class MaterialImportModeApiTest extends TestCase
         $this->assertSame(0, KnowledgeCard::query()->count());
     }
 
+    public function test_conflicting_orders_are_rejected_with_row_number(): void
+    {
+        $token = $this->loginToken('teacher2@school.edu.tw');
+        $course = $this->yingCourse();
+
+        $cases = [
+            'same chapter, different order' => [[
+                ['aa', '1', 'a', '1', 'a', 'keyword', 'a', ''],
+                ['a', '2', 'a', '1', 'a', 'keyword', 'a', ''],
+                ['a', '3', 'a', '1', 'a', 'keyword', 'a', ''],
+            ], '第 5 列'],
+            'different chapters, same order' => [[
+                ['第一章', '1', '單元', '1', '卡一', 'keyword', '內容', ''],
+                ['第二章', '1', '單元', '1', '卡二', 'keyword', '內容', ''],
+            ], '第 4 列'],
+            'same unit, different order' => [[
+                ['第一章', '1', '單元', '1', '卡一', 'keyword', '內容', ''],
+                ['第一章', '1', '單元', '2', '卡二', 'keyword', '內容', ''],
+            ], '第 4 列'],
+        ];
+
+        foreach ($cases as $label => [$rows, $rowText]) {
+            $response = $this->send($token, $course->id, 'preview', $this->xlsxPath($rows), ['mode' => 'overwrite']);
+
+            $response->assertStatus(422)->assertJsonValidationErrors('file');
+            $this->assertStringContainsString($rowText, $response->json('errors.file.0'), $label);
+        }
+    }
+
+    public function test_same_unit_name_can_repeat_across_chapters(): void
+    {
+        $token = $this->loginToken('teacher2@school.edu.tw');
+        $course = $this->yingCourse();
+
+        $this->send($token, $course->id, 'import', $this->xlsxPath([
+            ['第二章 Python 高階', '1', '資安', '1', '加密', 'keyword', '內容', ''],
+            ['第一章 Python 基礎', '2', '資安', '1', '密碼', 'keyword', '內容', ''],
+        ]), ['mode' => 'overwrite'])
+            ->assertCreated()
+            ->assertJsonPath('course.chapters.0.name', '第二章 Python 高階')
+            ->assertJsonPath('course.chapters.0.sort_order', 1)
+            ->assertJsonPath('course.chapters.1.name', '第一章 Python 基礎')
+            ->assertJsonPath('course.chapters.1.units.0.name', '資安');
+    }
+
     public function test_more_than_max_rows_is_rejected(): void
     {
         $token = $this->loginToken('teacher2@school.edu.tw');

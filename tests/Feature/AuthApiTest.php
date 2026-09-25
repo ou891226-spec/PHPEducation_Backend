@@ -17,7 +17,7 @@ class AuthApiTest extends TestCase
     public function test_admin_login(): void
     {
         $response = $this->postJson('/api/v1/auth/login', [
-            'account' => 'admin@school.edu.tw',
+            'account' => 'admin@nutc.edu.tw',
             'password' => self::PASSWORD,
         ]);
 
@@ -191,7 +191,7 @@ class AuthApiTest extends TestCase
 
     public function test_admin_cannot_access_teacher_course_crud(): void
     {
-        $token = $this->loginToken('admin@school.edu.tw');
+        $token = $this->loginToken('admin@nutc.edu.tw');
 
         $this->withToken($token)
             ->getJson('/api/v1/teacher/courses')

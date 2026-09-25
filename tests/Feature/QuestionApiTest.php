@@ -88,7 +88,7 @@ class QuestionApiTest extends TestCase
             ])
             ->assertOk()
             ->assertJsonPath('system_status', QuestionRecord::STATUS_WRONG)
-            ->assertJsonPath('record.teacher_status', QuestionRecord::STATUS_PENDING);
+            ->assertJsonPath('record.teacher_status', QuestionRecord::STATUS_WRONG);
 
         $this->withToken($this->studentToken())
             ->postJson("/api/v1/student/questions/{$question->id}/submit", [
