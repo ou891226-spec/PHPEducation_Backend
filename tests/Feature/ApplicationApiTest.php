@@ -418,7 +418,9 @@ class ApplicationApiTest extends TestCase
             ->assertJsonPath('has_account', true)
             ->assertJsonPath('student_no', $existing->student_no)
             ->assertJsonPath('name', $existing->name)
-            ->assertJsonPath('matches.0.student_no', $existing->student_no);
+            ->assertJsonPath('email', $existing->email)
+            ->assertJsonPath('matches.0.student_no', $existing->student_no)
+            ->assertJsonPath('matches.0.email', $existing->email);
 
         $this->withToken($token)
             ->getJson('/api/v1/teacher/students/lookup?student_no=9999999999')
@@ -426,6 +428,7 @@ class ApplicationApiTest extends TestCase
             ->assertJsonPath('has_account', false)
             ->assertJsonPath('student_no', '9999999999')
             ->assertJsonPath('name', null)
+            ->assertJsonPath('email', 's9999999999@nutc.edu.tw')
             ->assertJsonCount(0, 'matches');
     }
 
@@ -440,7 +443,28 @@ class ApplicationApiTest extends TestCase
             ->assertJsonPath('has_account', true)
             ->assertJsonPath('student_no', $existing->student_no)
             ->assertJsonPath('name', $existing->name)
-            ->assertJsonCount(1, 'matches');
+            ->assertJsonPath('email', $existing->email)
+            ->assertJsonCount(1, 'matches')
+            ->assertJsonPath('matches.0.email', $existing->email);
+    }
+
+    public function test_teacher_lookup_returns_custom_email_for_existing_student(): void
+    {
+        $student = Student::query()->create([
+            'student_no' => '1411136600',
+            'name' => '自訂信箱生',
+            'class_name' => '資應',
+            'email' => 'custom.lookup@example.com',
+            'password' => 'password',
+        ]);
+        $token = $this->loginToken('teacher2@school.edu.tw');
+
+        $this->withToken($token)
+            ->getJson('/api/v1/teacher/students/lookup?student_no='.$student->student_no)
+            ->assertOk()
+            ->assertJsonPath('has_account', true)
+            ->assertJsonPath('email', 'custom.lookup@example.com')
+            ->assertJsonPath('matches.0.email', 'custom.lookup@example.com');
     }
 
     public function test_teacher_adding_mixed_students_enrolls_existing_and_keeps_new_pending(): void

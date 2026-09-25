@@ -64,7 +64,7 @@ class StudentAccountService
 
     /**
      * 建立學生帳號申請單（含明細項目）
-     *
+     * 
      * 驗證規則：
      * 1. 課程必須設定班級名稱 (class_name)
      * 2. 單次申請最多 100 位學生
@@ -198,7 +198,8 @@ class StudentAccountService
      *   has_account: bool,
      *   student_no: string|null,
      *   name: string|null,
-     *   matches: list<array{student_no: string, name: string}>
+     *   email: string|null,
+     *   matches: list<array{student_no: string, name: string, email: string}>
      * }
      */
     public function lookupStudent(?string $studentNo, ?string $name): array
@@ -214,18 +215,19 @@ class StudentAccountService
                     'has_account' => false,
                     'student_no' => $normalizedNo,
                     'name' => null,
+                    'email' => Student::emailFromStudentNo($normalizedNo),
                     'matches' => [],
                 ];
             }
 
+            $match = $this->formatLookupMatch($student);
+
             return [
                 'has_account' => true,
-                'student_no' => $student->student_no,
-                'name' => $student->name,
-                'matches' => [[
-                    'student_no' => $student->student_no,
-                    'name' => $student->name,
-                ]],
+                'student_no' => $match['student_no'],
+                'name' => $match['name'],
+                'email' => $match['email'],
+                'matches' => [$match],
             ];
         }
 
@@ -233,13 +235,10 @@ class StudentAccountService
             $students = Student::query()
                 ->where('name', $normalizedName)
                 ->orderBy('student_no')
-                ->get(['student_no', 'name']);
+                ->get(['student_no', 'name', 'email']);
 
             $matches = $students
-                ->map(fn (Student $student) => [
-                    'student_no' => $student->student_no,
-                    'name' => $student->name,
-                ])
+                ->map(fn (Student $student) => $this->formatLookupMatch($student))
                 ->values()
                 ->all();
 
@@ -248,6 +247,7 @@ class StudentAccountService
                     'has_account' => true,
                     'student_no' => $matches[0]['student_no'],
                     'name' => $matches[0]['name'],
+                    'email' => $matches[0]['email'],
                     'matches' => $matches,
                 ];
             }
@@ -256,6 +256,7 @@ class StudentAccountService
                 'has_account' => count($matches) > 0,
                 'student_no' => null,
                 'name' => $normalizedName,
+                'email' => null,
                 'matches' => $matches,
             ];
         }
@@ -264,13 +265,14 @@ class StudentAccountService
             'has_account' => false,
             'student_no' => null,
             'name' => null,
+            'email' => null,
             'matches' => [],
         ];
     }
 
     /**
      * @deprecated 改用 lookupStudent()
-     * @return array{has_account: bool, student_no: string, name: string|null}
+     * @return array{has_account: bool, student_no: string, name: string|null, email: string|null}
      */
     public function lookupByStudentNo(string $studentNo): array
     {
@@ -280,6 +282,23 @@ class StudentAccountService
             'has_account' => $result['has_account'],
             'student_no' => (string) ($result['student_no'] ?? ''),
             'name' => $result['name'],
+            'email' => $result['email'],
+        ];
+    }
+
+    /**
+     * @return array{student_no: string, name: string, email: string}
+     */
+    private function formatLookupMatch(Student $student): array
+    {
+        $email = trim((string) $student->email);
+
+        return [
+            'student_no' => $student->student_no,
+            'name' => $student->name,
+            'email' => $email !== ''
+                ? $email
+                : Student::emailFromStudentNo((string) $student->student_no),
         ];
     }
 
@@ -602,9 +621,9 @@ class StudentAccountService
                     ];
                     $createdByTeacher[$teacherId]['students'][] = [
                         'sid' => $student->id,
-                        'class_name' => $application->class_name,
-                        'student_no' => $student->student_no,
-                        'name' => $item->name,
+                    'class_name' => $application->class_name,
+                    'student_no' => $student->student_no,
+                    'name' => $item->name,
                         'password' => $plainPassword,
                         'email' => $email,
                     ];
