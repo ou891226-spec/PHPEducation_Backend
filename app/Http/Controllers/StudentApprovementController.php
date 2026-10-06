@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ApproveStudentItemsRequest;
+use App\Mail\CourseApproved;
 use App\Mail\StudentAccountCreated;
 use App\Models\StudentApplications;
 use App\Services\StudentAccountService;
@@ -45,7 +46,7 @@ class StudentApprovementController extends Controller
             );
         }
 
-        $this->notifyTeachers($result['created_by_teacher']);
+        $this->notifyTeachers($result['teacher_notices']);
 
         return response()->json([
             'message' => '已開通課程。',
@@ -73,10 +74,10 @@ class StudentApprovementController extends Controller
 
         $result = $this->studentAccountService->approveApplication($application);
 
-        $this->notifyTeachers($result['created_by_teacher']);
+        $this->notifyTeachers($result['teacher_notices']);
 
         // 整理本次新增的學生清單（供測試案例斷言驗證）
-        $newStudents = collect($result['created_by_teacher'])->flatMap(fn ($group) => $group['students'])->values();
+        $newStudents = collect($result['teacher_notices'])->flatMap(fn ($group) => $group['students'])->values();
 
         return response()->json([
             'message' => 'Student account application approved.',
@@ -89,33 +90,48 @@ class StudentApprovementController extends Controller
     }
 
     /**
-     * 產製加密 Excel 檔案並以電子郵件通知相關教師
+     * 以電子郵件通知相關教師課程已開通；有新建帳號時附上加密 Excel
      *
-     * @param  array<int, array{teacher_account: string, teacher_email: string, teacher_name: string, class_name: string, course_name: string, students: array<int, array<string, mixed>>}>  $createdByTeacher
+     * @param  array<int, array{teacher_account: string, teacher_email: string, teacher_name: string, class_name: string, course_name: string, students: array<int, array<string, mixed>>, joined_students: array<int, array<string, mixed>>}>  $teacherNotices
      * @return void
      */
-    private function notifyTeachers(array $createdByTeacher): void
+    private function notifyTeachers(array $teacherNotices): void
     {
-        foreach ($createdByTeacher as $group) {
-            $studentCount = count($group['students'] ?? []);
-        
-            // 若該教師組別沒有新建立的學生，則不產製附件亦不寄送郵件
-            if ($group['students'] === []) {
+        foreach ($teacherNotices as $group) {
+            $students = $group['students'] ?? [];
+            $joinedCount = count($group['joined_students'] ?? []);
+
+            if ($students === [] && $joinedCount === 0) {
+                continue;
+            }
+
+            $courseName = (string) ($group['course_name'] ?? '');
+            $className = $group['class_name'] ?? '';
+
+            if ($students === []) {
+                Mail::to($group['teacher_email'])->send(new CourseApproved(
+                    teacherName: $group['teacher_name'],
+                    className: $className,
+                    courseName: $courseName,
+                    joinedCount: $joinedCount,
+                ));
+
                 continue;
             }
 
             // 以教師帳號作為密碼加密 Excel
             $excelContent = $this->excelService->generate(
-                students: $group['students'],
+                students: $students,
                 password: (string) ($group['teacher_account'] ?? ''),
             );
 
             Mail::to($group['teacher_email'])->send(new StudentAccountCreated(
                 teacherName: $group['teacher_name'],
-                courseName: (string) ($group['course_name'] ?? ''),
-                className: $group['class_name'] ?? '',
-                studentCount: $studentCount,
+                courseName: $courseName,
+                className: $className,
+                studentCount: count($students),
                 excelContent: $excelContent,
+                joinedCount: $joinedCount,
             ));
         }
     }

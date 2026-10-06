@@ -15,6 +15,11 @@ class Course extends Model
         'semester',
         'class_name',
         'teacher_id',
+        'approved_at',
+    ];
+
+    protected $casts = [
+        'approved_at' => 'datetime',
     ];
 
     public function teacher(): BelongsTo

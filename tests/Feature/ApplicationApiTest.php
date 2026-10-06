@@ -351,6 +351,7 @@ class ApplicationApiTest extends TestCase
     public function test_teacher_adding_existing_student_enrolls_immediately(): void
     {
         $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資管')->firstOrFail();
+        $course->update(['approved_at' => now()]);
         $existing = Student::query()->where('student_no', '1411131000')->firstOrFail();
         $token = $this->loginToken('teacher2@school.edu.tw');
 
@@ -384,6 +385,7 @@ class ApplicationApiTest extends TestCase
     public function test_teacher_adding_existing_student_uses_account_name_when_typed_wrong(): void
     {
         $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資管')->firstOrFail();
+        $course->update(['approved_at' => now()]);
         $existing = Student::query()->where('student_no', '1411131000')->firstOrFail();
         $token = $this->loginToken('teacher2@school.edu.tw');
 
@@ -470,6 +472,7 @@ class ApplicationApiTest extends TestCase
     public function test_teacher_adding_mixed_students_enrolls_existing_and_keeps_new_pending(): void
     {
         $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資管')->firstOrFail();
+        $course->update(['approved_at' => now()]);
         $existing = Student::query()->where('student_no', '1411131000')->firstOrFail();
         $token = $this->loginToken('teacher2@school.edu.tw');
 
@@ -499,6 +502,165 @@ class ApplicationApiTest extends TestCase
         $this->assertDatabaseMissing('students', [
             'student_no' => '1411139001',
         ]);
+    }
+
+    public function test_new_course_existing_students_wait_for_admin_and_mail_has_no_attachment(): void
+    {
+        Mail::fake();
+
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資管')->firstOrFail();
+        $this->assertNull($course->approved_at);
+        $existing = Student::query()->where('student_no', '1411131000')->firstOrFail();
+        $token = $this->loginToken('teacher2@school.edu.tw');
+
+        $this->withToken($token)
+            ->postJson("/api/v1/teacher/courses/{$course->id}/student-applications", [
+                'student_no' => $existing->student_no,
+                'name' => $existing->name,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.status', 'pending');
+
+        $this->assertDatabaseHas('student_application_items', [
+            'student_no' => $existing->student_no,
+            'status' => 'pending',
+        ]);
+        $this->assertDatabaseMissing('enrollments', [
+            'student_id' => $existing->id,
+            'course_id' => $course->id,
+        ]);
+
+        $this->withToken($this->loginToken('admin@nutc.edu.tw'))
+            ->postJson('/api/v1/student-applications/approve', [
+                'course_ids' => [$course->id],
+                'source_course_id' => $course->id,
+            ])
+            ->assertOk()
+            ->assertJsonPath('activated_count', 1)
+            ->assertJsonPath('created_count', 0);
+
+        $this->assertDatabaseHas('enrollments', [
+            'student_id' => $existing->id,
+            'course_id' => $course->id,
+        ]);
+        $this->assertNotNull($course->fresh()->approved_at);
+
+        Mail::assertNotSent(\App\Mail\StudentAccountCreated::class);
+        Mail::assertSent(\App\Mail\CourseApproved::class, function ($mail) {
+            return $mail->hasTo('teacher2@school.edu.tw')
+                && $mail->joinedCount === 1
+                && str_contains($mail->render(), '皆已有帳號');
+        });
+
+        // 開通過後，再加舊學生就直接加入
+        $another = Student::query()->create([
+            'student_no' => '1411136700',
+            'name' => '舊學生乙',
+            'class_name' => '資應',
+            'email' => Student::emailFromStudentNo('1411136700'),
+            'password' => 'password',
+        ]);
+
+        $this->app['auth']->forgetGuards();
+
+        $this->withToken($token)
+            ->postJson("/api/v1/teacher/courses/{$course->id}/student-applications", [
+                'student_no' => $another->student_no,
+                'name' => $another->name,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.status', 'approved');
+
+        $this->assertDatabaseHas('enrollments', [
+            'student_id' => $another->id,
+            'course_id' => $course->id,
+        ]);
+    }
+
+    public function test_new_course_mixed_students_mail_counts_new_and_existing(): void
+    {
+        Mail::fake();
+
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資管')->firstOrFail();
+        $existing = Student::query()->where('student_no', '1411131000')->firstOrFail();
+
+        $this->withToken($this->loginToken('teacher2@school.edu.tw'))
+            ->postJson("/api/v1/teacher/courses/{$course->id}/student-applications", [
+                'students' => [
+                    ['student_no' => $existing->student_no, 'name' => $existing->name],
+                    ['student_no' => '1411139001', 'name' => '新同學'],
+                ],
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.status', 'pending');
+
+        $this->withToken($this->loginToken('admin@nutc.edu.tw'))
+            ->postJson('/api/v1/student-applications/approve', [
+                'course_ids' => [$course->id],
+                'source_course_id' => $course->id,
+            ])
+            ->assertOk()
+            ->assertJsonPath('activated_count', 2)
+            ->assertJsonPath('created_count', 1);
+
+        Mail::assertSent(\App\Mail\StudentAccountCreated::class, function ($mail) {
+            $body = $mail->render();
+
+            return $mail->studentCount === 1
+                && $mail->joinedCount === 1
+                && count($mail->attachments()) === 1
+                && str_contains($body, '本次新建帳號 1 人')
+                && str_contains($body, '另有 1 位學生已有帳號');
+        });
+        Mail::assertNotSent(\App\Mail\CourseApproved::class);
+    }
+
+    public function test_teacher_can_edit_pending_existing_student_in_new_course(): void
+    {
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資管')->firstOrFail();
+        $existing = Student::query()->where('student_no', '1411131000')->firstOrFail();
+        $token = $this->loginToken('teacher2@school.edu.tw');
+
+        $this->withToken($token)
+            ->postJson("/api/v1/teacher/courses/{$course->id}/student-applications", [
+                'student_no' => $existing->student_no,
+                'name' => $existing->name,
+            ])
+            ->assertCreated();
+
+        $item = StudentApplicationItems::query()->where('student_no', $existing->student_no)->firstOrFail();
+
+        $this->withToken($token)
+            ->putJson("/api/v1/teacher/courses/{$course->id}/student-applications/{$item->id}", [
+                'student_no' => $existing->student_no,
+                'name' => $existing->name,
+                'email' => $existing->email,
+            ])
+            ->assertOk();
+    }
+
+    public function test_approving_student_with_taken_email_returns_validation_error(): void
+    {
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
+        $existing = Student::query()->where('student_no', '1411131000')->firstOrFail();
+
+        $this->withToken($this->loginToken('teacher2@school.edu.tw'))
+            ->postJson("/api/v1/teacher/courses/{$course->id}/student-applications", [
+                'student_no' => '1411139002',
+                'name' => '撞信箱生',
+                'email' => $existing->email,
+            ])
+            ->assertCreated();
+
+        $this->withToken($this->loginToken('admin@nutc.edu.tw'))
+            ->postJson('/api/v1/student-applications/approve', [
+                'course_ids' => [$course->id],
+                'source_course_id' => $course->id,
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('item_ids');
+
+        $this->assertDatabaseMissing('students', ['student_no' => '1411139002']);
     }
 
     public function test_teacher_can_add_one_student_for_own_course(): void

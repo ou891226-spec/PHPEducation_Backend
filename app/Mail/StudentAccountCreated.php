@@ -23,6 +23,7 @@ class StudentAccountCreated extends Mailable
         public string $courseName,
         public int $studentCount,
         public string $excelContent,
+        public int $joinedCount = 0,
     ){
         //
     }

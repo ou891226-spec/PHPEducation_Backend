@@ -72,7 +72,9 @@ class StudentAccountService
      * 4. 該課程下不可有重複學號的申請中項目
      *
      * 行為：
-     * - 已有學生帳號：以帳號姓名為準寫入（前端可自動帶入），申請列直接 approved，並立刻寫入本課選課
+     * - 已有學生帳號：以帳號姓名為準寫入（前端可自動帶入）
+     *   - 課程已開通過：申請列直接 approved，並立刻寫入本課選課
+     *   - 課程尚未開通：申請列 pending，等管理員開通課程後才選課
      * - 尚無帳號：申請列 pending，等管理員開通後才建帳／選課
      *
      * @param string $tid 授課教師 ID
@@ -131,9 +133,11 @@ class StudentAccountService
                 ->get()
                 ->keyBy('student_no');
 
+            $courseApproved = $course->approved_at !== null;
+
             $pendingCount = 0;
             foreach ($data['students'] as $studentData) {
-                if (! $existingStudents->has($studentData['student_no'])) {
+                if (! $courseApproved || ! $existingStudents->has($studentData['student_no'])) {
                     $pendingCount++;
                 }
             }
@@ -158,6 +162,19 @@ class StudentAccountService
                     $name = $accountName !== '' ? $accountName : $name;
                     $accountEmail = trim((string) $existing->email);
                     $email = $accountEmail !== '' ? $accountEmail : $email;
+
+                    // 課程尚未開通：舊學生也要等管理員開通課程
+                    if (! $courseApproved) {
+                        StudentApplicationItems::create([
+                            'application_id' => $application->id,
+                            'student_no' => $studentData['student_no'],
+                            'name' => $name,
+                            'email' => $email,
+                            'status' => 'pending',
+                        ]);
+
+                        continue;
+                    }
 
                     StudentApplicationItems::create([
                         'application_id' => $application->id,
@@ -315,8 +332,8 @@ class StudentAccountService
     /**
      * 授課教師修改課程名冊中的一位學生（學號、姓名、信箱）。
      *
-     * - pending：更新申請列（含信箱）；開通時會沿用此信箱
-     * - approved 且已有帳號：可改學號／信箱；姓名以帳號為準，不覆寫正式帳號姓名
+     * - 尚無帳號（pending）：更新申請列（含信箱）；開通時會沿用此信箱
+     * - 已有帳號（approved，或未開通課程中的 pending）：可改學號／信箱；姓名以帳號為準，不覆寫正式帳號姓名
      * - 有帶 email：寫入申請列（及帳號）；未帶且改了學號：同步為預設 s{學號}@nutc.edu.tw
      *
      * @param  array{student_no: string, name: string, email?: string|null}  $data
@@ -374,10 +391,8 @@ class StudentAccountService
                 }
             }
 
-            $student = null;
-            if ($item->status === 'approved') {
-                $student = Student::query()->where('student_no', $oldStudentNo)->first();
-            }
+            // 未開通課程的舊學生也是 pending，但已有帳號，一樣要對到帳號
+            $student = Student::query()->where('student_no', $oldStudentNo)->first();
 
             $emailConflictQuery = Student::query()->where('email', $resolvedEmail);
             if ($student !== null) {
@@ -497,7 +512,7 @@ class StudentAccountService
      *
      * @param  int  $sourceCourseId 教師申請時綁定的課程（名冊來源）
      * @param  list<int>  $courseIds 欲開通（選課）的課程
-     * @return array{activated_count: int, created_count: int, enrolled_count: int, created_by_teacher: array<int, mixed>}
+     * @return array{activated_count: int, created_count: int, enrolled_count: int, teacher_notices: array<int, mixed>}
      */
     public function approvePendingForSourceCourse(int $sourceCourseId, array $courseIds): array
     {
@@ -528,7 +543,7 @@ class StudentAccountService
      *
      * @param  list<int>  $courseIds 欲開通（選課）的課程 ID
      * @param  list<int>  $itemIds 欲開通的申請項目 ID
-     * @return array{activated_count: int, created_count: int, enrolled_count: int, created_by_teacher: array<int, array{course_name: string, teacher_account: string, teacher_email: string, teacher_name: string, class_name: string, students: array<int, array{sid: int, class_name: string, student_no: string, name: string, password: string, email: string}>}>}
+     * @return array{activated_count: int, created_count: int, enrolled_count: int, teacher_notices: array<int, array{course_name: string, teacher_account: string, teacher_email: string, teacher_name: string, class_name: string, students: array<int, array{sid: int, class_name: string, student_no: string, name: string, password: string, email: string}>, joined_students: array<int, array{student_no: string, name: string}>}>}
      * @throws ValidationException 當項目不存在／已開通，或課程無效時拋出
      */
     public function approveItems(array $courseIds, array $itemIds): array
@@ -556,7 +571,7 @@ class StudentAccountService
                 ]);
             }
 
-            $createdByTeacher = [];
+            $noticesByTeacher = [];
             $createdCount = 0;
             $enrolledCount = 0;
             $courseNames = $courses->pluck('name')->unique()->implode('、');
@@ -574,6 +589,12 @@ class StudentAccountService
                     : Student::emailFromStudentNo($item->student_no);
 
                 if ($student === null) {
+                    if (Student::query()->where('email', $email)->exists()) {
+                        throw ValidationException::withMessages([
+                            'item_ids' => ["學號 {$item->student_no} 的信箱 {$email} 已被其他學生帳號使用，請老師修改信箱後再開通。"],
+                        ]);
+                    }
+
                     $plainPassword = $this->generatePassword();
 
                     $student = Student::create([
@@ -609,32 +630,56 @@ class StudentAccountService
                     $application->update(['status' => 'approved']);
                 }
 
-                if ($plainPassword !== null && $application?->teacher !== null) {
-                    $teacherId = $application->tid;
-                    $createdByTeacher[$teacherId] ??= [
-                        'course_name' => $courseNames,
-                        'teacher_account' => $application->teacher->account,
-                        'teacher_email' => $application->teacher->email,
-                        'teacher_name' => $application->teacher->name,
-                        'class_name' => $application->class_name,
-                        'students' => [],
+                if ($application?->teacher === null) {
+                    continue;
+                }
+
+                $teacherId = $application->tid;
+                $noticesByTeacher[$teacherId] ??= [
+                    'course_name' => $courseNames,
+                    'teacher_account' => $application->teacher->account,
+                    'teacher_email' => $application->teacher->email,
+                    'teacher_name' => $application->teacher->name,
+                    'class_name' => $application->class_name,
+                    'students' => [],
+                    'joined_students' => [],
+                ];
+
+                if ($plainPassword === null) {
+                    $noticesByTeacher[$teacherId]['joined_students'][] = [
+                        'student_no' => $student->student_no,
+                        'name' => $student->name,
                     ];
-                    $createdByTeacher[$teacherId]['students'][] = [
-                        'sid' => $student->id,
+
+                    continue;
+                }
+
+                $noticesByTeacher[$teacherId]['students'][] = [
+                    'sid' => $student->id,
                     'class_name' => $application->class_name,
                     'student_no' => $student->student_no,
                     'name' => $item->name,
-                        'password' => $plainPassword,
-                        'email' => $email,
-                    ];
-                }
+                    'password' => $plainPassword,
+                    'email' => $email,
+                ];
             }
+
+            $approvedCourseIds = $courses->pluck('id')
+                ->merge($items->pluck('application.course_id')->filter())
+                ->unique()
+                ->values()
+                ->all();
+
+            Course::query()
+                ->whereIn('id', $approvedCourseIds)
+                ->whereNull('approved_at')
+                ->update(['approved_at' => now()]);
 
             return [
                 'activated_count' => $items->count(),
                 'created_count' => $createdCount,
                 'enrolled_count' => $enrolledCount,
-                'created_by_teacher' => array_values($createdByTeacher),
+                'teacher_notices' => array_values($noticesByTeacher),
             ];
         });
     }
@@ -643,7 +688,7 @@ class StudentAccountService
      * 管理員：將整張申請單中所有尚未開通的學生一次審核開通
      *
      * @param StudentApplications $application 學生帳號申請主單
-     * @return array{activated_count: int, created_count: int, enrolled_count: int, created_by_teacher: array<int, mixed>}
+     * @return array{activated_count: int, created_count: int, enrolled_count: int, teacher_notices: array<int, mixed>}
      * @throws ValidationException 當無課程或無待開通項目時拋出
      */
     public function approveApplication(StudentApplications $application): array

@@ -50,6 +50,7 @@ class DatabaseSeeder extends Seeder
             'description' => '資應班網際系統設計課程',
             'semester' => '115-1',
             'class_name' => '資應',
+            'approved_at' => now(),
         ]);
 
         Course::query()->create([
