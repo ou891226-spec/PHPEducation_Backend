@@ -172,7 +172,7 @@ class AuthService
      * 查詢順序：
      * 1. admins 資料表 (account 欄位)
      * 2. teachers 資料表 (account 欄位)
-     * 3. students 資料表 (透過學號轉成校園 email 比對)
+     * 3. students 資料表 (先比對學號，再比對 email；學生信箱可自訂，不一定是學號組成的校園信箱)
      *
      * @param string $account 登入識別字串
      * @return Authenticatable|null
@@ -187,6 +187,13 @@ class AuthService
         $teacher = Teacher::query()->where('account', $account)->first();
         if ($teacher !== null) {
             return $teacher;
+        }
+
+        if (! str_contains($account, '@')) {
+            $student = Student::query()->where('student_no', ltrim($account, 'Ss'))->first();
+            if ($student !== null) {
+                return $student;
+            }
         }
 
         return Student::query()->where('email', Student::emailFromStudentNo($account))->first();

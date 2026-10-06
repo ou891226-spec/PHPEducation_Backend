@@ -157,7 +157,7 @@ tests/Feature                    API 功能測試
 | student_no | 學號（unique） |
 | name | 姓名 |
 | class_name | 班級（可空；開通時由申請單寫入） |
-| email | 學校信箱（unique），**登入帳號** |
+| email | 信箱（unique），預設 `s{學號}@nutc.edu.tw`，可自訂；學號或信箱都能登入 |
 
 ### student_applications
 
@@ -312,13 +312,13 @@ Authorization: Bearer {token}
 
 ### POST `/api/v1/auth/login`
 
-不需要傳 `role`，後端依序查 `admins.account` → `teachers.account` → `students.email`，先查到的就決定身分。
+不需要傳 `role`，後端依序查 `admins.account` → `teachers.account` → `students.student_no` → `students.email`，先查到的就決定身分。
 
 ```json
 { "account": "teacher@school.edu.tw", "password": "Password123!" }
 ```
 
-學生 `account` 填學號即可（如 `1411131000`，加不加 `s` 都行），後端組成 `s1411131000@nutc.edu.tw` 比對。成功時 `user.account` 回完整信箱。
+學生 `account` 填學號（如 `1411131000`，加不加 `s` 都行）或信箱都可以；信箱可自訂，不影響用學號登入。成功時 `user.account` 回學生信箱。
 
 成功 **200**：
 

@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Mail\StudentPasswordReset;
 use App\Models\Course;
+use App\Models\Student;
 use App\Models\Teacher;
 use App\Services\CourseService;
 use Database\Seeders\DatabaseSeeder;
@@ -214,6 +216,39 @@ class AuthApiTest extends TestCase
             return $mail->studentAccount === '1411131000'
                 && !empty($mail->newPassword);
         });
+    }
+
+    public function test_student_with_custom_email_can_login_with_reset_password(): void
+    {
+        Mail::fake();
+
+        Student::query()->create([
+            'student_no' => '0123456789',
+            'name' => '自訂信箱同學',
+            'email' => 'custom.student@gmail.com',
+            'password' => 'unknown-initial-password',
+        ]);
+
+        $this->postJson('/api/v1/auth/student/forgot-password', [
+            'student_no' => '0123456789',
+        ])->assertOk();
+
+        $newPassword = null;
+        Mail::assertSent(StudentPasswordReset::class, function (StudentPasswordReset $mail) use (&$newPassword) {
+            $newPassword = $mail->newPassword;
+
+            return $mail->hasTo('custom.student@gmail.com') && $mail->studentAccount === '0123456789';
+        });
+
+        foreach (['0123456789', 's0123456789', 'custom.student@gmail.com'] as $account) {
+            $this->postJson('/api/v1/auth/login', [
+                'account' => $account,
+                'password' => $newPassword,
+            ])
+                ->assertOk()
+                ->assertJsonPath('user.role', 'student')
+                ->assertJsonPath('user.student_no', '0123456789');
+        }
     }
 
     public function test_student_forgot_password_accepts_school_email_aliases(): void
