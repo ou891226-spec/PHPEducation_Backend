@@ -18,7 +18,7 @@ class TeacherQuestionRecordService
         $this->ownedCourse($teacher, $courseId);
 
         return QuestionRecord::query()
-            ->with(['student', 'question', 'subs'])
+            ->with(['student', 'question', 'subs', 'aiFeedback'])
             ->whereHas('question', fn ($query) => $query->where('course_id', $courseId))
             ->orderByDesc('id')
             ->get()
@@ -33,7 +33,7 @@ class TeacherQuestionRecordService
     public function review(Teacher $teacher, int $recordId, array $data): array
     {
         $record = QuestionRecord::query()
-            ->with(['student', 'question', 'subs'])
+            ->with(['student', 'question', 'subs', 'aiFeedback'])
             ->whereKey($recordId)
             ->whereHas('question.course', fn ($query) => $query->where('teacher_id', $teacher->id))
             ->first();
@@ -110,7 +110,7 @@ class TeacherQuestionRecordService
     /**
      * @return array<string, mixed>
      */
-    private function formatRecord(QuestionRecord $record): array
+    public function formatRecord(QuestionRecord $record): array
     {
         return [
             'id' => $record->id,
@@ -129,6 +129,9 @@ class TeacherQuestionRecordService
             'reference_answer' => $record->question?->reference_answer,
             'system_status' => $record->system_status,
             'teacher_status' => $record->teacher_status,
+            'ai_feedback' => $record->aiFeedback
+                ? (json_decode($record->aiFeedback->feedback_content, true) ?? $record->aiFeedback->feedback_content)
+                : null,
             'subs' => $record->subs
                 ->map(fn ($sub) => [
                     'id' => $sub->id,

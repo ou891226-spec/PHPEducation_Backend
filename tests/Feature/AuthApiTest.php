@@ -355,7 +355,27 @@ class AuthApiTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('message', '密碼修改成功');
+
+        // 驗證資料庫確實更新了密碼
+        $student = \App\Models\Student::where('student_no', '1411131000')->firstOrFail();
+        $this->assertTrue(\Illuminate\Support\Facades\Hash::check('NewStudentPass123', $student->password));
+
+        // 驗證舊密碼已無法登入
+        $oldLogin = $this->postJson('/api/v1/auth/login', [
+            'account' => 's1411131000',
+            'password' => self::PASSWORD,
+        ]);
+        $oldLogin->assertStatus(401);
+
+        // 驗證新密碼可以正常登入
+        $newLogin = $this->postJson('/api/v1/auth/login', [
+            'account' => 's1411131000',
+            'password' => 'NewStudentPass123',
+        ]);
+        $newLogin->assertOk()
+            ->assertJsonPath('user.role', 'student');
     }
+
 
     public function test_change_password_with_wrong_current_password_fails(): void
     {

@@ -22,6 +22,8 @@ use App\Http\Controllers\TeacherApplicationController;
 use App\Http\Controllers\TeacherApprovementController;
 use App\Http\Controllers\StudentAccountApplicationController;
 use App\Http\Controllers\StudentApprovementController;
+use App\Http\Controllers\Api\V1\Student\CodingExecuteController;
+use App\Http\Controllers\Api\V1\CodingGradingCompatibilityController;
 
 Route::prefix('v1')->group(function () {
 
@@ -96,9 +98,11 @@ Route::prefix('v1')->group(function () {
 
             Route::get('courses/{courseId}/question-records', [QuestionRecordController::class, 'index']);
             Route::put('question-records/{recordId}', [QuestionRecordController::class, 'update']);
+            Route::post('question-records/{recordId}/grade', [QuestionRecordController::class, 'grade']);
         });
 
         Route::middleware('role:student')->prefix('student')->group(function () {
+            Route::post('coding-execute', [CodingExecuteController::class, 'execute']);
             Route::get('courses/{courseId}/graph', [StudentMaterialController::class, 'graph']);
             Route::get('courses/{courseId}/chapters', [StudentMaterialController::class, 'chapters']);
             Route::get('chapters/{chapterId}/units', [StudentMaterialController::class, 'units']);
@@ -110,7 +114,21 @@ Route::prefix('v1')->group(function () {
             Route::get('question-records/{recordId}', [StudentQuestionController::class, 'showRecord']);
         });
     });
+
+    // -------------------------------------------------------------------------
+    // 程式題即時執行與 AI 批改相容路由 (相容 PHPEducation_AI 前端)
+    // -------------------------------------------------------------------------
+    Route::post('/coding-execute', [CodingGradingCompatibilityController::class, 'execute']);
+    Route::post('/coding-submissions', [CodingGradingCompatibilityController::class, 'submit']);
+    Route::get('/coding-records/{record}', [CodingGradingCompatibilityController::class, 'show']);
 });
+
+// 根路徑相容路由 (相容未帶 /v1 之呼叫)
+Route::post('/auth/login', [AuthController::class, 'login']);
+Route::post('/coding-execute', [CodingGradingCompatibilityController::class, 'execute']);
+Route::post('/coding-submissions', [CodingGradingCompatibilityController::class, 'submit']);
+Route::get('/coding-records/{record}', [CodingGradingCompatibilityController::class, 'show']);
+Route::post('/coding-records/{record}/grade', [CodingGradingCompatibilityController::class, 'grade']);
 
 // CI/CD 測試路由，僅用於確認部署是否成功
 Route::get('/cicd-test', function () {

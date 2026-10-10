@@ -62,5 +62,9 @@ class DatabaseSeeder extends Seeder
         ]);
 
         $student->courses()->attach($courseYing->id);
+
+        if (! app()->environment('testing')) {
+            $this->call(QuestionSeeder::class);
+        }
     }
 }

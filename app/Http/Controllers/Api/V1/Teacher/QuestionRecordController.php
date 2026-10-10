@@ -36,6 +36,33 @@ class QuestionRecordController extends Controller
         ]);
     }
 
+    public function grade(Request $request, int $recordId, \App\Services\CodingGradingService $codingGradingService): JsonResponse
+    {
+        $teacher = $this->teacher($request);
+        $record = \App\Models\QuestionRecord::query()
+            ->whereKey($recordId)
+            ->whereHas('question.course', fn ($q) => $q->where('teacher_id', $teacher->id))
+            ->firstOrFail();
+
+        // 確保老師不會在實作題以外的題型誤點及
+        if ($record->question?->type !== \App\Models\Question::TYPE_CODING) {
+            return response()->json([
+                'message' => '只有程式實作題支援 AI 批改。',
+            ], 422);
+        }
+
+        $result = $codingGradingService->grade($record);
+
+        $record->load(['student', 'question', 'subs', 'aiFeedback']);
+
+        // 老師批改完成後直接更新資料表
+        return response()->json([
+            'message' => 'AI 批改完成',
+            'record'  => $this->teacherQuestionRecordService->formatRecord($record),
+            'data'    => $result,
+        ]);
+    }
+
     private function teacher(Request $request): Teacher
     {
         $user = $request->user();

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class QuestionRecord extends Model
 {
@@ -50,5 +51,10 @@ class QuestionRecord extends Model
     public function subs(): HasMany
     {
         return $this->hasMany(QuestionRecordSub::class)->orderBy('sub_id');
+    }
+
+    public function aiFeedback(): HasOne
+    {
+        return $this->hasOne(AiFeedback::class, 'question_record_id');
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\CodingGradingJob;
 use App\Models\Question;
 use App\Models\QuestionOption;
 use App\Models\QuestionRecord;
@@ -224,7 +225,7 @@ class StudentQuestionService
             QuestionRecord::STATUS_PENDING,
         );
 
-        $this->gradeCodingByAi($question, $record);
+        // $this->gradeCodingByAi($question, $record);
 
         return [
             'message' => '已提交',
@@ -234,11 +235,11 @@ class StudentQuestionService
     }
 
     /**
-     * 實作題 AI 批改預留。尚未提供題目範例，目前不執行；先由老師輸入 Bloom 判定。
+     * 實作題 AI 批改：派發至背景佇列非同步評分
      */
     private function gradeCodingByAi(Question $question, QuestionRecord $record): void
     {
-        //
+        CodingGradingJob::dispatch($record);
     }
 
     private function storeRecord(
@@ -286,7 +287,7 @@ class StudentQuestionService
         $this->enrolledCourseId($student, $courseId);
 
         return QuestionRecord::query()
-            ->with(['question', 'subs'])
+            ->with(['question', 'subs', 'aiFeedback'])
             ->where('student_id', $student->id)
             ->whereHas('question', fn ($query) => $query->where('course_id', $courseId))
             ->when(
@@ -307,7 +308,7 @@ class StudentQuestionService
     public function findRecordForStudent(Student $student, int $recordId): array
     {
         $record = QuestionRecord::query()
-            ->with(['question', 'subs'])
+            ->with(['question', 'subs', 'aiFeedback'])
             ->whereKey($recordId)
             ->where('student_id', $student->id)
             ->first();
@@ -429,6 +430,13 @@ class StudentQuestionService
     {
         $needsTeacherReview = $record->question?->type === Question::TYPE_CODING;
 
+        $aiFeedback = $record->aiFeedback;
+        $feedbackContent = null;
+        if ($aiFeedback !== null) {
+            $decoded = json_decode($aiFeedback->feedback_content, true);
+            $feedbackContent = json_last_error() === JSON_ERROR_NONE ? $decoded : $aiFeedback->feedback_content;
+        }
+
         return [
             'id' => $record->id,
             'question_id' => $record->question_id,
@@ -436,12 +444,14 @@ class StudentQuestionService
             'question_type' => $record->question?->type,
             'course_id' => $record->question?->course_id,
             'result' => $this->formatStoredResult($record->result),
+            'solo' => $record->solo,
             'bloom_id' => $record->bloom_id,
             'question_bloom_id' => $record->question?->bloom_id,
             'system_status' => $record->system_status,
             // 非實作題：系統已批改，學生端不顯示待審（回 null 讓前端顯示 —）
             'teacher_status' => $needsTeacherReview ? $record->teacher_status : null,
             'needs_teacher_review' => $needsTeacherReview,
+            'ai_feedback' => $feedbackContent,
             'subs' => $record->subs
                 ->map(fn ($sub) => [
                     'id' => $sub->id,
