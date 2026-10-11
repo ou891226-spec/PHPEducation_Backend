@@ -512,7 +512,7 @@ class StudentAccountService
      *
      * @param  int  $sourceCourseId 教師申請時綁定的課程（名冊來源）
      * @param  list<int>  $courseIds 欲開通（選課）的課程
-     * @return array{activated_count: int, created_count: int, enrolled_count: int, teacher_notices: array<int, mixed>}
+     * @return array{activated_count: int, created_count: int, enrolled_count: int, created_students: list<array<string, string>>}
      */
     public function approvePendingForSourceCourse(int $sourceCourseId, array $courseIds): array
     {
@@ -537,13 +537,13 @@ class StudentAccountService
      * 管理員：批次審核開通勾選的學生，並寫入一門或多門課程選課
      *
      * 處理邏輯：
-     * 1. 若學生帳號不存在，自動建立 Student 與初始密碼（累計至通知教師清單）。
+     * 1. 若學生帳號不存在，自動建立 Student 與初始密碼（累計至通知學生清單）。
      * 2. 對每個選定課程，若尚未選修則建立 Enrollment。
      * 3. 更新申請項目為 approved；主單無待審項目時一併改為 approved。
      *
      * @param  list<int>  $courseIds 欲開通（選課）的課程 ID
      * @param  list<int>  $itemIds 欲開通的申請項目 ID
-     * @return array{activated_count: int, created_count: int, enrolled_count: int, teacher_notices: array<int, array{course_name: string, teacher_account: string, teacher_email: string, teacher_name: string, class_name: string, students: array<int, array{sid: int, class_name: string, student_no: string, name: string, password: string, email: string}>, joined_students: array<int, array{student_no: string, name: string}>}>}
+     * @return array{activated_count: int, created_count: int, enrolled_count: int, created_students: list<array{student_no: string, name: string, email: string, password: string}>}
      * @throws ValidationException 當項目不存在／已開通，或課程無效時拋出
      */
     public function approveItems(array $courseIds, array $itemIds): array
@@ -560,7 +560,7 @@ class StudentAccountService
 
         return DB::transaction(function () use ($courses, $uniqueIds) {
             $items = StudentApplicationItems::query()
-                ->with('application.teacher')
+                ->with('application')
                 ->whereIn('id', $uniqueIds)
                 ->where('status', 'pending')
                 ->get();
@@ -571,10 +571,9 @@ class StudentAccountService
                 ]);
             }
 
-            $noticesByTeacher = [];
+            $createdStudents = [];
             $createdCount = 0;
             $enrolledCount = 0;
-            $courseNames = $courses->pluck('name')->unique()->implode('、');
 
             foreach ($items as $item) {
                 $student = Student::query()
@@ -630,38 +629,14 @@ class StudentAccountService
                     $application->update(['status' => 'approved']);
                 }
 
-                if ($application?->teacher === null) {
-                    continue;
-                }
-
-                $teacherId = $application->tid;
-                $noticesByTeacher[$teacherId] ??= [
-                    'course_name' => $courseNames,
-                    'teacher_account' => $application->teacher->account,
-                    'teacher_email' => $application->teacher->email,
-                    'teacher_name' => $application->teacher->name,
-                    'class_name' => $application->class_name,
-                    'students' => [],
-                    'joined_students' => [],
-                ];
-
-                if ($plainPassword === null) {
-                    $noticesByTeacher[$teacherId]['joined_students'][] = [
+                if ($plainPassword !== null) {
+                    $createdStudents[] = [
                         'student_no' => $student->student_no,
                         'name' => $student->name,
+                        'email' => $email,
+                        'password' => $plainPassword,
                     ];
-
-                    continue;
                 }
-
-                $noticesByTeacher[$teacherId]['students'][] = [
-                    'sid' => $student->id,
-                    'class_name' => $application->class_name,
-                    'student_no' => $student->student_no,
-                    'name' => $item->name,
-                    'password' => $plainPassword,
-                    'email' => $email,
-                ];
             }
 
             $approvedCourseIds = $courses->pluck('id')
@@ -679,7 +654,7 @@ class StudentAccountService
                 'activated_count' => $items->count(),
                 'created_count' => $createdCount,
                 'enrolled_count' => $enrolledCount,
-                'teacher_notices' => array_values($noticesByTeacher),
+                'created_students' => $createdStudents,
             ];
         });
     }
@@ -688,7 +663,7 @@ class StudentAccountService
      * 管理員：將整張申請單中所有尚未開通的學生一次審核開通
      *
      * @param StudentApplications $application 學生帳號申請主單
-     * @return array{activated_count: int, created_count: int, enrolled_count: int, teacher_notices: array<int, mixed>}
+     * @return array{activated_count: int, created_count: int, enrolled_count: int, created_students: list<array<string, string>>}
      * @throws ValidationException 當無課程或無待開通項目時拋出
      */
     public function approveApplication(StudentApplications $application): array

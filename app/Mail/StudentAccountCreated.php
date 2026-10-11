@@ -3,9 +3,7 @@
 namespace App\Mail;
 
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
-use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
@@ -18,15 +16,10 @@ class StudentAccountCreated extends Mailable
      * Create a new message instance.
      */
     public function __construct(
-        public string $teacherName,
-        public string $className,    
-        public string $courseName,
-        public int $studentCount,
-        public string $excelContent,
-        public int $joinedCount = 0,
-    ){
-        //
-    }
+        public string $studentName,
+        public string $studentAccount,
+        public string $initialPassword,
+    ) {}
 
     /**
      * Get the message envelope.
@@ -34,7 +27,7 @@ class StudentAccountCreated extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: '【PHPEducation】學生帳號建立通知',
+            subject: '【PHPEducation】學生帳號開通通知',
         );
     }
 
@@ -44,20 +37,7 @@ class StudentAccountCreated extends Mailable
     public function content(): Content
     {
         return new Content(
-            view: 'emails.student-accounts-created',
+            view: 'emails.student-account-created',
         );
-    }
-
-    /**
-     * Get the attachments for the message.
-     *
-     * @return array<int, Attachment>
-     */
-    public function attachments(): array
-    {
-        return [
-            Attachment::fromData(fn () => $this->excelContent, '學生帳號名單.xlsx')
-                ->withMime('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
-        ];
     }
 }

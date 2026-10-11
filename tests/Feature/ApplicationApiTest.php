@@ -504,7 +504,7 @@ class ApplicationApiTest extends TestCase
         ]);
     }
 
-    public function test_new_course_existing_students_wait_for_admin_and_mail_has_no_attachment(): void
+    public function test_new_course_existing_students_wait_for_admin_and_no_mail_is_sent(): void
     {
         Mail::fake();
 
@@ -545,12 +545,7 @@ class ApplicationApiTest extends TestCase
         ]);
         $this->assertNotNull($course->fresh()->approved_at);
 
-        Mail::assertNotSent(\App\Mail\StudentAccountCreated::class);
-        Mail::assertSent(\App\Mail\CourseApproved::class, function ($mail) {
-            return $mail->hasTo('teacher2@school.edu.tw')
-                && $mail->joinedCount === 1
-                && str_contains($mail->render(), '皆已有帳號');
-        });
+        Mail::assertNothingSent();
 
         // 開通過後，再加舊學生就直接加入
         $another = Student::query()->create([
@@ -577,7 +572,7 @@ class ApplicationApiTest extends TestCase
         ]);
     }
 
-    public function test_new_course_mixed_students_mail_counts_new_and_existing(): void
+    public function test_new_course_mixed_students_only_new_student_gets_account_mail(): void
     {
         Mail::fake();
 
@@ -603,16 +598,44 @@ class ApplicationApiTest extends TestCase
             ->assertJsonPath('activated_count', 2)
             ->assertJsonPath('created_count', 1);
 
+        Mail::assertSentCount(1);
         Mail::assertSent(\App\Mail\StudentAccountCreated::class, function ($mail) {
             $body = $mail->render();
 
-            return $mail->studentCount === 1
-                && $mail->joinedCount === 1
-                && count($mail->attachments()) === 1
-                && str_contains($body, '本次新建帳號 1 人')
-                && str_contains($body, '另有 1 位學生已有帳號');
+            return $mail->hasTo('s1411139001@nutc.edu.tw')
+                && $mail->studentAccount === '1411139001'
+                && str_contains($body, '初始密碼：'.$mail->initialPassword);
         });
-        Mail::assertNotSent(\App\Mail\CourseApproved::class);
+
+        $created = Student::query()->where('student_no', '1411139001')->firstOrFail();
+        Mail::assertSent(\App\Mail\StudentAccountCreated::class, function ($mail) use ($created) {
+            return \Illuminate\Support\Facades\Hash::check($mail->initialPassword, $created->password);
+        });
+    }
+
+    public function test_approval_succeeds_even_if_student_mail_fails(): void
+    {
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資應')->firstOrFail();
+
+        $this->withToken($this->loginToken('teacher2@school.edu.tw'))
+            ->postJson("/api/v1/teacher/courses/{$course->id}/student-applications", [
+                'student_no' => '1411139003',
+                'name' => '寄信失敗生',
+            ])
+            ->assertCreated();
+
+        $adminToken = $this->loginToken('admin@nutc.edu.tw');
+        Mail::shouldReceive('to')->andThrow(new \RuntimeException('SMTP 無法連線'));
+
+        $this->withToken($adminToken)
+            ->postJson('/api/v1/student-applications/approve', [
+                'course_ids' => [$course->id],
+                'source_course_id' => $course->id,
+            ])
+            ->assertOk()
+            ->assertJsonPath('created_count', 1);
+
+        $this->assertDatabaseHas('students', ['student_no' => '1411139003']);
     }
 
     public function test_teacher_can_edit_pending_existing_student_in_new_course(): void
@@ -1445,16 +1468,20 @@ class ApplicationApiTest extends TestCase
         $approveResponse = $this->withToken($adminToken)
             ->postJson("/api/v1/teacher/student-applications/{$appId}/approve");
         $approveResponse->assertOk()
-            ->assertJsonPath('data.activated_count', 1);
+            ->assertJsonPath('data.activated_count', 1)
+            ->assertJsonPath('data.created_count', 1)
+            ->assertJsonMissingPath('data.students');
 
         $student = Student::query()->where('student_no', '1411139001')->first();
         $this->assertNotNull($student);
         $this->assertSame('s1411139001@nutc.edu.tw', $student->email);
 
-        // 3. 檢查通知信件包含正確新建人數與加密 Excel 附件
+        // 3. 帳密直接寄給學生，不寄給老師
         Mail::assertSent(\App\Mail\StudentAccountCreated::class, function ($mail) {
-            return $mail->studentCount === 1
-                && !empty($mail->excelContent);
+            return $mail->hasTo('s1411139001@nutc.edu.tw');
+        });
+        Mail::assertNotSent(\App\Mail\StudentAccountCreated::class, function ($mail) use ($teacher) {
+            return $mail->hasTo($teacher->email);
         });
     }
 

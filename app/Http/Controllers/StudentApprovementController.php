@@ -3,24 +3,23 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ApproveStudentItemsRequest;
-use App\Mail\CourseApproved;
 use App\Mail\StudentAccountCreated;
 use App\Models\StudentApplications;
 use App\Services\StudentAccountService;
-use App\Services\StudentCreateExcelService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Throwable;
 
 /**
  * 學生帳號開通與審核控制器
  * 
- * 處理學生帳號申請單審核（支援批次勾選或整單審核），並產製加密 Excel 檔發信通知教師。
+ * 處理學生帳號申請單審核（支援批次勾選或整單審核），並寄送帳號密碼給新建帳號的學生。
  */
 class StudentApprovementController extends Controller
 {
     public function __construct(
         private StudentAccountService $studentAccountService,
-        private StudentCreateExcelService $excelService,
     ) {}
 
     /**
@@ -46,7 +45,7 @@ class StudentApprovementController extends Controller
             );
         }
 
-        $this->notifyTeachers($result['teacher_notices']);
+        $this->notifyStudents($result['created_students']);
 
         return response()->json([
             'message' => '已開通課程。',
@@ -74,65 +73,40 @@ class StudentApprovementController extends Controller
 
         $result = $this->studentAccountService->approveApplication($application);
 
-        $this->notifyTeachers($result['teacher_notices']);
-
-        // 整理本次新增的學生清單（供測試案例斷言驗證）
-        $newStudents = collect($result['teacher_notices'])->flatMap(fn ($group) => $group['students'])->values();
+        $this->notifyStudents($result['created_students']);
 
         return response()->json([
             'message' => 'Student account application approved.',
             'data' => [
                 'application_id' => $application->id,
                 'activated_count' => $result['activated_count'],
-                'students' => $newStudents,
+                'created_count' => $result['created_count'],
             ],
         ]);
     }
 
     /**
-     * 以電子郵件通知相關教師課程已開通；有新建帳號時附上加密 Excel
+     * 寄送帳號與初始密碼給新建帳號的學生
      *
-     * @param  array<int, array{teacher_account: string, teacher_email: string, teacher_name: string, class_name: string, course_name: string, students: array<int, array<string, mixed>>, joined_students: array<int, array<string, mixed>>}>  $teacherNotices
+     * 單封寄送失敗不影響開通結果，只記錄 log；學生可改用「忘記密碼」重設。
+     *
+     * @param  list<array{student_no: string, name: string, email: string, password: string}>  $createdStudents
      * @return void
      */
-    private function notifyTeachers(array $teacherNotices): void
+    private function notifyStudents(array $createdStudents): void
     {
-        foreach ($teacherNotices as $group) {
-            $students = $group['students'] ?? [];
-            $joinedCount = count($group['joined_students'] ?? []);
-
-            if ($students === [] && $joinedCount === 0) {
-                continue;
-            }
-
-            $courseName = (string) ($group['course_name'] ?? '');
-            $className = $group['class_name'] ?? '';
-
-            if ($students === []) {
-                Mail::to($group['teacher_email'])->send(new CourseApproved(
-                    teacherName: $group['teacher_name'],
-                    className: $className,
-                    courseName: $courseName,
-                    joinedCount: $joinedCount,
+        foreach ($createdStudents as $student) {
+            try {
+                Mail::to($student['email'])->send(new StudentAccountCreated(
+                    studentName: $student['name'],
+                    studentAccount: $student['student_no'],
+                    initialPassword: $student['password'],
                 ));
-
-                continue;
+            } catch (Throwable $exception) {
+                Log::warning("學生帳號開通信寄送失敗：學號 {$student['student_no']}（{$student['email']}）", [
+                    'error' => $exception->getMessage(),
+                ]);
             }
-
-            // 以教師帳號作為密碼加密 Excel
-            $excelContent = $this->excelService->generate(
-                students: $students,
-                password: (string) ($group['teacher_account'] ?? ''),
-            );
-
-            Mail::to($group['teacher_email'])->send(new StudentAccountCreated(
-                teacherName: $group['teacher_name'],
-                courseName: $courseName,
-                className: $className,
-                studentCount: count($students),
-                excelContent: $excelContent,
-                joinedCount: $joinedCount,
-            ));
         }
     }
 }
