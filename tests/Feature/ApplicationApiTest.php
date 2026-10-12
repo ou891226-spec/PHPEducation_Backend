@@ -348,8 +348,10 @@ class ApplicationApiTest extends TestCase
         ]);
     }
 
-    public function test_teacher_adding_existing_student_enrolls_immediately(): void
+    public function test_teacher_adding_existing_student_to_approved_course_waits_for_admin(): void
     {
+        Mail::fake();
+
         $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資管')->firstOrFail();
         $course->update(['approved_at' => now()]);
         $existing = Student::query()->where('student_no', '1411131000')->firstOrFail();
@@ -361,21 +363,22 @@ class ApplicationApiTest extends TestCase
                 'name' => $existing->name,
             ])
             ->assertCreated()
-            ->assertJsonPath('data.status', 'approved');
+            ->assertJsonPath('data.status', 'pending');
 
         $this->assertDatabaseHas('student_application_items', [
             'student_no' => $existing->student_no,
             'name' => $existing->name,
-            'status' => 'approved',
+            'status' => 'pending',
         ]);
 
-        $this->assertDatabaseHas('enrollments', [
+        $this->assertDatabaseMissing('enrollments', [
             'student_id' => $existing->id,
             'course_id' => $course->id,
         ]);
+        Mail::assertNothingSent();
 
         $this->withToken($token)
-            ->getJson("/api/v1/teacher/courses/{$course->id}/student-applications?status=approved")
+            ->getJson("/api/v1/teacher/courses/{$course->id}/student-applications?status=pending")
             ->assertOk()
             ->assertJsonPath('items.0.student_no', $existing->student_no)
             ->assertJsonPath('items.0.name', $existing->name)
@@ -395,17 +398,12 @@ class ApplicationApiTest extends TestCase
                 'name' => '王小名',
             ])
             ->assertCreated()
-            ->assertJsonPath('data.status', 'approved');
+            ->assertJsonPath('data.status', 'pending');
 
         $this->assertDatabaseHas('student_application_items', [
             'student_no' => $existing->student_no,
             'name' => $existing->name,
-            'status' => 'approved',
-        ]);
-
-        $this->assertDatabaseHas('enrollments', [
-            'student_id' => $existing->id,
-            'course_id' => $course->id,
+            'status' => 'pending',
         ]);
     }
 
@@ -469,7 +467,7 @@ class ApplicationApiTest extends TestCase
             ->assertJsonPath('matches.0.email', 'custom.lookup@example.com');
     }
 
-    public function test_teacher_adding_mixed_students_enrolls_existing_and_keeps_new_pending(): void
+    public function test_teacher_adding_mixed_students_keeps_all_pending(): void
     {
         $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資管')->firstOrFail();
         $course->update(['approved_at' => now()]);
@@ -488,9 +486,9 @@ class ApplicationApiTest extends TestCase
 
         $this->assertDatabaseHas('student_application_items', [
             'student_no' => $existing->student_no,
-            'status' => 'approved',
+            'status' => 'pending',
         ]);
-        $this->assertDatabaseHas('enrollments', [
+        $this->assertDatabaseMissing('enrollments', [
             'student_id' => $existing->id,
             'course_id' => $course->id,
         ]);
@@ -504,7 +502,7 @@ class ApplicationApiTest extends TestCase
         ]);
     }
 
-    public function test_new_course_existing_students_wait_for_admin_and_no_mail_is_sent(): void
+    public function test_new_course_existing_students_wait_for_admin_then_get_course_joined_mail(): void
     {
         Mail::fake();
 
@@ -545,9 +543,14 @@ class ApplicationApiTest extends TestCase
         ]);
         $this->assertNotNull($course->fresh()->approved_at);
 
-        Mail::assertNothingSent();
+        Mail::assertNotSent(\App\Mail\StudentAccountCreated::class);
+        Mail::assertSentCount(1);
+        Mail::assertSent(\App\Mail\StudentCourseJoined::class, function ($mail) use ($existing, $course) {
+            return $mail->hasTo($existing->email)
+                && str_contains($mail->render(), '《'.$course->name.'》');
+        });
 
-        // 開通過後，再加舊學生就直接加入
+        // 課程開通過後，再加舊學生一樣要等管理員開通
         $another = Student::query()->create([
             'student_no' => '1411136700',
             'name' => '舊學生乙',
@@ -564,12 +567,79 @@ class ApplicationApiTest extends TestCase
                 'name' => $another->name,
             ])
             ->assertCreated()
-            ->assertJsonPath('data.status', 'approved');
+            ->assertJsonPath('data.status', 'pending');
 
-        $this->assertDatabaseHas('enrollments', [
+        $this->assertDatabaseMissing('enrollments', [
             'student_id' => $another->id,
             'course_id' => $course->id,
         ]);
+        Mail::assertSentCount(1);
+    }
+
+    public function test_removed_student_added_back_waits_for_admin_then_gets_course_joined_mail(): void
+    {
+        Mail::fake();
+
+        $course = Course::query()->where('name', '網際系統設計')->where('class_name', '資管')->firstOrFail();
+        $existing = Student::query()->where('student_no', '1411131000')->firstOrFail();
+        $teacherToken = $this->loginToken('teacher2@school.edu.tw');
+        $adminToken = $this->loginToken('admin@nutc.edu.tw');
+
+        $addStudent = function () use ($teacherToken, $course, $existing) {
+            $this->app['auth']->forgetGuards();
+
+            return $this->withToken($teacherToken)
+                ->postJson("/api/v1/teacher/courses/{$course->id}/student-applications", [
+                    'student_no' => $existing->student_no,
+                    'name' => $existing->name,
+                ]);
+        };
+
+        $approve = function () use ($adminToken, $course) {
+            $this->app['auth']->forgetGuards();
+
+            return $this->withToken($adminToken)
+                ->postJson('/api/v1/student-applications/approve', [
+                    'course_ids' => [$course->id],
+                    'source_course_id' => $course->id,
+                ]);
+        };
+
+        $addStudent()->assertCreated()->assertJsonPath('data.status', 'pending');
+        $approve()->assertOk();
+        Mail::assertSent(\App\Mail\StudentCourseJoined::class, 1);
+
+        $item = StudentApplicationItems::query()
+            ->where('student_no', $existing->student_no)
+            ->whereHas('application', fn ($query) => $query->where('course_id', $course->id))
+            ->firstOrFail();
+
+        $this->app['auth']->forgetGuards();
+        $this->withToken($teacherToken)
+            ->deleteJson("/api/v1/teacher/courses/{$course->id}/student-applications/{$item->id}")
+            ->assertOk();
+
+        $this->assertDatabaseMissing('enrollments', [
+            'student_id' => $existing->id,
+            'course_id' => $course->id,
+        ]);
+
+        $addStudent()->assertCreated()->assertJsonPath('data.status', 'pending');
+
+        $this->assertDatabaseMissing('enrollments', [
+            'student_id' => $existing->id,
+            'course_id' => $course->id,
+        ]);
+        Mail::assertSent(\App\Mail\StudentCourseJoined::class, 1);
+
+        $approve()->assertOk()->assertJsonPath('created_count', 0);
+
+        $this->assertDatabaseHas('enrollments', [
+            'student_id' => $existing->id,
+            'course_id' => $course->id,
+        ]);
+        Mail::assertNotSent(\App\Mail\StudentAccountCreated::class);
+        Mail::assertSent(\App\Mail\StudentCourseJoined::class, 2);
     }
 
     public function test_new_course_mixed_students_only_new_student_gets_account_mail(): void
@@ -598,13 +668,17 @@ class ApplicationApiTest extends TestCase
             ->assertJsonPath('activated_count', 2)
             ->assertJsonPath('created_count', 1);
 
-        Mail::assertSentCount(1);
-        Mail::assertSent(\App\Mail\StudentAccountCreated::class, function ($mail) {
+        Mail::assertSentCount(2);
+        Mail::assertSent(\App\Mail\StudentAccountCreated::class, 1);
+        Mail::assertSent(\App\Mail\StudentCourseJoined::class, fn ($mail) => $mail->hasTo($existing->email));
+        Mail::assertNotSent(\App\Mail\StudentCourseJoined::class, fn ($mail) => $mail->hasTo('s1411139001@nutc.edu.tw'));
+        Mail::assertSent(\App\Mail\StudentAccountCreated::class, function ($mail) use ($course) {
             $body = $mail->render();
 
             return $mail->hasTo('s1411139001@nutc.edu.tw')
                 && $mail->studentAccount === '1411139001'
-                && str_contains($body, '初始密碼：'.$mail->initialPassword);
+                && str_contains($body, '初始密碼：'.$mail->initialPassword)
+                && str_contains($body, '《'.$course->name.'》');
         });
 
         $created = Student::query()->where('student_no', '1411139001')->firstOrFail();

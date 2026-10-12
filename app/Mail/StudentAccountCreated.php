@@ -14,11 +14,14 @@ class StudentAccountCreated extends Mailable
 
     /**
      * Create a new message instance.
+     *
+     * @param  list<array{name: string, teacher_name: string}>  $courses
      */
     public function __construct(
         public string $studentName,
         public string $studentAccount,
         public string $initialPassword,
+        public array $courses = [],
     ) {}
 
     /**

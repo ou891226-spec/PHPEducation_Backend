@@ -6,6 +6,10 @@ use App\Models\Student;
 use App\Models\Course;
 use App\Models\Enrollment;
 use App\Models\Teacher;
+use App\Mail\StudentCourseJoined;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use Throwable;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -72,10 +76,8 @@ class StudentAccountService
      * 4. 該課程下不可有重複學號的申請中項目
      *
      * 行為：
-     * - 已有學生帳號：以帳號姓名為準寫入（前端可自動帶入）
-     *   - 課程已開通過：申請列直接 approved，並立刻寫入本課選課
-     *   - 課程尚未開通：申請列 pending，等管理員開通課程後才選課
-     * - 尚無帳號：申請列 pending，等管理員開通後才建帳／選課
+     * - 一律 pending，等管理員開通後才建帳／選課並寄信（含移出後再加回的學生）
+     * - 已有學生帳號：以帳號姓名／信箱為準寫入（前端可自動帶入）
      *
      * @param string $tid 授課教師 ID
      * @param array{course_id: int, students: list<array{student_no: string, name: string}>} $data 申請資料
@@ -133,20 +135,11 @@ class StudentAccountService
                 ->get()
                 ->keyBy('student_no');
 
-            $courseApproved = $course->approved_at !== null;
-
-            $pendingCount = 0;
-            foreach ($data['students'] as $studentData) {
-                if (! $courseApproved || ! $existingStudents->has($studentData['student_no'])) {
-                    $pendingCount++;
-                }
-            }
-
             $application = StudentApplications::create([
                 'tid' => $tid,
                 'course_id' => $course->id,
                 'class_name' => $className,
-                'status' => $pendingCount > 0 ? 'pending' : 'approved',
+                'status' => 'pending',
             ]);
 
             foreach ($data['students'] as $studentData) {
@@ -162,34 +155,6 @@ class StudentAccountService
                     $name = $accountName !== '' ? $accountName : $name;
                     $accountEmail = trim((string) $existing->email);
                     $email = $accountEmail !== '' ? $accountEmail : $email;
-
-                    // 課程尚未開通：舊學生也要等管理員開通課程
-                    if (! $courseApproved) {
-                        StudentApplicationItems::create([
-                            'application_id' => $application->id,
-                            'student_no' => $studentData['student_no'],
-                            'name' => $name,
-                            'email' => $email,
-                            'status' => 'pending',
-                        ]);
-
-                        continue;
-                    }
-
-                    StudentApplicationItems::create([
-                        'application_id' => $application->id,
-                        'student_no' => $studentData['student_no'],
-                        'name' => $name,
-                        'email' => $email,
-                        'status' => 'approved',
-                    ]);
-
-                    Enrollment::query()->firstOrCreate([
-                        'student_id' => $existing->id,
-                        'course_id' => $course->id,
-                    ]);
-
-                    continue;
                 }
 
                 StudentApplicationItems::create([
@@ -558,7 +523,9 @@ class StudentAccountService
             ]);
         }
 
-        return DB::transaction(function () use ($courses, $uniqueIds) {
+        $joinedStudents = [];
+
+        $result = DB::transaction(function () use ($courses, $uniqueIds, &$joinedStudents) {
             $items = StudentApplicationItems::query()
                 ->with('application')
                 ->whereIn('id', $uniqueIds)
@@ -607,6 +574,7 @@ class StudentAccountService
                     $createdCount++;
                 }
 
+                $newlyEnrolledCourses = [];
                 foreach ($courses as $course) {
                     $alreadyEnrolled = Enrollment::query()
                         ->where('student_id', $student->id)
@@ -619,7 +587,16 @@ class StudentAccountService
                             'course_id' => $course->id,
                         ]);
                         $enrolledCount++;
+                        $newlyEnrolledCourses[] = $course;
                     }
+                }
+
+                // 新建帳號的學生已收帳號開通信，不再另寄加入課程通知
+                if ($plainPassword === null && $newlyEnrolledCourses !== []) {
+                    $joinedStudents[] = [
+                        'student' => $student,
+                        'courses' => $newlyEnrolledCourses,
+                    ];
                 }
 
                 $item->update(['status' => 'approved']);
@@ -635,6 +612,7 @@ class StudentAccountService
                         'name' => $student->name,
                         'email' => $email,
                         'password' => $plainPassword,
+                        'courses' => $this->formatCoursesForMail($newlyEnrolledCourses),
                     ];
                 }
             }
@@ -657,6 +635,10 @@ class StudentAccountService
                 'created_students' => $createdStudents,
             ];
         });
+
+        $this->notifyCourseJoined($joinedStudents);
+
+        return $result;
     }
 
     /**
@@ -686,6 +668,47 @@ class StudentAccountService
         }
 
         return $this->approveItems([(int) $application->course_id], $itemIds);
+    }
+
+    /**
+     * 寄送「已加入課程」通知給已有帳號的學生
+     *
+     * 單封寄送失敗不影響選課結果，只記錄 log。
+     *
+     * @param  list<array{student: Student, courses: list<Course>}>  $joinedStudents
+     */
+    private function notifyCourseJoined(array $joinedStudents): void
+    {
+        foreach ($joinedStudents as $joined) {
+            $student = $joined['student'];
+            $email = trim((string) $student->email);
+            if ($email === '') {
+                $email = Student::emailFromStudentNo((string) $student->student_no);
+            }
+
+            try {
+                Mail::to($email)->send(new StudentCourseJoined(
+                    studentName: (string) $student->name,
+                    courses: $this->formatCoursesForMail($joined['courses']),
+                ));
+            } catch (Throwable $exception) {
+                Log::warning("加入課程通知信寄送失敗：學號 {$student->student_no}（{$email}）", [
+                    'error' => $exception->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * @param  list<Course>  $courses
+     * @return list<array{name: string, teacher_name: string}>
+     */
+    private function formatCoursesForMail(array $courses): array
+    {
+        return array_map(fn (Course $course) => [
+            'name' => (string) $course->name,
+            'teacher_name' => (string) ($course->teacher?->name ?? ''),
+        ], $courses);
     }
 
     /**

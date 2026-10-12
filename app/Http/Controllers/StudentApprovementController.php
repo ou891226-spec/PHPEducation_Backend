@@ -90,7 +90,7 @@ class StudentApprovementController extends Controller
      *
      * 單封寄送失敗不影響開通結果，只記錄 log；學生可改用「忘記密碼」重設。
      *
-     * @param  list<array{student_no: string, name: string, email: string, password: string}>  $createdStudents
+     * @param  list<array{student_no: string, name: string, email: string, password: string, courses: list<array{name: string, teacher_name: string}>}>  $createdStudents
      * @return void
      */
     private function notifyStudents(array $createdStudents): void
@@ -101,6 +101,7 @@ class StudentApprovementController extends Controller
                     studentName: $student['name'],
                     studentAccount: $student['student_no'],
                     initialPassword: $student['password'],
+                    courses: $student['courses'] ?? [],
                 ));
             } catch (Throwable $exception) {
                 Log::warning("學生帳號開通信寄送失敗：學號 {$student['student_no']}（{$student['email']}）", [
