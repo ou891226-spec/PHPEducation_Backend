@@ -355,14 +355,19 @@ Authorization: Bearer {token}
 
 ### 忘記密碼
 
-不需登入。後端產生 12 碼新密碼、寫入帳號，再寄到信箱。管理員沒有這支 API。
+不需登入。後端寄一封含重設連結的信到帳號綁定的信箱，**不會改密碼**；使用者點連結設定新密碼後，舊密碼才失效。管理員沒有這支 API。
 
 | API | Request | 成功訊息 |
 |-----|---------|----------|
-| POST `/api/v1/auth/student/forgot-password` | `{ "student_no": "1411131000" }`（可加 `s`） | 已寄送新密碼至學生校園信箱 |
-| POST `/api/v1/auth/teacher/forgot-password` | `{ "teacher_account": "teacher@school.edu.tw" }` | 已寄送新密碼至教師校園信箱 |
+| POST `/api/v1/auth/student/forgot-password` | `{ "student_no": "1411131000" }`（學號可加 `s`，也可填綁定信箱） | 已寄送重設密碼連結至學生信箱 |
+| POST `/api/v1/auth/teacher/forgot-password` | `{ "teacher_account": "teacher@school.edu.tw" }` | 已寄送重設密碼連結至教師信箱 |
+| POST `/api/v1/auth/reset-password` | `{ "type": "student", "token": "...", "new_password": "...", "new_password_confirmation": "..." }` | 密碼已重設，請使用新密碼登入 |
 
-沒帶欄位或帳號不存在 **422**。
+- 連結格式：`{FRONTEND_URL}/reset-password?type=student&token=...`，`FRONTEND_URL` 預設 `http://localhost:9000`。
+- 連結 15 分鐘內有效、只能用一次；同一帳號再次申請時，舊連結作廢。資料表 `password_reset_links` 只存 token 的 SHA-256。
+- 重設成功會登出該帳號所有裝置。
+- 忘記密碼兩支 API 每分鐘最多 5 次。
+- 沒帶欄位或帳號不存在 **422**；連結無效、已用過或過期 **422**（`errors.token`）；新密碼至少 6 碼且要和確認欄位一致。
 
 ---
 

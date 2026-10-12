@@ -19,7 +19,8 @@ class TeacherPasswordReset extends Mailable
     public function __construct(
         public string $teacherName,
         public string $teacherAccount,
-        public string $newPassword,
+        public string $resetUrl,
+        public int $expiresInMinutes,
     ) {}
 
     /**

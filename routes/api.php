@@ -34,8 +34,9 @@ Route::prefix('v1')->group(function () {
     Route::post('/teacher/student-applications', [StudentAccountApplicationController::class, 'store']);
 
     Route::post('/auth/login', [AuthController::class, 'login']);
-    Route::post('/auth/student/forgot-password', [AuthController::class, 'studentForgotPassword']);
-    Route::post('/auth/teacher/forgot-password', [AuthController::class, 'teacherForgotPassword']);
+    Route::post('/auth/student/forgot-password', [AuthController::class, 'studentForgotPassword'])->middleware('throttle:5,1');
+    Route::post('/auth/teacher/forgot-password', [AuthController::class, 'teacherForgotPassword'])->middleware('throttle:5,1');
+    Route::post('/auth/reset-password', [AuthController::class, 'resetPassword']);
     
     // -------------------------------------------------------------------------
     // 已認證受保護路由 (需 Bearer Token)
