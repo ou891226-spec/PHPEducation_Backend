@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\StatsController;
+use App\Http\Controllers\Api\V1\Student\KnowledgeCardQuizController as StudentKnowledgeCardQuizController;
 use App\Http\Controllers\Api\V1\Student\MaterialController as StudentMaterialController;
 use App\Http\Controllers\Api\V1\Student\QuestionController as StudentQuestionController;
 use App\Http\Controllers\Api\V1\Teacher\ChapterController;
@@ -108,6 +109,11 @@ Route::prefix('v1')->group(function () {
             Route::get('courses/{courseId}/chapters', [StudentMaterialController::class, 'chapters']);
             Route::get('chapters/{chapterId}/units', [StudentMaterialController::class, 'units']);
             Route::get('units/{unitId}/knowledge-cards', [StudentMaterialController::class, 'knowledgeCards']);
+            Route::get('courses/{courseId}/learning-progress', [StudentKnowledgeCardQuizController::class, 'progress']);
+            Route::get('courses/{courseId}/learning-analytics', [StudentKnowledgeCardQuizController::class, 'analytics']);
+            Route::get('courses/{courseId}/knowledge-cards/{cardId}/quiz', [StudentKnowledgeCardQuizController::class, 'show']);
+            Route::post('courses/{courseId}/knowledge-cards/{cardId}/quiz/questions/{questionId}', [StudentKnowledgeCardQuizController::class, 'submit']);
+            Route::post('courses/{courseId}/knowledge-cards/{cardId}/read', [StudentKnowledgeCardQuizController::class, 'read']);
             Route::get('courses/{courseId}/questions', [StudentQuestionController::class, 'index']);
             Route::get('questions/{questionId}', [StudentQuestionController::class, 'show']);
             Route::post('questions/{questionId}/submit', [StudentQuestionController::class, 'submit']);

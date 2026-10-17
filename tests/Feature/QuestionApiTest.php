@@ -4,10 +4,12 @@ namespace Tests\Feature;
 
 use App\Models\Course;
 use App\Models\KnowledgeCard;
+use App\Models\KnowledgeCardCompletion;
 use App\Models\Question;
 use App\Models\QuestionOption;
 use App\Models\QuestionRecord;
 use App\Models\QuestionSubAnswer;
+use App\Models\Student;
 use App\Models\Teacher;
 use App\Models\Unit;
 use Database\Seeders\DatabaseSeeder;
@@ -78,6 +80,32 @@ class QuestionApiTest extends TestCase
 
     public function test_student_can_submit_choice_question(): void
     {
+        $course = $this->yingCourse();
+        $question = $this->makeChoiceQuestion($course);
+        $correct = $question->options()->where('is_answer', true)->firstOrFail();
+
+        $this->withToken($this->studentToken())
+            ->getJson("/api/v1/student/questions/{$question->id}")
+            ->assertOk()
+            ->assertJsonPath('question.practice', null);
+
+        $this->withToken($this->studentToken())
+            ->postJson("/api/v1/student/questions/{$question->id}/submit", [
+                'option_id' => $correct->id,
+            ])
+            ->assertOk()
+            ->assertJsonPath('system_status', QuestionRecord::STATUS_CORRECT)
+            ->assertJsonPath('record.teacher_status', QuestionRecord::STATUS_CORRECT)
+            ->assertJsonPath('explanation', '變數用來存放資料');
+
+        $this->withToken($this->studentToken())
+            ->getJson("/api/v1/student/courses/{$course->id}/questions")
+            ->assertOk()
+            ->assertJsonPath('questions.0.practice.status', QuestionRecord::STATUS_CORRECT);
+    }
+
+    public function test_practice_question_can_only_be_answered_once(): void
+    {
         $question = $this->makeChoiceQuestion($this->yingCourse());
         $correct = $question->options()->where('is_answer', true)->firstOrFail();
         $wrong = $question->options()->where('is_answer', false)->firstOrFail();
@@ -88,17 +116,25 @@ class QuestionApiTest extends TestCase
             ])
             ->assertOk()
             ->assertJsonPath('system_status', QuestionRecord::STATUS_WRONG)
-            ->assertJsonPath('record.teacher_status', QuestionRecord::STATUS_WRONG);
+            ->assertJsonPath('review.my_answer', 'B')
+            ->assertJsonPath('review.correct_answer', 'A')
+            ->assertJsonPath('review.explanation', '變數用來存放資料');
 
         $this->withToken($this->studentToken())
             ->postJson("/api/v1/student/questions/{$question->id}/submit", [
                 'option_id' => $correct->id,
             ])
-            ->assertOk()
-            ->assertJsonPath('system_status', QuestionRecord::STATUS_CORRECT)
-            ->assertJsonPath('explanation', '變數用來存放資料');
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('question');
 
-        $this->assertSame(2, QuestionRecord::query()->where('question_id', $question->id)->count());
+        $this->assertSame(1, QuestionRecord::query()->where('question_id', $question->id)->count());
+
+        $this->withToken($this->studentToken())
+            ->getJson("/api/v1/student/questions/{$question->id}")
+            ->assertOk()
+            ->assertJsonPath('question.practice.status', QuestionRecord::STATUS_WRONG)
+            ->assertJsonPath('question.practice.review.my_answer', 'B')
+            ->assertJsonPath('question.practice.review.correct_answer', 'A');
     }
 
     public function test_fill_accepts_fullwidth_punctuation_as_halfwidth(): void
@@ -152,57 +188,43 @@ class QuestionApiTest extends TestCase
 
     public function test_fill_parent_solo_is_wrong_partial_or_all_correct(): void
     {
-        $question = $this->makeQuestion($this->yingCourse(), Question::TYPE_FILL, 'PI常數');
-        QuestionSubAnswer::query()->create([
-            'question_id' => $question->id,
-            'sub_id' => 1,
-            'answer' => 'define',
-            'solo' => QuestionSubAnswer::SOLO_CORRECT,
-        ]);
-        QuestionSubAnswer::query()->create([
-            'question_id' => $question->id,
-            'sub_id' => 2,
-            'answer' => 'PI',
-            'solo' => QuestionSubAnswer::SOLO_CORRECT,
-        ]);
+        $cases = [
+            [['1' => 'x', '2' => 'y'], QuestionRecord::SOLO_WRONG, 0],
+            [['1' => 'define', '2' => 'y'], QuestionRecord::SOLO_PARTIAL, 1],
+            [['1' => 'define', '2' => 'PI'], QuestionRecord::SOLO_ALL_CORRECT, 2],
+        ];
 
-        $this->withToken($this->studentToken())
-            ->postJson("/api/v1/student/questions/{$question->id}/submit", [
-                'answers' => ['1' => 'x', '2' => 'y'],
-            ])
-            ->assertOk()
-            ->assertJsonMissingPath('record.solo');
+        foreach ($cases as $index => [$answers, $solo, $correctCount]) {
+            $question = $this->makeQuestion($this->yingCourse(), Question::TYPE_FILL, "PI常數{$index}");
+            QuestionSubAnswer::query()->create([
+                'question_id' => $question->id,
+                'sub_id' => 1,
+                'answer' => 'define',
+                'solo' => QuestionSubAnswer::SOLO_CORRECT,
+            ]);
+            QuestionSubAnswer::query()->create([
+                'question_id' => $question->id,
+                'sub_id' => 2,
+                'answer' => 'PI',
+                'solo' => QuestionSubAnswer::SOLO_CORRECT,
+            ]);
 
-        $this->assertDatabaseHas('question_records', [
-            'question_id' => $question->id,
-            'solo' => QuestionRecord::SOLO_WRONG,
-        ]);
+            $this->withToken($this->studentToken())
+                ->postJson("/api/v1/student/questions/{$question->id}/submit", [
+                    'answers' => $answers,
+                ])
+                ->assertOk()
+                ->assertJsonMissingPath('record.solo')
+                ->assertJsonPath('record.result.correct', $correctCount)
+                ->assertJsonPath('record.result.total', 2)
+                ->assertJsonPath('review.subs.1.my_answer', $answers['2'])
+                ->assertJsonPath('review.subs.1.correct_answer', 'PI');
 
-        $this->withToken($this->studentToken())
-            ->postJson("/api/v1/student/questions/{$question->id}/submit", [
-                'answers' => ['1' => 'define', '2' => 'y'],
-            ])
-            ->assertOk()
-            ->assertJsonMissingPath('record.solo')
-            ->assertJsonPath('record.result.correct', 1)
-            ->assertJsonPath('record.result.total', 2);
-
-        $this->assertDatabaseHas('question_records', [
-            'question_id' => $question->id,
-            'solo' => QuestionRecord::SOLO_PARTIAL,
-        ]);
-
-        $this->withToken($this->studentToken())
-            ->postJson("/api/v1/student/questions/{$question->id}/submit", [
-                'answers' => ['1' => 'define', '2' => 'PI'],
-            ])
-            ->assertOk()
-            ->assertJsonMissingPath('record.solo');
-
-        $this->assertDatabaseHas('question_records', [
-            'question_id' => $question->id,
-            'solo' => QuestionRecord::SOLO_ALL_CORRECT,
-        ]);
+            $this->assertDatabaseHas('question_records', [
+                'question_id' => $question->id,
+                'solo' => $solo,
+            ]);
+        }
     }
 
     public function test_student_can_submit_coding_question_as_pending(): void
@@ -375,15 +397,29 @@ class QuestionApiTest extends TestCase
             'show_example' => $showExample,
         ]);
 
+        $unit = $this->ensureUnit($course);
         $card = KnowledgeCard::query()->create([
-            'unit_id' => $this->ensureUnit($course)->id,
+            'unit_id' => $unit->id,
             'course_id' => $course->id,
             'title' => '卡片 '.$title,
             'content' => '內容',
             'example' => '$name = "PHP";',
             'sort_order' => 1,
         ]);
+        $card->units()->attach($unit->id);
         $question->knowledgeCards()->attach($card->id);
+
+        // 題目練習要先完成知識卡才能作答
+        $student = Student::query()->where('student_no', '1411131000')->first();
+        if ($student !== null) {
+            KnowledgeCardCompletion::query()->create([
+                'student_id' => $student->id,
+                'course_id' => $course->id,
+                'knowledge_card_id' => $card->id,
+                'method' => KnowledgeCardCompletion::METHOD_QUIZ,
+                'completed_at' => now(),
+            ]);
+        }
 
         return $question;
     }
@@ -403,6 +439,7 @@ class QuestionApiTest extends TestCase
             $unit = $chapter->units()->create([
                 'name' => '測試單元',
                 'sort_order' => 1,
+                'status' => 'published',
             ]);
         }
 

@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Models\Course;
 use App\Models\KnowledgeCard;
+use App\Models\KnowledgeCardCompletion;
 use App\Models\Question;
 use App\Models\QuestionRecord;
+use App\Models\Student;
 use App\Models\Teacher;
 use App\Models\Unit;
 use App\Services\AI\AiProviderInterface;
@@ -259,7 +261,20 @@ class CodingAiApiTest extends TestCase
             'content' => '內容',
             'sort_order' => 1,
         ]);
+        $card->units()->attach($unit->id);
         $question->knowledgeCards()->attach($card->id);
+
+        // 題目練習要先完成知識卡才能作答；只有實作題的卡讀完即完成
+        $student = Student::query()->where('student_no', '1411131000')->first();
+        if ($student !== null) {
+            KnowledgeCardCompletion::query()->create([
+                'student_id' => $student->id,
+                'course_id' => $course->id,
+                'knowledge_card_id' => $card->id,
+                'method' => KnowledgeCardCompletion::METHOD_READ,
+                'completed_at' => now(),
+            ]);
+        }
 
         return $question;
     }

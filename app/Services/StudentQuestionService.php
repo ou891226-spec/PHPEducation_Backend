@@ -17,23 +17,51 @@ use Illuminate\Validation\ValidationException;
 class StudentQuestionService
 {
     /**
+     * 題目列表只回摘要；題目內容、選項、知識卡內容等進作答頁再由 findForStudent 取得。
+     *
+     * @param  array{knowledge_card_id?: int|null, type?: string|null, keyword?: string|null}  $filters
      * @return list<array<string, mixed>>
      */
-    public function listForStudent(Student $student, int $courseId, ?int $knowledgeCardId = null): array
+    public function listForStudent(Student $student, int $courseId, array $filters = []): array
     {
         $this->enrolledCourseId($student, $courseId);
 
         $query = Question::query()
             ->where('course_id', $courseId)
-            ->with(['options', 'subAnswers', 'knowledgeCards:id,title,example'])
+            ->select(['id', 'course_id', 'title', 'type', 'bloom_id'])
+            ->with('knowledgeCards:id,title')
             ->orderBy('id');
 
-        if ($knowledgeCardId !== null) {
-            $query->whereHas('knowledgeCards', fn (Builder $cards) => $cards->whereKey($knowledgeCardId));
+        if (($filters['knowledge_card_id'] ?? null) !== null) {
+            $query->whereHas('knowledgeCards', fn (Builder $cards) => $cards->whereKey($filters['knowledge_card_id']));
         }
 
-        return $query->get()
-            ->map(fn (Question $question) => $this->formatQuestionForStudent($question))
+        if (($filters['type'] ?? null) !== null) {
+            $query->where('type', $filters['type']);
+        }
+
+        $keyword = trim((string) ($filters['keyword'] ?? ''));
+        if ($keyword !== '') {
+            $query->where('title', 'like', '%'.addcslashes($keyword, '%_\\').'%');
+        }
+
+        $questions = $query->get();
+        $practices = $this->practiceRecords($student, $questions->pluck('id')->all());
+
+        return $questions
+            ->map(fn (Question $question) => [
+                'id' => $question->id,
+                'course_id' => $question->course_id,
+                'title' => $question->title,
+                'type' => $question->type,
+                'bloom_id' => $question->bloom_id,
+                'knowledge_card_ids' => $question->knowledgeCards->pluck('id')->values()->all(),
+                'knowledge_cards' => $question->knowledgeCards
+                    ->map(fn ($card) => ['id' => $card->id, 'title' => $card->title])
+                    ->values()
+                    ->all(),
+                'practice' => $practices[$question->id] ?? null,
+            ])
             ->all();
     }
 
@@ -42,32 +70,135 @@ class StudentQuestionService
      */
     public function findForStudent(Student $student, int $questionId): array
     {
-        return $this->formatQuestionForStudent($this->enrolledQuestion($student, $questionId));
+        $question = $this->enrolledQuestion($student, $questionId);
+        $practice = $this->practiceRecords($student, [$question->id])[$question->id] ?? null;
+
+        if ($practice !== null) {
+            $record = QuestionRecord::query()->with('subs')->findOrFail($practice['record_id']);
+            $practice['review'] = $this->review($question, $record);
+        }
+
+        return [
+            ...$this->formatQuestionForStudent($question),
+            'practice' => $practice,
+        ];
+    }
+
+    /**
+     * 題目練習作答後的檢討：我的答案、正確答案與說明。
+     * 實作題要老師批改完才給參考答案。
+     *
+     * @return array{my_answer: string|null, correct_answer: string|null, subs: list<array<string, mixed>>, explanation: string|null}
+     */
+    private function review(Question $question, QuestionRecord $record): array
+    {
+        if ($question->usesOptions()) {
+            $chosen = $question->options->firstWhere('id', (int) $record->result);
+            $answers = $question->options->where('is_answer', true);
+
+            return [
+                'my_answer' => $chosen?->title,
+                'correct_answer' => $answers->pluck('title')->implode('、') ?: null,
+                'subs' => [],
+                'explanation' => $answers->first()?->description,
+            ];
+        }
+
+        if ($question->type === Question::TYPE_CODING) {
+            $graded = $record->teacher_status !== QuestionRecord::STATUS_PENDING;
+
+            return [
+                'my_answer' => $record->result,
+                'correct_answer' => $graded ? $question->reference_answer : null,
+                'subs' => [],
+                'explanation' => null,
+            ];
+        }
+
+        $submitted = $record->subs->keyBy('sub_id');
+
+        return [
+            'my_answer' => null,
+            'correct_answer' => null,
+            'subs' => $question->subAnswers
+                ->map(fn (QuestionSubAnswer $key) => [
+                    'sub_id' => $key->sub_id,
+                    'my_answer' => $submitted->get($key->sub_id)?->answer,
+                    'correct_answer' => $key->answer,
+                    'is_right' => (bool) $submitted->get($key->sub_id)?->is_right,
+                    'description' => $key->description,
+                ])
+                ->values()
+                ->all(),
+            'explanation' => $question->subAnswers->first()?->description,
+        ];
+    }
+
+    /**
+     * 題目練習每題只能作答一次；即學即測的紀錄不算在內。
+     *
+     * @param  list<int>  $questionIds
+     * @return array<int, array{record_id: int, status: string|null, answered_at: string|null}>
+     */
+    private function practiceRecords(Student $student, array $questionIds): array
+    {
+        return QuestionRecord::query()
+            ->where('student_id', $student->id)
+            ->where('source', QuestionRecord::SOURCE_PRACTICE)
+            ->whereIn('question_id', $questionIds)
+            ->orderBy('id')
+            ->get(['id', 'question_id', 'teacher_status', 'system_status', 'created_at'])
+            ->keyBy('question_id')
+            ->map(fn (QuestionRecord $record) => [
+                'record_id' => $record->id,
+                'status' => $record->teacher_status ?? $record->system_status,
+                'answered_at' => $record->created_at?->toIso8601String(),
+            ])
+            ->all();
     }
 
     /**
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
-    public function submit(Student $student, int $questionId, array $data): array
-    {
+    public function submit(
+        Student $student,
+        int $questionId,
+        array $data,
+        string $source = QuestionRecord::SOURCE_PRACTICE,
+    ): array {
         $question = $this->enrolledQuestion($student, $questionId);
+        $isPractice = $source === QuestionRecord::SOURCE_PRACTICE;
 
-        return match ($question->type) {
-            Question::TYPE_CHOICE, Question::TYPE_TRUE_FALSE => $this->submitChoice($student, $question, $data),
-            Question::TYPE_FILL, Question::TYPE_DEBUG, Question::TYPE_INTERPRET => $this->submitSubAnswers($student, $question, $data),
-            Question::TYPE_CODING => $this->submitCoding($student, $question, $data),
+        if ($isPractice && $this->practiceRecords($student, [$question->id]) !== []) {
+            throw ValidationException::withMessages([
+                'question' => ['此題已作答過，每題只能回答一次。'],
+            ]);
+        }
+
+        $response = match ($question->type) {
+            Question::TYPE_CHOICE, Question::TYPE_TRUE_FALSE => $this->submitChoice($student, $question, $data, $source),
+            Question::TYPE_FILL, Question::TYPE_DEBUG, Question::TYPE_INTERPRET => $this->submitSubAnswers($student, $question, $data, $source),
+            Question::TYPE_CODING => $this->submitCoding($student, $question, $data, $source),
             default => throw ValidationException::withMessages([
                 'type' => ['不支援的題型。'],
             ]),
         };
+
+        // 即學即測可重試，不能先給答案
+        if ($isPractice) {
+            $record = QuestionRecord::query()->with('subs')->findOrFail($response['record']['id']);
+            $response['review'] = $this->review($question, $record);
+        }
+
+        return $response;
     }
 
     /**
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
-    private function submitChoice(Student $student, Question $question, array $data): array
+    private function submitChoice(Student $student, Question $question, array $data, string $source): array
     {
         $optionId = $data['option_id'] ?? null;
         if ($optionId === null) {
@@ -93,6 +224,7 @@ class StudentQuestionService
             $question,
             (string) $option->id,
             $correct ? QuestionRecord::STATUS_CORRECT : QuestionRecord::STATUS_WRONG,
+            source: $source,
         );
 
         $correctOption = $question->options->firstWhere('is_answer', true);
@@ -109,7 +241,7 @@ class StudentQuestionService
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
-    private function submitSubAnswers(Student $student, Question $question, array $data): array
+    private function submitSubAnswers(Student $student, Question $question, array $data, string $source): array
     {
         $submitted = $this->submittedSubAnswers($data);
         if ($submitted === []) {
@@ -125,7 +257,7 @@ class StudentQuestionService
             ]);
         }
 
-        $record = DB::transaction(function () use ($student, $question, $submitted, $keys): QuestionRecord {
+        $record = DB::transaction(function () use ($student, $question, $submitted, $keys, $source): QuestionRecord {
             $correctCount = 0;
             $rows = [];
 
@@ -160,6 +292,7 @@ class StudentQuestionService
                 ], JSON_UNESCAPED_UNICODE),
                 $allCorrect ? QuestionRecord::STATUS_CORRECT : QuestionRecord::STATUS_WRONG,
                 $parentSolo,
+                $source,
             );
             $record->subs()->createMany($rows);
 
@@ -209,7 +342,7 @@ class StudentQuestionService
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
-    private function submitCoding(Student $student, Question $question, array $data): array
+    private function submitCoding(Student $student, Question $question, array $data, string $source): array
     {
         $code = $data['code'] ?? null;
         if (! is_string($code) || trim($code) === '') {
@@ -223,6 +356,7 @@ class StudentQuestionService
             $question,
             $code,
             QuestionRecord::STATUS_PENDING,
+            source: $source,
         );
 
         // $this->gradeCodingByAi($question, $record);
@@ -248,10 +382,12 @@ class StudentQuestionService
         string $result,
         string $systemStatus,
         ?int $solo = null,
+        string $source = QuestionRecord::SOURCE_PRACTICE,
     ): QuestionRecord {
         return QuestionRecord::query()->create([
             'student_id' => $student->id,
             'question_id' => $question->id,
+            'source' => $source,
             'result' => $result,
             'system_status' => $systemStatus,
 
@@ -325,7 +461,7 @@ class StudentQuestionService
     private function enrolledQuestion(Student $student, int $questionId): Question
     {
         $question = Question::query()
-            ->with(['options', 'subAnswers', 'knowledgeCards:id,title,example'])
+            ->with(['options', 'subAnswers', 'knowledgeCards:id,title,content,example'])
             ->whereKey($questionId)
             ->first();
 
@@ -360,7 +496,7 @@ class StudentQuestionService
     /**
      * @return array<string, mixed>
      */
-    private function formatQuestionForStudent(Question $question): array
+    public function formatQuestionForStudent(Question $question): array
     {
         $payload = [
             'id' => $question->id,
@@ -372,6 +508,15 @@ class StudentQuestionService
             'description' => $question->description,
             'knowledge_card_ids' => $question->knowledgeCards->pluck('id')->values()->all(),
             'examples' => $this->examplesForStudent($question),
+            'knowledge_cards' => $question->knowledgeCards
+                ->map(fn ($card) => [
+                    'id' => $card->id,
+                    'title' => $card->title,
+                    'content' => $card->content,
+                    'example' => $question->show_example ? $card->example : null,
+                ])
+                ->values()
+                ->all(),
         ];
 
         if ($question->type === Question::TYPE_CODING) {

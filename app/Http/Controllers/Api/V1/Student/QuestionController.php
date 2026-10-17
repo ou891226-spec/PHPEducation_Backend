@@ -4,41 +4,61 @@ namespace App\Http\Controllers\Api\V1\Student;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Question\SubmitQuestionRequest;
+use App\Models\Question;
 use App\Models\Student;
+use App\Services\StudentPracticeService;
 use App\Services\StudentQuestionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class QuestionController extends Controller
 {
     public function __construct(
         private readonly StudentQuestionService $studentQuestionService,
+        private readonly StudentPracticeService $studentPracticeService,
     ) {}
 
     public function index(Request $request, int $courseId): JsonResponse
     {
-        $knowledgeCardId = $request->query('knowledge_card_id');
-
-        return response()->json([
-            'questions' => $this->studentQuestionService->listForStudent(
-                $this->student($request),
-                $courseId,
-                $knowledgeCardId !== null ? (int) $knowledgeCardId : null,
-            ),
+        $validated = $request->validate([
+            'knowledge_card_id' => ['nullable', 'integer'],
+            'chapter_id' => ['nullable', 'integer'],
+            'unit_id' => ['nullable', 'integer'],
+            'scope' => ['nullable', Rule::in([
+                StudentPracticeService::SCOPE_CARD,
+                StudentPracticeService::SCOPE_UNIT,
+                StudentPracticeService::SCOPE_CHAPTER,
+                StudentPracticeService::SCOPE_COURSE,
+            ])],
+            'type' => ['nullable', Rule::in(Question::TYPES)],
+            'status' => ['nullable', Rule::in(['all', 'answered', 'unanswered'])],
+            'keyword' => ['nullable', 'string', 'max:100'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
+
+        $filters = $validated;
+        foreach (['knowledge_card_id', 'chapter_id', 'unit_id', 'page', 'per_page'] as $key) {
+            $filters[$key] = isset($validated[$key]) ? (int) $validated[$key] : null;
+        }
+
+        return response()->json(
+            $this->studentPracticeService->list($this->student($request), $courseId, $filters),
+        );
     }
 
     public function show(Request $request, int $questionId): JsonResponse
     {
         return response()->json([
-            'question' => $this->studentQuestionService->findForStudent($this->student($request), $questionId),
+            'question' => $this->studentPracticeService->find($this->student($request), $questionId),
         ]);
     }
 
     public function submit(SubmitQuestionRequest $request, int $questionId): JsonResponse
     {
         return response()->json(
-            $this->studentQuestionService->submit(
+            $this->studentPracticeService->submit(
                 $this->student($request),
                 $questionId,
                 $request->validated(),

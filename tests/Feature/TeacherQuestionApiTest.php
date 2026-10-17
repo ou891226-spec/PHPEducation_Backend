@@ -305,7 +305,7 @@ class TeacherQuestionApiTest extends TestCase
             ])
             ->assertCreated()
             ->assertJsonPath('question.type', Question::TYPE_CODING)
-            ->assertJsonPath('question.show_example', false)
+            ->assertJsonPath('question.show_example', true)
             ->assertJsonPath('question.starter_code', null)
             ->assertJsonPath('question.expected_output', null)
             ->assertJsonPath('question.reference_answer', null)

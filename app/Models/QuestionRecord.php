@@ -23,9 +23,14 @@ class QuestionRecord extends Model
 
     public const SOLO_ALL_CORRECT = 3;
 
+    public const SOURCE_PRACTICE = 'practice';
+
+    public const SOURCE_QUIZ = 'quiz';
+
     protected $fillable = [
         'student_id',
         'question_id',
+        'source',
         'result',
         'system_status',
         'teacher_status',

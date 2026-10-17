@@ -17,9 +17,11 @@ class TeacherQuestionRecordService
     {
         $this->ownedCourse($teacher, $courseId);
 
+        // 即學即測可無限重試，只算學生自我檢核，不列入老師的作答紀錄
         return QuestionRecord::query()
             ->with(['student', 'question', 'subs', 'aiFeedback'])
             ->whereHas('question', fn ($query) => $query->where('course_id', $courseId))
+            ->where('source', QuestionRecord::SOURCE_PRACTICE)
             ->orderByDesc('id')
             ->get()
             ->map(fn (QuestionRecord $record) => $this->formatRecord($record))
@@ -36,6 +38,7 @@ class TeacherQuestionRecordService
             ->with(['student', 'question', 'subs', 'aiFeedback'])
             ->whereKey($recordId)
             ->whereHas('question.course', fn ($query) => $query->where('teacher_id', $teacher->id))
+            ->where('source', QuestionRecord::SOURCE_PRACTICE)
             ->first();
 
         if ($record === null) {
