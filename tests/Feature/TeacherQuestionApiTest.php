@@ -168,7 +168,7 @@ class TeacherQuestionApiTest extends TestCase
                 'title' => 'php註解',
                 'type' => Question::TYPE_CHOICE,
                 'question_content' => 'PHP網頁的多行註解是用哪一個符號？',
-                'bloom_id' => 'B1',
+                'bloom_id' => 'B11',
                 'description' => '多行註解',
                 'knowledge_card_ids' => $cardIds,
                 'options' => [
@@ -182,7 +182,7 @@ class TeacherQuestionApiTest extends TestCase
         $response->assertCreated()
             ->assertJsonPath('question.type', Question::TYPE_CHOICE)
             ->assertJsonPath('question.teacher_id', Course::query()->findOrFail($courseId)->teacher_id)
-            ->assertJsonPath('question.bloom_id', 'B1')
+            ->assertJsonPath('question.bloom_id', 'B11')
             ->assertJsonPath('question.description', '多行註解')
             ->assertJsonPath('question.knowledge_card_ids', $cardIds)
             ->assertJsonPath('question.knowledge_cards.0.example', '$name = "PHP";')
@@ -206,7 +206,7 @@ class TeacherQuestionApiTest extends TestCase
                 'title' => '連結字串',
                 'type' => Question::TYPE_TRUE_FALSE,
                 'question_content' => 'PHP用「.」來連接字串',
-                'bloom_id' => 'B1',
+                'bloom_id' => 'B11',
                 'knowledge_card_ids' => $cardIds,
                 'options' => [
                     ['title' => '是', 'is_answer' => true],
@@ -218,6 +218,37 @@ class TeacherQuestionApiTest extends TestCase
             ->assertJsonPath('question.options.0.solo', 2)
             ->assertJsonPath('question.options.1.solo', 1)
             ->assertJsonCount(2, 'question.options');
+    }
+
+    public function test_choice_correct_solo_defaults_by_bloom_and_teacher_can_override(): void
+    {
+        [$courseId, $cardIds] = $this->seedCourseWithCards(1);
+        $payload = fn (string $bloomId, array $options) => [
+            'title' => '概念題',
+            'type' => Question::TYPE_CHOICE,
+            'question_content' => '哪一個是 PHP 的變數？',
+            'bloom_id' => $bloomId,
+            'knowledge_card_ids' => $cardIds,
+            'options' => $options,
+        ];
+
+        $this->withToken($this->teacherToken())
+            ->postJson("/api/v1/teacher/courses/{$courseId}/questions", $payload('B12', [
+                ['title' => '$name', 'is_answer' => true],
+                ['title' => 'name', 'is_answer' => false],
+            ]))
+            ->assertCreated()
+            ->assertJsonPath('question.options.0.solo', 3)
+            ->assertJsonPath('question.options.1.solo', 1);
+
+        $this->withToken($this->teacherToken())
+            ->postJson("/api/v1/teacher/courses/{$courseId}/questions", $payload('B11', [
+                ['title' => '$name', 'is_answer' => true, 'solo' => 4],
+                ['title' => 'name', 'is_answer' => false, 'solo' => 2],
+            ]))
+            ->assertCreated()
+            ->assertJsonPath('question.options.0.solo', 4)
+            ->assertJsonPath('question.options.1.solo', 2);
     }
 
     public function test_teacher_can_create_fill_question_by_sub_id(): void

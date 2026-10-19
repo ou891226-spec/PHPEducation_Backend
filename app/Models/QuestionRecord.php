@@ -23,6 +23,8 @@ class QuestionRecord extends Model
 
     public const SOLO_ALL_CORRECT = 3;
 
+    public const SOLO_DEBUG_ALL_CORRECT = 4;
+
     public const SOURCE_PRACTICE = 'practice';
 
     public const SOURCE_QUIZ = 'quiz';

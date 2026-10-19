@@ -227,6 +227,43 @@ class QuestionApiTest extends TestCase
         }
     }
 
+    public function test_debug_parent_solo_counts_lines_and_answers_separately(): void
+    {
+        $cases = [
+            [['4' => 'echo $a;', '9' => 'return $b;'], 4, QuestionRecord::STATUS_CORRECT],
+            [['4' => 'return $b;', '9' => 'echo $a;'], 3, QuestionRecord::STATUS_WRONG],
+            [['4' => 'echo $a;', '9' => 'x'], 2, QuestionRecord::STATUS_WRONG],
+            [['5' => 'echo $a;', '9' => 'return $b;'], 1, QuestionRecord::STATUS_WRONG],
+        ];
+
+        foreach ($cases as $index => [$answers, $solo, $status]) {
+            $question = $this->makeQuestion($this->yingCourse(), Question::TYPE_DEBUG, "除錯{$index}");
+            QuestionSubAnswer::query()->create(['question_id' => $question->id, 'sub_id' => 4, 'answer' => 'echo $a;', 'solo' => 3]);
+            QuestionSubAnswer::query()->create(['question_id' => $question->id, 'sub_id' => 9, 'answer' => 'return $b;', 'solo' => 2]);
+
+            $this->withToken($this->studentToken())
+                ->postJson("/api/v1/student/questions/{$question->id}/submit", ['answers' => $answers])
+                ->assertOk()
+                ->assertJsonPath('system_status', $status);
+
+            $this->assertDatabaseHas('question_records', ['question_id' => $question->id, 'solo' => $solo]);
+        }
+    }
+
+    public function test_choice_record_solo_follows_the_option(): void
+    {
+        $question = $this->makeChoiceQuestion($this->yingCourse());
+        $question->update(['bloom_id' => 'B12']);
+        $correct = $question->options()->where('is_answer', true)->firstOrFail();
+        $correct->update(['solo' => 3]);
+
+        $this->withToken($this->studentToken())
+            ->postJson("/api/v1/student/questions/{$question->id}/submit", ['option_id' => $correct->id])
+            ->assertOk();
+
+        $this->assertDatabaseHas('question_records', ['question_id' => $question->id, 'solo' => 3]);
+    }
+
     public function test_student_can_submit_coding_question_as_pending(): void
     {
         $question = $this->makeCodingQuestion($this->yingCourse());

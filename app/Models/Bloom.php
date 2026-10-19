@@ -57,6 +57,14 @@ class Bloom extends Model
         };
     }
 
+    /**
+     * 選擇／是非題答對的預設 SOLO：B11 為 S2，其他為 S3。
+     */
+    public static function defaultCorrectSolo(?string $id): int
+    {
+        return $id === 'B11' ? 2 : 3;
+    }
+
     public static function teacherChoiceTitle(string $id): string
     {
         if (preg_match('/^B([1-6])[1-3]$/', $id, $matches) !== 1) {

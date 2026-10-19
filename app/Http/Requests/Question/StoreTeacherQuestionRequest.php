@@ -52,6 +52,7 @@ class StoreTeacherQuestionRequest extends FormRequest
             'options.*.title' => [$optionType ? 'required' : 'nullable', 'string', 'max:255'],
             'options.*.description' => ['nullable', 'string'],
             'options.*.is_answer' => [$optionType ? 'required' : 'nullable', 'boolean'],
+            'options.*.solo' => ['nullable', 'integer', 'between:1,5'],
             'sub_answers' => array_filter([
                 Rule::requiredIf($subType),
                 Rule::prohibitedIf(! $subType),

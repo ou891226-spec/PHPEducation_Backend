@@ -11,6 +11,7 @@ use App\Models\Student;
 use App\Support\AnswerText;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -224,7 +225,8 @@ class StudentQuestionService
             $question,
             (string) $option->id,
             $correct ? QuestionRecord::STATUS_CORRECT : QuestionRecord::STATUS_WRONG,
-            source: $source,
+            $option->solo ? (int) $option->solo : null,
+            $source,
         );
 
         $correctOption = $question->options->firstWhere('is_answer', true);
@@ -278,9 +280,12 @@ class StudentQuestionService
 
             $total = $keys->count();
             $allCorrect = $correctCount === $total;
-            $parentSolo = $correctCount === 0
-                ? QuestionRecord::SOLO_WRONG
-                : ($allCorrect ? QuestionRecord::SOLO_ALL_CORRECT : QuestionRecord::SOLO_PARTIAL);
+            $parentSolo = match (true) {
+                $question->type === Question::TYPE_DEBUG => $this->debugSolo($submitted, $keys),
+                $correctCount === 0 => QuestionRecord::SOLO_WRONG,
+                $allCorrect => QuestionRecord::SOLO_ALL_CORRECT,
+                default => QuestionRecord::SOLO_PARTIAL,
+            };
 
             $record = $this->storeRecord(
                 $student,
@@ -305,6 +310,43 @@ class StudentQuestionService
             'system_status' => $record->system_status,
             'description' => $keys->first()?->description,
         ];
+    }
+
+    /**
+     * 除錯題整題 SOLO：行數、答案分開算對幾個。
+     * 全對 4；行數對 > 1/2 且答案對 > 1/2 為 3；行數對 > 1/2 且答案對 > 1/3 為 2；其他 1。
+     *
+     * @param  array<int, string>  $submitted  行數 => 答案
+     * @param  Collection<int, QuestionSubAnswer>  $keys
+     */
+    private function debugSolo(array $submitted, Collection $keys): int
+    {
+        $total = $keys->count();
+        $lineRight = $keys->filter(fn (QuestionSubAnswer $key) => array_key_exists($key->sub_id, $submitted))->count();
+
+        // 答案不看行數：每個學生答案只能對應一個標準答案
+        $remaining = array_values($submitted);
+        $answerRight = 0;
+        foreach ($keys as $key) {
+            foreach ($remaining as $index => $answer) {
+                if (AnswerText::same($answer, (string) $key->answer)) {
+                    $answerRight++;
+                    unset($remaining[$index]);
+                    break;
+                }
+            }
+        }
+
+        $exactRight = $keys->filter(
+            fn (QuestionSubAnswer $key) => AnswerText::same($submitted[$key->sub_id] ?? '', (string) $key->answer)
+        )->count();
+
+        return match (true) {
+            $exactRight === $total => QuestionRecord::SOLO_DEBUG_ALL_CORRECT,
+            $lineRight * 2 > $total && $answerRight * 2 > $total => QuestionRecord::SOLO_ALL_CORRECT,
+            $lineRight * 2 > $total && $answerRight * 3 > $total => QuestionRecord::SOLO_PARTIAL,
+            default => QuestionRecord::SOLO_WRONG,
+        };
     }
 
     /**
