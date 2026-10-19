@@ -280,11 +280,12 @@ class StudentQuestionService
 
             $total = $keys->count();
             $allCorrect = $correctCount === $total;
+            // 解讀的 S2、S3 不易自動判斷，部分對先給 S2，老師覆核時可再調整
             $parentSolo = match (true) {
                 $question->type === Question::TYPE_DEBUG => $this->debugSolo($submitted, $keys),
-                $correctCount === 0 => QuestionRecord::SOLO_WRONG,
-                $allCorrect => QuestionRecord::SOLO_ALL_CORRECT,
-                default => QuestionRecord::SOLO_PARTIAL,
+                $allCorrect => $question->fullCorrectSolo(),
+                $question->type === Question::TYPE_INTERPRET && $correctCount > 0 => QuestionRecord::SOLO_PARTIAL,
+                default => QuestionRecord::SOLO_WRONG,
             };
 
             $record = $this->storeRecord(
@@ -342,7 +343,7 @@ class StudentQuestionService
         )->count();
 
         return match (true) {
-            $exactRight === $total => QuestionRecord::SOLO_DEBUG_ALL_CORRECT,
+            $exactRight === $total => QuestionRecord::SOLO_RELATIONAL,
             $lineRight * 2 > $total && $answerRight * 2 > $total => QuestionRecord::SOLO_ALL_CORRECT,
             $lineRight * 2 > $total && $answerRight * 3 > $total => QuestionRecord::SOLO_PARTIAL,
             default => QuestionRecord::SOLO_WRONG,

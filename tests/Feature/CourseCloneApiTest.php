@@ -173,7 +173,7 @@ class CourseCloneApiTest extends TestCase
             'system_status' => QuestionRecord::STATUS_WRONG,
             'teacher_status' => QuestionRecord::STATUS_PENDING,
             'solo' => QuestionRecord::SOLO_WRONG,
-            'bloom_id' => 'B1',
+            'bloom_id' => 'B11',
         ]);
 
         $newCourseId = (int) $this->withToken($token)->postJson('/api/v1/teacher/courses', [
@@ -254,7 +254,7 @@ class CourseCloneApiTest extends TestCase
             'title' => '變數選擇',
             'type' => Question::TYPE_CHOICE,
             'question_content' => '何者正確？',
-            'bloom_id' => 'B1',
+            'bloom_id' => 'B11',
             'knowledge_card_ids' => [$cardId],
             'options' => [
                 ['title' => 'A', 'is_answer' => true],

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Question;
 
+use App\Models\Bloom;
 use App\Models\Question;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -34,7 +35,7 @@ class StoreTeacherQuestionRequest extends FormRequest
             'title' => ['required', 'string', 'max:255'],
             'type' => ['required', 'string', Rule::in(Question::TYPES)],
             'question_content' => ['required', 'string'],
-            'bloom_id' => ['required', 'string', 'exists:bloom,id'],
+            'bloom_id' => ['required', 'string', Rule::in(Bloom::teacherChoiceIds())],
             'description' => ['nullable', 'string'],
             'show_example' => ['sometimes', 'boolean'],
             'starter_code' => ['nullable', 'string'],
@@ -107,7 +108,7 @@ class StoreTeacherQuestionRequest extends FormRequest
         return [
             'knowledge_card_ids.required' => '請選擇知識卡。若下拉是空的，代表這門課還沒有已發布教材。',
             'knowledge_card_ids.min' => '請至少選一張知識卡。',
-            'bloom_id.exists' => 'Bloom 編碼請用老師格式，例如 B11、B13、B42（大小寫皆可）。',
+            'bloom_id.in' => 'Bloom 編碼請選 B11～B43，例如 B11、B13、B42（大小寫皆可）。',
         ];
     }
 }

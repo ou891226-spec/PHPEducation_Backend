@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\V1\Teacher\MaterialTemplateController;
 use App\Http\Controllers\Api\V1\Teacher\StudentRosterTemplateController;
 use App\Http\Controllers\Api\V1\Teacher\QuestionController as TeacherQuestionController;
 use App\Http\Controllers\Api\V1\Teacher\QuestionRecordController;
+use App\Http\Controllers\Api\V1\Teacher\StatsController as TeacherStatsController;
 use App\Http\Controllers\Api\V1\Teacher\UnitController;
 use Illuminate\Support\Facades\Route;
 
@@ -101,6 +102,10 @@ Route::prefix('v1')->group(function () {
             Route::get('courses/{courseId}/question-records', [QuestionRecordController::class, 'index']);
             Route::put('question-records/{recordId}', [QuestionRecordController::class, 'update']);
             Route::post('question-records/{recordId}/grade', [QuestionRecordController::class, 'grade']);
+
+            Route::get('courses/{courseId}/stats/bloom', [TeacherStatsController::class, 'bloom']);
+            Route::get('courses/{courseId}/stats/solo', [TeacherStatsController::class, 'solo']);
+            Route::get('courses/{courseId}/stats/student-solo', [TeacherStatsController::class, 'studentSolo']);
         });
 
         Route::middleware('role:student')->prefix('student')->group(function () {

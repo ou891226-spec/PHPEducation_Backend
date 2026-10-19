@@ -245,7 +245,7 @@ class CodingAiApiTest extends TestCase
             'title' => '實作題測試',
             'type' => Question::TYPE_CODING,
             'question_content' => '實作題測試題幹',
-            'bloom_id' => 'B3',
+            'bloom_id' => 'B31',
             'description' => '測試 Coding 題',
             'show_example' => false,
             'starter_code' => '$a = 10;',

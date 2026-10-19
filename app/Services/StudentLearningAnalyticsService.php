@@ -62,27 +62,25 @@ class StudentLearningAnalyticsService
     }
 
     /**
-     * Bloom 六層級答對率（待批改不計）。
+     * Bloom 四層級答對率（待批改不計）。
      *
      * @param  Collection<int, array<string, mixed>>  $questions
      * @return list<array<string, mixed>>
      */
     private function bloomRadar(Collection $questions): array
     {
-        $levelOf = fn (?string $bloomId): ?int => preg_match('/^B([1-6])\d$/', (string) $bloomId, $m) === 1 ? (int) $m[1] : null;
-
-        return collect(range(1, 6))->map(function (int $level) use ($questions, $levelOf) {
-            $stats = $this->practiceStats($questions->filter(fn (array $question) => $levelOf($question['bloom_id']) === $level));
+        return collect(Bloom::LEVELS)->map(function (string $title, int $level) use ($questions) {
+            $stats = $this->practiceStats($questions->filter(fn (array $question) => Bloom::levelOf($question['bloom_id']) === $level));
 
             return [
                 'level' => $level,
-                'title' => Bloom::levelInfo($level)['title'],
+                'title' => $title,
                 'question_count' => $stats['total'],
                 'answered_count' => $stats['graded'],
                 'correct_count' => $stats['correct'],
                 'rate' => $stats['rate'],
             ];
-        })->all();
+        })->values()->all();
     }
 
     /**

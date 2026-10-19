@@ -21,15 +21,39 @@ class TeacherQuestionApiTest extends TestCase
             ->getJson('/api/v1/teacher/blooms')
             ->assertOk()
             ->assertJsonPath('blooms.0.id', 'B11')
-            ->assertJsonPath('blooms.0.title', '記憶（事實/定義）')
+            ->assertJsonPath('blooms.0.title', '記憶瞭解／事實')
             ->assertJsonPath('blooms.2.id', 'B13')
-            ->assertJsonPath('blooms.2.title', '記憶（事實/定義）')
+            ->assertJsonPath('blooms.2.title', '記憶瞭解／程序')
+            ->assertJsonPath('blooms.4.id', 'B22')
+            ->assertJsonPath('blooms.4.title', '應用／概念')
             ->assertJsonPath('blooms.6.id', 'B31')
-            ->assertJsonPath('blooms.6.title', '應用（程式實作/填空）')
+            ->assertJsonPath('blooms.6.title', '分析／事實')
             ->assertJsonPath('blooms.10.id', 'B42')
-            ->assertJsonPath('blooms.10.title', '分析（程式除錯/判讀）')
-            ->assertJsonPath('blooms.17.id', 'B63')
-            ->assertJsonCount(18, 'blooms');
+            ->assertJsonPath('blooms.10.title', '評價／概念')
+            ->assertJsonPath('blooms.11.id', 'B43')
+            ->assertJsonCount(12, 'blooms');
+    }
+
+    public function test_question_rejects_bloom_codes_outside_b11_to_b43(): void
+    {
+        [$courseId, $cardIds] = $this->seedCourseWithCards(1);
+
+        foreach (['B51', 'B1', 'B14'] as $bloomId) {
+            $this->withToken($this->teacherToken())
+                ->postJson("/api/v1/teacher/courses/{$courseId}/questions", [
+                    'title' => '超出範圍',
+                    'type' => Question::TYPE_TRUE_FALSE,
+                    'question_content' => 'PHP 是程式語言',
+                    'bloom_id' => $bloomId,
+                    'knowledge_card_ids' => $cardIds,
+                    'options' => [
+                        ['title' => '是', 'is_answer' => true],
+                        ['title' => '非', 'is_answer' => false],
+                    ],
+                ])
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors('bloom_id');
+        }
     }
 
     public function test_teacher_can_create_question_with_lowercase_bloom_code(): void
@@ -260,7 +284,7 @@ class TeacherQuestionApiTest extends TestCase
                 'title' => 'PI常數',
                 'type' => Question::TYPE_FILL,
                 'question_content' => '（1）("（2）", 3.14);',
-                'bloom_id' => 'B1',
+                'bloom_id' => 'B11',
                 'knowledge_card_ids' => $cardIds,
                 'sub_answers' => [
                     ['sub_id' => 1, 'answer' => 'define'],
@@ -286,7 +310,7 @@ class TeacherQuestionApiTest extends TestCase
                 'title' => '找出 PHP 錯誤',
                 'type' => Question::TYPE_DEBUG,
                 'question_content' => "請找出以下 PHP 程式的錯誤並修正。\n<?php\n\$name = \"Tom\"\necho \$name;",
-                'bloom_id' => 'B4',
+                'bloom_id' => 'B41',
                 'knowledge_card_ids' => $cardIds,
                 'sub_answers' => [
                     [
@@ -306,7 +330,7 @@ class TeacherQuestionApiTest extends TestCase
                 'title' => '解讀這段程式',
                 'type' => Question::TYPE_INTERPRET,
                 'question_content' => "請解讀以下 PHP 程式，說明最後會輸出什麼。\n<!--code-stem-->\n\$a = 5;\n\$b = 10;\nif (\$a < \$b) {\n    echo \"A\";\n}",
-                'bloom_id' => 'B2',
+                'bloom_id' => 'B21',
                 'knowledge_card_ids' => $cardIds,
                 'sub_answers' => [
                     [
@@ -331,7 +355,7 @@ class TeacherQuestionApiTest extends TestCase
                 'title' => '輸出 hello',
                 'type' => Question::TYPE_CODING,
                 'question_content' => '請輸出 hello',
-                'bloom_id' => 'B3',
+                'bloom_id' => 'B31',
                 'knowledge_card_ids' => $cardIds,
             ])
             ->assertCreated()
@@ -348,7 +372,7 @@ class TeacherQuestionApiTest extends TestCase
                 'title' => '兩數相加',
                 'type' => Question::TYPE_CODING,
                 'question_content' => '請使用 PHP 撰寫程式，將兩個數字相加後輸出結果。',
-                'bloom_id' => 'B3',
+                'bloom_id' => 'B31',
                 'knowledge_card_ids' => $cardIds,
                 'starter_code' => "\$a = 10;\n\$b = 20;",
                 'expected_output' => '30',
@@ -369,7 +393,7 @@ class TeacherQuestionApiTest extends TestCase
                 'title' => '輸出 hello',
                 'type' => Question::TYPE_CODING,
                 'question_content' => '請輸出 hello',
-                'bloom_id' => 'B3',
+                'bloom_id' => 'B31',
                 'show_example' => true,
                 'knowledge_card_ids' => $cardIds,
             ])
@@ -401,7 +425,7 @@ class TeacherQuestionApiTest extends TestCase
                 'title' => 'php註解（改）',
                 'type' => Question::TYPE_CHOICE,
                 'question_content' => '改過的題幹',
-                'bloom_id' => 'B2',
+                'bloom_id' => 'B21',
                 'knowledge_card_ids' => [$cardIds[0]],
                 'options' => [
                     ['title' => 'A', 'is_answer' => false],
@@ -410,7 +434,7 @@ class TeacherQuestionApiTest extends TestCase
             ])
             ->assertOk()
             ->assertJsonPath('question.title', 'php註解（改）')
-            ->assertJsonPath('question.bloom_id', 'B2')
+            ->assertJsonPath('question.bloom_id', 'B21')
             ->assertJsonPath('question.knowledge_card_ids', [$cardIds[0]])
             ->assertJsonCount(2, 'question.options');
 
@@ -441,7 +465,7 @@ class TeacherQuestionApiTest extends TestCase
                 'title' => '不該成功',
                 'type' => Question::TYPE_CODING,
                 'question_content' => 'x',
-                'bloom_id' => 'B1',
+                'bloom_id' => 'B11',
                 'knowledge_card_ids' => [$cardId],
             ])
             ->assertNotFound();
@@ -462,7 +486,7 @@ class TeacherQuestionApiTest extends TestCase
                 'title' => '掛錯卡',
                 'type' => Question::TYPE_CODING,
                 'question_content' => 'x',
-                'bloom_id' => 'B1',
+                'bloom_id' => 'B11',
                 'knowledge_card_ids' => [$otherCardId],
             ])
             ->assertStatus(422)
@@ -478,7 +502,7 @@ class TeacherQuestionApiTest extends TestCase
                 'title' => '沒正解',
                 'type' => Question::TYPE_CHOICE,
                 'question_content' => 'x',
-                'bloom_id' => 'B1',
+                'bloom_id' => 'B11',
                 'knowledge_card_ids' => $cardIds,
                 'options' => [
                     ['title' => 'A', 'is_answer' => false],
@@ -498,7 +522,7 @@ class TeacherQuestionApiTest extends TestCase
                 'title' => '沒格子',
                 'type' => Question::TYPE_FILL,
                 'question_content' => '（1）',
-                'bloom_id' => 'B1',
+                'bloom_id' => 'B11',
                 'knowledge_card_ids' => $cardIds,
             ])
             ->assertStatus(422)
@@ -514,7 +538,7 @@ class TeacherQuestionApiTest extends TestCase
                 'title' => '學生不能出題',
                 'type' => Question::TYPE_CODING,
                 'question_content' => 'x',
-                'bloom_id' => 'B1',
+                'bloom_id' => 'B11',
                 'knowledge_card_ids' => [1],
             ])
             ->assertForbidden();
@@ -552,7 +576,7 @@ class TeacherQuestionApiTest extends TestCase
                 'title' => '輸出 hello',
                 'type' => Question::TYPE_CODING,
                 'question_content' => '請輸出 hello',
-                'bloom_id' => 'B3',
+                'bloom_id' => 'B31',
                 'knowledge_card_ids' => $cardIds,
             ])
             ->json('question.id');
@@ -569,17 +593,17 @@ class TeacherQuestionApiTest extends TestCase
             ->getJson("/api/v1/teacher/courses/{$courseId}/question-records")
             ->assertOk()
             ->assertJsonPath('records.0.result', '<?php echo "hello";')
-            ->assertJsonPath('records.0.question_bloom_id', 'B3')
+            ->assertJsonPath('records.0.question_bloom_id', 'B31')
             ->assertJsonPath('records.0.bloom_id', null)
             ->assertJsonPath('records.0.expected_output', null)
             ->assertJsonPath('records.0.reference_answer', null);
 
         $this->withToken($this->teacherToken())
             ->putJson("/api/v1/teacher/question-records/{$record->id}", [
-                'bloom_id' => 'B4',
+                'bloom_id' => 'B41',
             ])
             ->assertOk()
-            ->assertJsonPath('record.bloom_id', 'B4')
+            ->assertJsonPath('record.bloom_id', 'B41')
             ->assertJsonPath('record.solo', QuestionRecord::SOLO_CORRECT)
             ->assertJsonPath('record.system_status', QuestionRecord::STATUS_CORRECT);
 
@@ -636,7 +660,7 @@ class TeacherQuestionApiTest extends TestCase
             'title' => 'php註解',
             'type' => Question::TYPE_CHOICE,
             'question_content' => '多行註解？',
-            'bloom_id' => 'B1',
+            'bloom_id' => 'B11',
             'knowledge_card_ids' => $cardIds,
             'options' => [
                 ['title' => 'A', 'is_answer' => false],

@@ -186,16 +186,18 @@ class QuestionApiTest extends TestCase
         ]);
     }
 
-    public function test_fill_parent_solo_is_wrong_partial_or_all_correct(): void
+    public function test_fill_parent_solo_follows_bloom_only_when_all_correct(): void
     {
         $cases = [
-            [['1' => 'x', '2' => 'y'], QuestionRecord::SOLO_WRONG, 0],
-            [['1' => 'define', '2' => 'y'], QuestionRecord::SOLO_PARTIAL, 1],
-            [['1' => 'define', '2' => 'PI'], QuestionRecord::SOLO_ALL_CORRECT, 2],
+            [['1' => 'x', '2' => 'y'], 1, 0, 'B12'],
+            [['1' => 'define', '2' => 'y'], 1, 1, 'B12'],
+            [['1' => 'define', '2' => 'PI'], 3, 2, 'B12'],
+            [['1' => 'define', '2' => 'PI'], 2, 2, 'B11'],
         ];
 
-        foreach ($cases as $index => [$answers, $solo, $correctCount]) {
+        foreach ($cases as $index => [$answers, $solo, $correctCount, $bloomId]) {
             $question = $this->makeQuestion($this->yingCourse(), Question::TYPE_FILL, "PI常數{$index}");
+            $question->update(['bloom_id' => $bloomId]);
             QuestionSubAnswer::query()->create([
                 'question_id' => $question->id,
                 'sub_id' => 1,
@@ -225,6 +227,58 @@ class QuestionApiTest extends TestCase
                 'solo' => $solo,
             ]);
         }
+    }
+
+    public function test_interpret_parent_solo_is_four_when_all_correct(): void
+    {
+        $cases = [
+            [['1' => 'x', '2' => 'y'], 1],
+            [['1' => 'A', '2' => 'y'], 2],
+            [['1' => 'A', '2' => 'B'], 4],
+        ];
+
+        foreach ($cases as $index => [$answers, $solo]) {
+            $question = $this->makeQuestion($this->yingCourse(), Question::TYPE_INTERPRET, "解讀{$index}");
+            QuestionSubAnswer::query()->create(['question_id' => $question->id, 'sub_id' => 1, 'answer' => 'A', 'solo' => 2]);
+            QuestionSubAnswer::query()->create(['question_id' => $question->id, 'sub_id' => 2, 'answer' => 'B', 'solo' => 2]);
+
+            $this->withToken($this->studentToken())
+                ->postJson("/api/v1/student/questions/{$question->id}/submit", ['answers' => $answers])
+                ->assertOk();
+
+            $this->assertDatabaseHas('question_records', ['question_id' => $question->id, 'solo' => $solo]);
+        }
+    }
+
+    public function test_teacher_can_review_with_solo_levels(): void
+    {
+        $question = $this->makeQuestion($this->yingCourse(), Question::TYPE_INTERPRET, '解讀覆核');
+        QuestionSubAnswer::query()->create(['question_id' => $question->id, 'sub_id' => 1, 'answer' => 'A', 'solo' => 2]);
+        QuestionSubAnswer::query()->create(['question_id' => $question->id, 'sub_id' => 2, 'answer' => 'B', 'solo' => 2]);
+
+        $recordId = $this->withToken($this->studentToken())
+            ->postJson("/api/v1/student/questions/{$question->id}/submit", ['answers' => ['1' => 'A', '2' => 'y']])
+            ->assertOk()
+            ->json('record.id');
+
+        $teacherToken = $this->loginToken('teacher2@school.edu.tw');
+
+        $this->withToken($teacherToken)
+            ->putJson("/api/v1/teacher/question-records/{$recordId}", ['solo' => 3])
+            ->assertOk()
+            ->assertJsonPath('record.solo', 3)
+            ->assertJsonPath('record.teacher_status', QuestionRecord::STATUS_WRONG);
+
+        $this->withToken($teacherToken)
+            ->putJson("/api/v1/teacher/question-records/{$recordId}", ['solo' => 4])
+            ->assertOk()
+            ->assertJsonPath('record.solo', 4)
+            ->assertJsonPath('record.teacher_status', QuestionRecord::STATUS_CORRECT);
+
+        $this->withToken($teacherToken)
+            ->putJson("/api/v1/teacher/question-records/{$recordId}", ['solo' => 5])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('solo');
     }
 
     public function test_debug_parent_solo_counts_lines_and_answers_separately(): void
@@ -429,7 +483,7 @@ class QuestionApiTest extends TestCase
             'title' => $title,
             'type' => $type,
             'question_content' => $title.' 的題幹',
-            'bloom_id' => 'B1',
+            'bloom_id' => 'B21',
             'description' => '能否辨識 PHP 變數',
             'show_example' => $showExample,
         ]);

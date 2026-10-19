@@ -183,7 +183,7 @@ class QuestionSeeder extends Seeder
                 'title' => 'PHP解讀01',
                 'type' => Question::TYPE_INTERPRET,
                 'question_content' => "請解讀以下 PHP 程式，說明最後會輸出什麼\n<!--code-stem-->\n\$numbers = [10, 20, 30];\necho \$numbers[1];",
-                'bloom_id' => 'B51',
+                'bloom_id' => 'B31',
                 'description' => '程式解讀',
                 'show_example' => false,
             ]);
@@ -202,7 +202,7 @@ class QuestionSeeder extends Seeder
                 'title' => 'PHP實作01',
                 'type' => Question::TYPE_CODING,
                 'question_content' => '請使用 PHP 撰寫程式，判斷一個數字 $number 是否為偶數，若是請輸出「偶數」，否則輸出「奇數」。',
-                'bloom_id' => 'B61',
+                'bloom_id' => 'B23',
                 'description' => '流程控制實作題',
                 'show_example' => false,
                 'starter_code' => "<?php\n\$number = 8;\n// 請在下方撰寫判斷邏輯\n",

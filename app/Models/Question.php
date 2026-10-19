@@ -107,4 +107,18 @@ class Question extends Model
     {
         return $this->hasMany(QuestionRecord::class);
     }
+
+    /**
+     * 整題全對時的 SOLO（Bloom × SOLO 評量準則）：
+     * 選擇／是非照正解選項；填空 B11 為 S2、其他 S3；解讀、除錯、實作為 S4。
+     */
+    public function fullCorrectSolo(): int
+    {
+        return match ($this->type) {
+            self::TYPE_CHOICE, self::TYPE_TRUE_FALSE => (int) ($this->options->firstWhere('is_answer', true)?->solo
+                ?: Bloom::defaultCorrectSolo($this->bloom_id)),
+            self::TYPE_FILL => Bloom::defaultCorrectSolo($this->bloom_id),
+            default => QuestionRecord::SOLO_RELATIONAL,
+        };
+    }
 }

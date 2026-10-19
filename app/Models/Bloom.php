@@ -24,37 +24,44 @@ class Bloom extends Model
         return $this->hasMany(Question::class, 'bloom_id');
     }
 
+    /** 創造（期末作品）與後設認知（後測問卷）不用題目編碼 */
+    public const LEVELS = [
+        1 => '記憶瞭解',
+        2 => '應用',
+        3 => '分析',
+        4 => '評價',
+    ];
+
+    public const KNOWLEDGE_TYPES = [
+        1 => '事實',
+        2 => '概念',
+        3 => '程序',
+    ];
+
     /**
-     * 出題碼 B11–B63。
+     * 出題碼 B11–B43：第一碼認知層級，第二碼知識類型。
      *
      * @return list<string>
      */
     public static function teacherChoiceIds(): array
     {
         $ids = [];
-        foreach (range(1, 6) as $bloom) {
-            foreach (range(1, 3) as $solo) {
-                $ids[] = 'B'.$bloom.$solo;
+        foreach (array_keys(self::LEVELS) as $level) {
+            foreach (array_keys(self::KNOWLEDGE_TYPES) as $type) {
+                $ids[] = 'B'.$level.$type;
             }
         }
 
         return $ids;
     }
 
-    /**
-     * @return array{title: string, usage: string}|null
-     */
-    public static function levelInfo(int $level): ?array
+    public static function levelOf(?string $id): ?int
     {
-        return match ($level) {
-            1 => ['title' => '記憶', 'usage' => '事實/定義'],
-            2 => ['title' => '理解', 'usage' => '解釋/說明'],
-            3 => ['title' => '應用', 'usage' => '程式實作/填空'],
-            4 => ['title' => '分析', 'usage' => '程式除錯/判讀'],
-            5 => ['title' => '評鑑', 'usage' => '判斷/評論'],
-            6 => ['title' => '創造', 'usage' => '設計/產出'],
-            default => null,
-        };
+        if ($id === null || preg_match('/^B([1-4])[1-3]?$/i', $id, $matches) !== 1) {
+            return null;
+        }
+
+        return (int) $matches[1];
     }
 
     /**
@@ -67,15 +74,10 @@ class Bloom extends Model
 
     public static function teacherChoiceTitle(string $id): string
     {
-        if (preg_match('/^B([1-6])[1-3]$/', $id, $matches) !== 1) {
+        if (preg_match('/^B([1-4])([1-3])$/', $id, $matches) !== 1) {
             return $id;
         }
 
-        $info = self::levelInfo((int) $matches[1]);
-        if ($info === null) {
-            return $id;
-        }
-
-        return $info['title'].'（'.$info['usage'].'）';
+        return self::LEVELS[(int) $matches[1]].'／'.self::KNOWLEDGE_TYPES[(int) $matches[2]];
     }
 }

@@ -256,7 +256,8 @@ class KnowledgeCardQuizApiTest extends TestCase
             ->assertJsonPath('analytics.progress_percent', 100)
             ->assertJsonMissingPath('analytics.personal')
             ->assertJsonMissingPath('analytics.bloom_radar.0.class_average')
-            ->assertJsonPath('analytics.bloom_radar.0.title', '記憶')
+            ->assertJsonPath('analytics.bloom_radar.0.title', '記憶瞭解')
+            ->assertJsonCount(4, 'analytics.bloom_radar')
             // 即學即測不算進雷達：記憶題只在即學即測答過
             ->assertJsonPath('analytics.bloom_radar.0.rate', null)
             ->assertJsonPath('analytics.bloom_radar.2.rate', 100)
