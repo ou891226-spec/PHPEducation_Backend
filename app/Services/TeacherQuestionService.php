@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Bloom;
 use App\Models\Course;
 use App\Models\KnowledgeCard;
 use App\Models\Question;
@@ -48,7 +49,7 @@ class TeacherQuestionService
                 'question_content' => $data['question_content'],
                 'bloom_id' => $data['bloom_id'],
                 'description' => $data['description'] ?? null,
-                'show_example' => (bool) ($data['show_example'] ?? false),
+                'show_example' => (bool) ($data['show_example'] ?? true),
                 'starter_code' => $this->codingField($data, 'starter_code'),
                 'expected_output' => $this->codingField($data, 'expected_output'),
                 'reference_answer' => $this->codingField($data, 'reference_answer'),
@@ -87,7 +88,7 @@ class TeacherQuestionService
                 'question_content' => $data['question_content'],
                 'bloom_id' => $data['bloom_id'],
                 'description' => $data['description'] ?? null,
-                'show_example' => (bool) ($data['show_example'] ?? false),
+                'show_example' => (bool) ($data['show_example'] ?? $question->show_example),
                 'starter_code' => $this->codingField($data, 'starter_code'),
                 'expected_output' => $this->codingField($data, 'expected_output'),
                 'reference_answer' => $this->codingField($data, 'reference_answer'),
@@ -122,11 +123,12 @@ class TeacherQuestionService
         if (in_array($question->type, Question::OPTION_TYPES, true)) {
             foreach ($data['options'] as $option) {
                 $isAnswer = (bool) $option['is_answer'];
+                $defaultSolo = $isAnswer ? Bloom::defaultCorrectSolo($question->bloom_id) : QuestionOption::SOLO_WRONG;
                 $question->options()->create([
                     'title' => $option['title'],
                     'description' => $option['description'] ?? null,
                     'is_answer' => $isAnswer,
-                    'solo' => $isAnswer ? QuestionOption::SOLO_CORRECT : QuestionOption::SOLO_WRONG,
+                    'solo' => isset($option['solo']) ? (int) $option['solo'] : $defaultSolo,
                 ]);
             }
 

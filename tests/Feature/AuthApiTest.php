@@ -201,7 +201,7 @@ class AuthApiTest extends TestCase
     }
     
     // 
-    public function test_student_forgot_password(): void
+    public function test_student_forgot_password_sends_link_and_keeps_old_password(): void
     {
         Mail::fake();
 
@@ -210,15 +210,22 @@ class AuthApiTest extends TestCase
         ]);
 
         $response->assertOk()
-            ->assertJsonPath('message', '已寄送新密碼至學生校園信箱');
+            ->assertJsonPath('message', '已寄送重設密碼連結至學生信箱');
 
-        Mail::assertSent(\App\Mail\StudentPasswordReset::class, function ($mail) {
+        Mail::assertSent(StudentPasswordReset::class, function (StudentPasswordReset $mail) {
             return $mail->studentAccount === '1411131000'
-                && !empty($mail->newPassword);
+                && str_starts_with($mail->resetUrl, 'http://localhost:9000/reset-password?type=student&token=')
+                && $mail->expiresInMinutes === 15
+                && str_contains($mail->render(), 'href="'.e($mail->resetUrl).'"');
         });
+
+        $this->postJson('/api/v1/auth/login', [
+            'account' => '1411131000',
+            'password' => self::PASSWORD,
+        ])->assertOk();
     }
 
-    public function test_student_with_custom_email_can_login_with_reset_password(): void
+    public function test_student_with_custom_email_can_reset_password_with_link(): void
     {
         Mail::fake();
 
@@ -230,25 +237,128 @@ class AuthApiTest extends TestCase
         ]);
 
         $this->postJson('/api/v1/auth/student/forgot-password', [
-            'student_no' => '0123456789',
+            'student_no' => 'custom.student@gmail.com',
         ])->assertOk();
 
-        $newPassword = null;
-        Mail::assertSent(StudentPasswordReset::class, function (StudentPasswordReset $mail) use (&$newPassword) {
-            $newPassword = $mail->newPassword;
+        $token = null;
+        Mail::assertSent(StudentPasswordReset::class, function (StudentPasswordReset $mail) use (&$token) {
+            $token = $this->tokenFromUrl($mail->resetUrl);
 
             return $mail->hasTo('custom.student@gmail.com') && $mail->studentAccount === '0123456789';
         });
 
+        $this->postJson('/api/v1/auth/reset-password', [
+            'type' => 'student',
+            'token' => $token,
+            'new_password' => 'MyNewPassword1',
+            'new_password_confirmation' => 'MyNewPassword1',
+        ])
+            ->assertOk()
+            ->assertJsonPath('message', '密碼已重設，請使用新密碼登入');
+
         foreach (['0123456789', 's0123456789', 'custom.student@gmail.com'] as $account) {
             $this->postJson('/api/v1/auth/login', [
                 'account' => $account,
-                'password' => $newPassword,
+                'password' => 'MyNewPassword1',
             ])
                 ->assertOk()
                 ->assertJsonPath('user.role', 'student')
                 ->assertJsonPath('user.student_no', '0123456789');
         }
+
+        $this->postJson('/api/v1/auth/login', [
+            'account' => '0123456789',
+            'password' => 'unknown-initial-password',
+        ])->assertUnauthorized();
+
+        // 同一個連結不能再用
+        $this->postJson('/api/v1/auth/reset-password', [
+            'type' => 'student',
+            'token' => $token,
+            'new_password' => 'AnotherPassword1',
+            'new_password_confirmation' => 'AnotherPassword1',
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['token']);
+    }
+
+    public function test_reset_link_expires_after_15_minutes(): void
+    {
+        Mail::fake();
+
+        $this->postJson('/api/v1/auth/student/forgot-password', [
+            'student_no' => '1411131000',
+        ])->assertOk();
+
+        $token = null;
+        Mail::assertSent(StudentPasswordReset::class, function (StudentPasswordReset $mail) use (&$token) {
+            $token = $this->tokenFromUrl($mail->resetUrl);
+
+            return true;
+        });
+
+        $this->travel(16)->minutes();
+
+        $this->postJson('/api/v1/auth/reset-password', [
+            'type' => 'student',
+            'token' => $token,
+            'new_password' => 'MyNewPassword1',
+            'new_password_confirmation' => 'MyNewPassword1',
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['token']);
+    }
+
+    public function test_new_forgot_request_invalidates_previous_link(): void
+    {
+        Mail::fake();
+
+        $tokens = [];
+        foreach ([1, 2] as $_) {
+            $this->postJson('/api/v1/auth/student/forgot-password', [
+                'student_no' => '1411131000',
+            ])->assertOk();
+        }
+
+        Mail::assertSent(StudentPasswordReset::class, function (StudentPasswordReset $mail) use (&$tokens) {
+            $tokens[] = $this->tokenFromUrl($mail->resetUrl);
+
+            return true;
+        });
+
+        $payload = [
+            'type' => 'student',
+            'new_password' => 'MyNewPassword1',
+            'new_password_confirmation' => 'MyNewPassword1',
+        ];
+
+        $this->postJson('/api/v1/auth/reset-password', $payload + ['token' => $tokens[0]])
+            ->assertStatus(422);
+        $this->postJson('/api/v1/auth/reset-password', $payload + ['token' => $tokens[1]])
+            ->assertOk();
+    }
+
+    public function test_student_token_cannot_reset_teacher_password(): void
+    {
+        Mail::fake();
+
+        $this->postJson('/api/v1/auth/student/forgot-password', [
+            'student_no' => '1411131000',
+        ])->assertOk();
+
+        $token = null;
+        Mail::assertSent(StudentPasswordReset::class, function (StudentPasswordReset $mail) use (&$token) {
+            $token = $this->tokenFromUrl($mail->resetUrl);
+
+            return true;
+        });
+
+        $this->postJson('/api/v1/auth/reset-password', [
+            'type' => 'teacher',
+            'token' => $token,
+            'new_password' => 'MyNewPassword1',
+            'new_password_confirmation' => 'MyNewPassword1',
+        ])->assertStatus(422);
     }
 
     public function test_student_forgot_password_accepts_school_email_aliases(): void
@@ -274,7 +384,7 @@ class AuthApiTest extends TestCase
             ->assertJsonValidationErrors(['student_no']);
     }
 
-    public function test_teacher_forgot_password(): void
+    public function test_teacher_forgot_password_sends_link_and_can_reset(): void
     {
         Mail::fake();
 
@@ -283,12 +393,36 @@ class AuthApiTest extends TestCase
         ]);
 
         $response->assertOk()
-            ->assertJsonPath('message', '已寄送新密碼至教師校園信箱');
+            ->assertJsonPath('message', '已寄送重設密碼連結至教師信箱');
 
-        Mail::assertSent(\App\Mail\TeacherPasswordReset::class, function ($mail) {
+        $token = null;
+        Mail::assertSent(\App\Mail\TeacherPasswordReset::class, function ($mail) use (&$token) {
+            $token = $this->tokenFromUrl($mail->resetUrl);
+
             return $mail->teacherAccount === 'teacher@school.edu.tw'
-                && !empty($mail->newPassword);
+                && str_contains($mail->resetUrl, 'type=teacher');
         });
+
+        $this->loginToken('teacher@school.edu.tw');
+
+        $this->postJson('/api/v1/auth/reset-password', [
+            'type' => 'teacher',
+            'token' => $token,
+            'new_password' => 'TeacherNew123',
+            'new_password_confirmation' => 'TeacherNew123',
+        ])->assertOk();
+
+        $this->postJson('/api/v1/auth/login', [
+            'account' => 'teacher@school.edu.tw',
+            'password' => 'TeacherNew123',
+        ])->assertOk();
+    }
+
+    private function tokenFromUrl(string $url): string
+    {
+        parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
+
+        return (string) $query['token'];
     }
 
     public function test_teacher_forgot_password_with_invalid_account(): void

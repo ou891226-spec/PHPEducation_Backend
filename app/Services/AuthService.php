@@ -11,6 +11,7 @@ use App\Models\Admin;
 use App\Models\Student;
 use App\Models\Teacher;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 /**
@@ -20,6 +21,12 @@ use Illuminate\Support\Facades\Hash;
  */
 class AuthService
 {
+    public const RESET_TYPE_STUDENT = 'student';
+
+    public const RESET_TYPE_TEACHER = 'teacher';
+
+    public const RESET_LINK_MINUTES = 15;
+
     public function __construct(
         private readonly UserFormatterService $userFormatter,
     ) {}
@@ -99,9 +106,9 @@ class AuthService
     }
 
     /**
-     * 學生忘記密碼：重設隨機新密碼並寄信給學生校園信箱
+     * 學生忘記密碼：寄重設密碼連結到學生綁定的信箱，密碼要等學生點連結設定後才會變更
      *
-     * @param string $studentNo 學生學號
+     * @param string $studentNo 學生學號或信箱
      * @return void
      * @throws ValidationException 當查無該學生時拋出
      */
@@ -123,20 +130,16 @@ class AuthService
             ]);
         }
 
-        $newPassword = Str::random(12);
-        $student->update([
-            'password' => $newPassword,
-        ]);
-
         Mail::to($student->email)->send(new StudentPasswordReset(
             studentName: $student->name,
             studentAccount: $student->student_no,
-            newPassword: $newPassword,
+            resetUrl: $this->createResetUrl(self::RESET_TYPE_STUDENT, $student->id),
+            expiresInMinutes: self::RESET_LINK_MINUTES,
         ));
     }
 
     /**
-     * 教師忘記密碼：重設隨機新密碼並寄信給教師信箱
+     * 教師忘記密碼：寄重設密碼連結到教師信箱，密碼要等教師點連結設定後才會變更
      *
      * @param string $teacherAccount 教師登入帳號
      * @return void
@@ -154,16 +157,81 @@ class AuthService
             ]);
         }
 
-        $newPassword = Str::random(12);
-        $teacher->update([
-            'password' => $newPassword,
-        ]);
-
         Mail::to($teacher->email)->send(new TeacherPasswordReset(
             teacherName: $teacher->name,
             teacherAccount: $teacher->account,
-            newPassword: $newPassword,
+            resetUrl: $this->createResetUrl(self::RESET_TYPE_TEACHER, $teacher->id),
+            expiresInMinutes: self::RESET_LINK_MINUTES,
         ));
+    }
+
+    /**
+     * 以重設連結的 token 設定新密碼
+     *
+     * 連結只能用一次；成功後登出該帳號所有裝置，舊密碼失效。
+     *
+     * @param string $type student 或 teacher
+     * @param string $token 信中連結帶的原始 token
+     * @param string $newPassword 新密碼
+     * @return void
+     * @throws ValidationException 當連結無效或已過期時拋出
+     */
+    public function resetPasswordWithToken(string $type, string $token, string $newPassword): void
+    {
+        DB::transaction(function () use ($type, $token, $newPassword) {
+            $link = DB::table('password_reset_links')
+                ->where('user_type', $type)
+                ->where('token_hash', hash('sha256', $token))
+                ->lockForUpdate()
+                ->first();
+
+            $user = null;
+            if ($link !== null && now()->lessThanOrEqualTo($link->expires_at)) {
+                $user = $type === self::RESET_TYPE_STUDENT
+                    ? Student::query()->find($link->user_id)
+                    : Teacher::query()->find($link->user_id);
+            }
+
+            if ($user === null) {
+                throw ValidationException::withMessages([
+                    'token' => ['重設連結無效或已過期，請重新申請忘記密碼'],
+                ]);
+            }
+
+            $user->update(['password' => $newPassword]);
+            $user->tokens()->delete();
+
+            DB::table('password_reset_links')
+                ->where('user_type', $type)
+                ->where('user_id', $user->id)
+                ->delete();
+        });
+    }
+
+    /**
+     * 產生一次性重設連結；同一帳號舊的連結會一併作廢
+     */
+    private function createResetUrl(string $type, int $userId): string
+    {
+        $token = Str::random(64);
+
+        DB::transaction(function () use ($type, $userId, $token) {
+            DB::table('password_reset_links')
+                ->where('user_type', $type)
+                ->where('user_id', $userId)
+                ->delete();
+
+            DB::table('password_reset_links')->insert([
+                'user_type' => $type,
+                'user_id' => $userId,
+                'token_hash' => hash('sha256', $token),
+                'expires_at' => now()->addMinutes(self::RESET_LINK_MINUTES),
+                'created_at' => now(),
+            ]);
+        });
+
+        return rtrim((string) config('app.frontend_url'), '/')
+            .'/reset-password?'.http_build_query(['type' => $type, 'token' => $token]);
     }
 
     /**

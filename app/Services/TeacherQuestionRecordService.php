@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Bloom;
 use App\Models\Question;
 use App\Models\QuestionRecord;
 use App\Models\Teacher;
@@ -17,9 +18,11 @@ class TeacherQuestionRecordService
     {
         $this->ownedCourse($teacher, $courseId);
 
+        // 即學即測可無限重試，只算學生自我檢核，不列入老師的作答紀錄
         return QuestionRecord::query()
             ->with(['student', 'question', 'subs', 'aiFeedback'])
             ->whereHas('question', fn ($query) => $query->where('course_id', $courseId))
+            ->where('source', QuestionRecord::SOURCE_PRACTICE)
             ->orderByDesc('id')
             ->get()
             ->map(fn (QuestionRecord $record) => $this->formatRecord($record))
@@ -36,6 +39,7 @@ class TeacherQuestionRecordService
             ->with(['student', 'question', 'subs', 'aiFeedback'])
             ->whereKey($recordId)
             ->whereHas('question.course', fn ($query) => $query->where('teacher_id', $teacher->id))
+            ->where('source', QuestionRecord::SOURCE_PRACTICE)
             ->first();
 
         if ($record === null) {
@@ -53,21 +57,24 @@ class TeacherQuestionRecordService
             $passed = $this->bloomMeetsRequirement($bloomId, $record->question?->bloom_id);
             $record->update([
                 'bloom_id' => $bloomId,
-                'solo' => $passed ? QuestionRecord::SOLO_CORRECT : QuestionRecord::SOLO_WRONG,
+                'solo' => isset($data['solo'])
+                    ? (int) $data['solo']
+                    : ($passed ? QuestionRecord::SOLO_CORRECT : QuestionRecord::SOLO_WRONG),
                 'system_status' => $passed ? QuestionRecord::STATUS_CORRECT : QuestionRecord::STATUS_WRONG,
                 'teacher_status' => $passed ? QuestionRecord::STATUS_CORRECT : QuestionRecord::STATUS_WRONG,
             ]);
         } else {
-            $solo = $data['solo'] ?? null;
-            if (! in_array($solo, [QuestionRecord::SOLO_WRONG, QuestionRecord::SOLO_CORRECT], true)) {
+            $solo = isset($data['solo']) ? (int) $data['solo'] : null;
+            if ($solo === null) {
                 throw ValidationException::withMessages([
-                    'solo' => ['請輸入 1（錯）或 2（對）。'],
+                    'solo' => ['請選擇 SOLO 層級（S1～S4）。'],
                 ]);
             }
 
+            // 達到整題全對的層級才算答對
             $record->update([
                 'solo' => $solo,
-                'teacher_status' => $solo === QuestionRecord::SOLO_CORRECT
+                'teacher_status' => $solo >= $record->question->fullCorrectSolo()
                     ? QuestionRecord::STATUS_CORRECT
                     : QuestionRecord::STATUS_WRONG,
             ]);
@@ -86,8 +93,8 @@ class TeacherQuestionRecordService
 
     private function bloomMeetsRequirement(string $gradedBloomId, ?string $requiredBloomId): bool
     {
-        $graded = $this->bloomLevel($gradedBloomId);
-        $required = $this->bloomLevel($requiredBloomId);
+        $graded = Bloom::levelOf($gradedBloomId);
+        $required = Bloom::levelOf($requiredBloomId);
 
         if ($graded === null || $required === null) {
             throw ValidationException::withMessages([
@@ -96,15 +103,6 @@ class TeacherQuestionRecordService
         }
 
         return $graded >= $required;
-    }
-
-    private function bloomLevel(?string $bloomId): ?int
-    {
-        if ($bloomId === null || ! preg_match('/^B([1-6])([1-3])?$/i', $bloomId, $matches)) {
-            return null;
-        }
-
-        return (int) $matches[1];
     }
 
     /**

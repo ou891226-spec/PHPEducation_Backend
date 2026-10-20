@@ -20,6 +20,8 @@
 11. [教材匯入](#教材匯入)
 12. [學生教材](#學生教材)
 13. [題目與作答](#題目與作答)
+14. [小試身手與學習進度](#小試身手與學習進度)
+15. [教師數據統計](#教師數據統計)
 
 ---
 
@@ -79,8 +81,10 @@ questions                            → 題目（屬於課程）
 question_options                     → 選擇／是非選項
 question_sub_answers                 → 填空／除錯／解讀正解
 question_knowledge_cards             → 題目 ↔ 知識卡
-question_records / question_record_subs → 作答
+question_records / question_record_subs → 作答（題目練習與小試身手共用，以 source 區分）
+knowledge_card_completions           → 學生完成知識卡的紀錄
 bloom                                → Bloom 編碼
+solo                                 → SOLO 層級 S1–S5
 ```
 
 ### 目錄
@@ -91,10 +95,10 @@ app/
 ├─ Http/
 │  ├─ Controllers/Api/V1/
 │  │  ├─ AuthController、DashboardController、StatsController
-│  │  ├─ Student/               MaterialController、QuestionController
+│  │  ├─ Student/               MaterialController、QuestionController、KnowledgeCardQuizController
 │  │  └─ Teacher/               Course、Question、QuestionRecord、MaterialTemplate、
 │  │                            StudentRosterTemplate、MaterialImport、MaterialGraph、
-│  │                            EditorImage、Chapter、Unit、KnowledgeCard
+│  │                            EditorImage、Chapter、Unit、KnowledgeCard、Stats
 │  ├─ Middleware/EnsureRole.php
 │  └─ Requests/                 Auth、Course、Material、學生申請
 ├─ Models/
@@ -245,7 +249,9 @@ tests/Feature                    API 功能測試
 
 ### bloom
 
-出題用 `B11`–`B63`：第一碼 Bloom 層級 1–6，第二碼 SOLO 1–3。下拉只顯示 Bloom 層級。舊碼 `B1`–`B6` 保留給既有題目。
+出題用 `B11`–`B43`：第一碼認知層級（1 記憶瞭解、2 應用、3 分析、4 評價），第二碼知識類型（1 事實、2 概念、3 程序），例如 `B12` 為「記憶瞭解／概念」。創造（期末作品）與後設認知（後測問卷）不用題目編碼。
+
+出題只接受 `B11`–`B43`，超出範圍 **422**。舊碼 `B1`–`B6`、`B51`–`B63` 留在表裡給既有題目重選。
 
 ### question_options
 
@@ -254,7 +260,7 @@ tests/Feature                    API 功能測試
 | question_id | 題目（FK） |
 | title / description | 選項文字、說明（可空） |
 | is_answer | 是否正解 |
-| solo | 正解 `2`、其餘 `1`（自動帶入） |
+| solo | 學生選這個選項得到的 SOLO（1–5）。老師可自訂；沒傳時正解依 Bloom 帶入（`B11` 為 `2`，其他為 `3`），其餘選項 `1` |
 
 ### question_sub_answers
 
@@ -263,7 +269,7 @@ tests/Feature                    API 功能測試
 | question_id | 題目（FK） |
 | sub_id | 填空格子編號（對題幹 `（1）`）或除錯行號 |
 | answer / description | 正解、說明（可空） |
-| solo | 配分，預設 2 |
+| solo | 這格答對得到的 SOLO（1–5），老師出題時設定，預設 2 |
 
 ### question_knowledge_cards
 
@@ -272,8 +278,27 @@ tests/Feature                    API 功能測試
 ### question_records / question_record_subs
 
 - 選擇／是非只寫總表；填空／除錯／解讀另寫每格子表。
-- `solo`：選擇／是非錯 `1`、對 `2`；其他題型全錯 `1`、部分對 `2`、全對 `3`（`result` 記 `correct`／`total`）。逐格答對抄正解的 `solo`，答錯為 `1`。實作題由老師給 Bloom 後判定。
+- `source`：`practice` 題目練習（每題只能答一次）、`quiz` 小試身手（可重答）。
+- 總表 `solo`：
+  - 選擇／是非：抄學生所選選項的 `solo`。
+  - 填空：全對時 `B11` 為 `2`、其他 Bloom 為 `3`；沒全對為 `1`（`result` 記 `correct`／`total`）。
+  - 解讀：全對 `4`、部分對 `2`、全錯 `1`；老師覆核可改成 `1`–`4`。
+  - 除錯：行數、答案分開算對幾個。全對 `4`；行數對超過 1/2 且答案對超過 1/2 為 `3`；行數對超過 1/2 且答案對超過 1/3 為 `2`；其他 `1`。「答案對」不看行數，寫在錯的行也算答案對。
+  - 實作：老師給 Bloom 後判定。
+- 子表 `solo`：該格行數與答案都對才抄正解的 `solo`，否則 `1`。
 - 比對前會把全形英數與標點轉半形並去掉前後空白；資料庫仍存學生原字。
+
+### knowledge_card_completions
+
+| 欄位 | 說明 |
+|------|------|
+| student_id / course_id / knowledge_card_id | 學生、課程、知識卡（三者 unique） |
+| method | `quiz`：小試身手抽到的題目都答過；`read`：沒有小試身手題目，按「我已讀完」 |
+| completed_at | 完成時間 |
+
+### solo
+
+`level` 1–5、`code` `S1`–`S5`、`title`、`description`。`question_records.solo` 等欄位存的是 `level`。
 
 ### personal_access_tokens
 
@@ -355,14 +380,19 @@ Authorization: Bearer {token}
 
 ### 忘記密碼
 
-不需登入。後端產生 12 碼新密碼、寫入帳號，再寄到信箱。管理員沒有這支 API。
+不需登入。後端寄一封含重設連結的信到帳號綁定的信箱，**不會改密碼**；使用者點連結設定新密碼後，舊密碼才失效。管理員沒有這支 API。
 
 | API | Request | 成功訊息 |
 |-----|---------|----------|
-| POST `/api/v1/auth/student/forgot-password` | `{ "student_no": "1411131000" }`（可加 `s`） | 已寄送新密碼至學生校園信箱 |
-| POST `/api/v1/auth/teacher/forgot-password` | `{ "teacher_account": "teacher@school.edu.tw" }` | 已寄送新密碼至教師校園信箱 |
+| POST `/api/v1/auth/student/forgot-password` | `{ "student_no": "1411131000" }`（學號可加 `s`，也可填綁定信箱） | 已寄送重設密碼連結至學生信箱 |
+| POST `/api/v1/auth/teacher/forgot-password` | `{ "teacher_account": "teacher@school.edu.tw" }` | 已寄送重設密碼連結至教師信箱 |
+| POST `/api/v1/auth/reset-password` | `{ "type": "student", "token": "...", "new_password": "...", "new_password_confirmation": "..." }` | 密碼已重設，請使用新密碼登入 |
 
-沒帶欄位或帳號不存在 **422**。
+- 連結格式：`{FRONTEND_URL}/reset-password?type=student&token=...`，`FRONTEND_URL` 預設 `http://localhost:9000`。
+- 連結 15 分鐘內有效、只能用一次；同一帳號再次申請時，舊連結作廢。資料表 `password_reset_links` 只存 token 的 SHA-256。
+- 重設成功會登出該帳號所有裝置。
+- 忘記密碼兩支 API 每分鐘最多 5 次。
+- 沒帶欄位或帳號不存在 **422**；連結無效、已用過或過期 **422**（`errors.token`）；新密碼至少 6 碼且要和確認欄位一致。
 
 ---
 
@@ -422,12 +452,13 @@ Authorization: Bearer {token}
 流程：
 
 1. 教師用 Excel 名冊或手動新增學生到課程（學號必填，姓名、信箱選填，班級取自課程）。
-2. 課程第一次要由管理員開通（`courses.approved_at` 為 `null`）：不管學生有沒有帳號，都進入待開通。
-3. 課程開通過之後：已有帳號的學生直接選課，標為已開通；沒有帳號的仍進入待開通。
-4. 管理員開通時，沒帳號的建立 `students`（姓名空白先用學號；信箱未填用 `s{學號}@nutc.edu.tw`），已有帳號的直接選課；可整班開通，並寫入課程的 `approved_at`。
-5. 每次開通都寄信給申請的教師：
-   - 有新建帳號：附件 `學生帳號名單.xlsx` 列出新建學生的姓名／帳號／初始密碼（信件本文不含密碼；工作表保護密碼為教師的 `teachers.account`），已有帳號的另外寫人數。
-   - 全部都是已有帳號：不附檔案，提醒學生用原本的密碼登入。
+2. 老師加入的學生一律進入待開通，不管學生有沒有帳號、課程開通過沒有，移出後再加回也一樣。
+3. 管理員開通時，沒帳號的建立 `students`（姓名空白先用學號；信箱未填用 `s{學號}@nutc.edu.tw`），已有帳號的直接選課；可整班開通，並寫入課程的 `approved_at`。
+4. 開通後寄信到學生的 `students.email`：
+   - 新建帳號的學生：「學生帳號開通通知」，內含帳號（學號）、初始密碼與加入的課程。
+   - 已有帳號的學生：「加入課程通知」，列出課程名稱與授課老師。
+   - 教師不收信。
+5. 寄信失敗不影響開通，只寫入 log；收不到開通信的學生可用「忘記密碼」重設。
 
 ### 教師端
 
@@ -480,7 +511,7 @@ Authorization: Bearer {token}
 
 成功 **200**：`{ "message": "學生資料已更新", "item": { "id", "student_no", "name", "email", "status", "has_account" } }`。
 
-**移除學生**：待開通則刪除申請列；已開通則取消這門課的選課，帳號保留。之後可再加回。成功 **200**：`{ "message": "已從課程移除" }`。
+**移除學生**：待開通則刪除申請列；已開通則取消這門課的選課，帳號保留。之後可再加回，但要重新等管理員開通。成功 **200**：`{ "message": "已從課程移除" }`。
 
 ### 管理員端
 
@@ -691,16 +722,16 @@ Request：`name`（必填）、`sort_order`、`status`（`draft`／`published`�
 
 `bloom_id` 大小寫皆可。各題型另帶：
 
-**選擇／是非**：`options`，剛好一個 `is_answer: true`（是非剛好 2 個）。不用傳 `solo`。
+**選擇／是非**：`options`，剛好一個 `is_answer: true`（是非剛好 2 個）。`solo` 選填（1–5），沒傳時正解依 Bloom 帶入（`B11` 為 2、其他為 3），其餘選項為 1。
 
 ```json
 { "options": [{ "title": "/* */", "is_answer": true }, { "title": "//", "is_answer": false }] }
 ```
 
-**填空**：`sub_answers`，`sub_id` 對題幹 `（1）（2）`。
+**填空**：`sub_answers`，`sub_id` 對題幹 `（1）（2）`。每格 `solo` 選填（1–5），預設 2。
 
 ```json
-{ "sub_answers": [{ "sub_id": 1, "answer": "define" }, { "sub_id": 2, "answer": "PI" }] }
+{ "sub_answers": [{ "sub_id": 1, "answer": "define" }, { "sub_id": 2, "answer": "PI", "solo": 3 }] }
 ```
 
 **除錯**：題幹放完整的錯誤程式，`sub_answers` **只填有錯的行**（`sub_id` 行號、`answer` 修正後那行、`description` 錯誤原因）。
@@ -735,17 +766,51 @@ Request：`name`（必填）、`sort_order`、`status`（`draft`／`published`�
 }
 ```
 
-### 學生作答
+### 學生作答（題目練習）
 
 | Method | URL | 說明 |
 |--------|-----|------|
-| GET | `/api/v1/student/courses/{courseId}/questions` | 題目列表（可加 `knowledge_card_id`） |
+| GET | `/api/v1/student/courses/{courseId}/questions` | 題目列表（摘要），回 `questions`、`chapters`（下拉用的章節／單元／知識卡樹） |
 | GET | `/api/v1/student/questions/{questionId}` | 單題 |
-| POST | `/api/v1/student/questions/{questionId}/submit` | 交卷 |
+| POST | `/api/v1/student/questions/{questionId}/submit` | 交卷，每題只能答一次（再交 **422**） |
 | GET | `/api/v1/student/courses/{courseId}/question-records` | 自己的作答紀錄（可加 `question_id`） |
 | GET | `/api/v1/student/question-records/{recordId}` | 單筆作答紀錄 |
 
-學生看不到：正解、選項 `description`（交卷後以 `explanation` 回傳）、`solo`、`expected_output`、`reference_answer`。知識卡範例只有 `show_example: true` 時以 `examples` 回傳。
+**哪些題目會出現**
+
+- 只掛一張知識卡的 `B11` 選擇／是非題屬於小試身手，不在題目練習出現（列表不列、單題與交卷 **404**）。
+- 掛到未發布單元知識卡的題目，學生還學不到，也不列出。
+
+**範圍 `scope`**（依題目掛的知識卡判斷）：
+
+| scope | 條件 |
+|-------|------|
+| card | 只掛一張知識卡 |
+| unit | 多張卡，有共同單元 |
+| chapter | 多張卡，不同單元但有共同章節 |
+| course | 跨章節的綜合題 |
+
+每題另回 `scope_unit_ids`、`scope_chapter_ids`。
+
+**鎖定**：題目掛的知識卡學生還沒全部完成時，`locked: true`，`locked_cards` 列出還沒完成的卡（`id`、`title`）。鎖定的題目交卷回 **422**（`question`：「請先完成知識卡：…」）。
+
+**列表篩選**（都在後端做，皆選填）：
+
+| 參數 | 說明 |
+|------|------|
+| scope | `card`／`unit`／`chapter`／`course` |
+| chapter_id / unit_id | 搭配 `scope` 使用 |
+| knowledge_card_id | 掛了這張卡的題目 |
+| type | 題型 |
+| status | `all`（預設）／`answered`／`unanswered` |
+| keyword | 標題關鍵字，最多 100 字 |
+| page / per_page | 有帶 `per_page`（1–100）才分頁，並回 `meta`（`current_page`、`per_page`、`total`、`last_page`） |
+
+列表每題只回摘要：`id`、`course_id`、`title`、`type`、`bloom_id`、`knowledge_card_ids`、`knowledge_cards`（`id`、`title`）、`practice`（作答過才有，含 `record_id`、`status`、`answered_at`），加上範圍與鎖定欄位。題幹、選項、知識卡內容進單題再拿。
+
+已作答的單題和交卷回應會帶 `review`：`my_answer`、`correct_answer`、`subs`（每格 `my_answer`、`correct_answer`、`is_right`、`description`）、`explanation`。實作題要老師批改後才回 `correct_answer`。
+
+學生看不到：正解（作答前）、選項 `description`（交卷後以 `explanation` 回傳）、`solo`、`expected_output`、`reference_answer`。知識卡範例只有 `show_example: true` 時以 `examples` 回傳。
 
 交卷格式：
 
@@ -762,7 +827,62 @@ Request：`name`（必填）、`sort_order`、`status`（`draft`／`published`�
 
 | Method | URL | 說明 |
 |--------|-----|------|
-| GET | `/api/v1/teacher/courses/{courseId}/question-records` | 該課學生作答（含 `subs`） |
-| PUT | `/api/v1/teacher/question-records/{recordId}` | 實作題帶 `bloom_id`；其他題型帶 `solo`（1 錯／2 對） |
+| GET | `/api/v1/teacher/courses/{courseId}/question-records` | 該課學生題目練習的作答（含 `subs`；小試身手不列入） |
+| PUT | `/api/v1/teacher/question-records/{recordId}` | 實作題帶 `bloom_id`（`solo` 選填 1–4）；其他題型帶 `solo`（1–4） |
 
-實作題比對 Bloom 第一碼：老師給的 ≥ 出題 Bloom 為對（`solo=2`），否則錯（`solo=1`）。
+實作題比對 Bloom 第一碼：老師給的 ≥ 出題 Bloom 為對，否則錯；沒帶 `solo` 時對記 `2`、錯記 `1`。
+
+其他題型：老師給的 `solo` ≥ 該題全對的 SOLO 即判定正確，否則錯誤。全對的 SOLO：選擇／是非為正解選項的 `solo`；填空 `B11` 為 `2`、其他為 `3`；除錯、解讀為 `4`。
+
+---
+
+## 小試身手與學習進度
+
+每張知識卡的小試身手：從**只掛這張卡**的 `B11` 選擇／是非題抽題，每位學生固定抽 5 題（不足 5 題就全出，順序固定）。抽到的題目都答過就完成這張卡，不論對錯；答錯可以重答。沒有小試身手題目的卡，按「我已讀完」即完成。
+
+| Method | URL | 說明 |
+|--------|-----|------|
+| GET | `/api/v1/student/courses/{courseId}/knowledge-cards/{cardId}/quiz` | 知識卡內容與小試身手題目 |
+| POST | `/api/v1/student/courses/{courseId}/knowledge-cards/{cardId}/quiz/questions/{questionId}` | 作答一題（格式同題目練習交卷） |
+| POST | `/api/v1/student/courses/{courseId}/knowledge-cards/{cardId}/read` | 我已讀完（有小試身手題目的卡 **422**） |
+| GET | `/api/v1/student/courses/{courseId}/learning-progress` | 每張知識卡的完成狀態，回 `progress` |
+| GET | `/api/v1/student/courses/{courseId}/learning-analytics` | 學習進度頁的統計，回 `analytics` |
+
+- 卡片必須在已發布單元，否則 **404**；題目不在這位學生抽到的題目裡 **422**（`question_id`）。
+- **quiz**：`card`（含 `chapter`、`unit`）、`completed`、`completed_at`、`completion_method`、`has_quiz`、`question_count`、`questions`（每題另含 `answered`、`correct`、`last_status`）。
+- **作答一題**：交卷結果加上 `question_status`、`correct_count`、`total`、`completed`、`completed_at`；不回 `review`，避免直接看到答案。
+- **learning-progress**：`total`、`completed`、`summary`（`completed`／`retry`／`in_progress`／`not_started` 張數）、`last_activity`（上次作答的題目與知識卡）、`chapters` → `units` → `knowledge_cards`（每張含 `has_quiz`、`question_total`、`answered_count`、`correct_count`、`status`、`last_answered_at`）。
+- **learning-analytics**（只用學生自己的資料）：
+  - `progress_percent`：知識卡完成百分比。
+  - `bloom_radar`：每個 Bloom 層級的 `question_count`、`answered_count`（已批改）、`correct_count`、`rate`（答對率，沒有已批改的題目時為 `null`）。只算題目練習，小試身手可重答不列入。
+  - `activities.knowledge_cards`：`done`、`total`。
+  - `activities.practice`：`total`、`answered`、`graded`、`correct`、`rate`，以及 `scopes`（四種範圍各自的同樣欄位）。
+  - `activities.chapters`：每章 `done`、`total`。
+
+---
+
+## 教師數據統計
+
+只能看自己的課，別人的課 **404**。每列是一個單元（含草稿單元，依章節、單元排序），欄位 `chapter_id`、`chapter_name`、`unit_id`、`unit_name`、`unit_status`、`counts`、`total`。題目掛的知識卡跨單元時，每個相關單元各算一次；`totals` 每題（或每筆作答）只算一次。
+
+| Method | URL | 說明 |
+|--------|-----|------|
+| GET | `/api/v1/teacher/courses/{courseId}/stats/bloom` | 根據教材：每個單元在 `B11`–`B43` 各有幾題 |
+| GET | `/api/v1/teacher/courses/{courseId}/stats/solo` | 根據教材：每題取標註最高的 SOLO（選項、子題答案取最高），統計 `S1`–`S5` 題數；實作題沒有標註不列入 |
+| GET | `/api/v1/teacher/courses/{courseId}/stats/student-solo` | 根據學生作答：題目練習作答的 SOLO 次數。加 `?student_id=` 看單一學生，不加為全班；小試身手與待批改不列入 |
+
+```json
+{
+  "columns": ["S1", "S2", "S3", "S4", "S5"],
+  "rows": [
+    {
+      "chapter_id": 1, "chapter_name": "第一章", "unit_id": 3, "unit_name": "條件判斷", "unit_status": "published",
+      "counts": { "S1": 1, "S2": 0, "S3": 1, "S4": 0, "S5": 0 },
+      "total": 2
+    }
+  ],
+  "totals": { "counts": { "S1": 1, "S2": 1, "S3": 1, "S4": 0, "S5": 0 }, "total": 3 }
+}
+```
+
+`student-solo` 另回 `student`（目前查看的學生，全班時為 `null`）和 `students`（修課學生 `id`、`student_no`、`name`，給下拉選單用）。學生沒修這門課 **404**。

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\StatsController;
+use App\Http\Controllers\Api\V1\Student\KnowledgeCardQuizController as StudentKnowledgeCardQuizController;
 use App\Http\Controllers\Api\V1\Student\MaterialController as StudentMaterialController;
 use App\Http\Controllers\Api\V1\Student\QuestionController as StudentQuestionController;
 use App\Http\Controllers\Api\V1\Teacher\ChapterController;
@@ -15,6 +16,7 @@ use App\Http\Controllers\Api\V1\Teacher\MaterialTemplateController;
 use App\Http\Controllers\Api\V1\Teacher\StudentRosterTemplateController;
 use App\Http\Controllers\Api\V1\Teacher\QuestionController as TeacherQuestionController;
 use App\Http\Controllers\Api\V1\Teacher\QuestionRecordController;
+use App\Http\Controllers\Api\V1\Teacher\StatsController as TeacherStatsController;
 use App\Http\Controllers\Api\V1\Teacher\UnitController;
 use Illuminate\Support\Facades\Route;
 
@@ -34,8 +36,9 @@ Route::prefix('v1')->group(function () {
     Route::post('/teacher/student-applications', [StudentAccountApplicationController::class, 'store']);
 
     Route::post('/auth/login', [AuthController::class, 'login']);
-    Route::post('/auth/student/forgot-password', [AuthController::class, 'studentForgotPassword']);
-    Route::post('/auth/teacher/forgot-password', [AuthController::class, 'teacherForgotPassword']);
+    Route::post('/auth/student/forgot-password', [AuthController::class, 'studentForgotPassword'])->middleware('throttle:5,1');
+    Route::post('/auth/teacher/forgot-password', [AuthController::class, 'teacherForgotPassword'])->middleware('throttle:5,1');
+    Route::post('/auth/reset-password', [AuthController::class, 'resetPassword']);
     
     // -------------------------------------------------------------------------
     // 已認證受保護路由 (需 Bearer Token)
@@ -99,6 +102,10 @@ Route::prefix('v1')->group(function () {
             Route::get('courses/{courseId}/question-records', [QuestionRecordController::class, 'index']);
             Route::put('question-records/{recordId}', [QuestionRecordController::class, 'update']);
             Route::post('question-records/{recordId}/grade', [QuestionRecordController::class, 'grade']);
+
+            Route::get('courses/{courseId}/stats/bloom', [TeacherStatsController::class, 'bloom']);
+            Route::get('courses/{courseId}/stats/solo', [TeacherStatsController::class, 'solo']);
+            Route::get('courses/{courseId}/stats/student-solo', [TeacherStatsController::class, 'studentSolo']);
         });
 
         Route::middleware('role:student')->prefix('student')->group(function () {
@@ -107,6 +114,11 @@ Route::prefix('v1')->group(function () {
             Route::get('courses/{courseId}/chapters', [StudentMaterialController::class, 'chapters']);
             Route::get('chapters/{chapterId}/units', [StudentMaterialController::class, 'units']);
             Route::get('units/{unitId}/knowledge-cards', [StudentMaterialController::class, 'knowledgeCards']);
+            Route::get('courses/{courseId}/learning-progress', [StudentKnowledgeCardQuizController::class, 'progress']);
+            Route::get('courses/{courseId}/learning-analytics', [StudentKnowledgeCardQuizController::class, 'analytics']);
+            Route::get('courses/{courseId}/knowledge-cards/{cardId}/quiz', [StudentKnowledgeCardQuizController::class, 'show']);
+            Route::post('courses/{courseId}/knowledge-cards/{cardId}/quiz/questions/{questionId}', [StudentKnowledgeCardQuizController::class, 'submit']);
+            Route::post('courses/{courseId}/knowledge-cards/{cardId}/read', [StudentKnowledgeCardQuizController::class, 'read']);
             Route::get('courses/{courseId}/questions', [StudentQuestionController::class, 'index']);
             Route::get('questions/{questionId}', [StudentQuestionController::class, 'show']);
             Route::post('questions/{questionId}/submit', [StudentQuestionController::class, 'submit']);

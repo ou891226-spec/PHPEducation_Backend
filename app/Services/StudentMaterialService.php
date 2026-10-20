@@ -12,6 +12,10 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 class StudentMaterialService
 {
+    public function __construct(
+        private readonly StudentKnowledgeCardService $knowledgeCardService,
+    ) {}
+
     /**
      * @return list<array<string, mixed>>
      */
@@ -77,6 +81,7 @@ class StudentMaterialService
             'chapters.units' => fn ($query) => $query->where('status', 'published')->orderBy('sort_order'),
             'chapters.units.knowledgeCards' => fn ($query) => $query->orderBy('sort_order'),
         ]);
+        $cardStatus = $this->knowledgeCardService->cardStatusMap($student, $course);
 
         return [
             'id' => $course->id,
@@ -102,6 +107,8 @@ class StudentMaterialService
                             'example' => $card->example,
                             'code_example' => $card->example,
                             'sort_order' => $card->sort_order,
+                            'completed' => $cardStatus[$card->id]['completed'] ?? false,
+                            'has_quiz' => $cardStatus[$card->id]['has_quiz'] ?? false,
                         ])->values()->all(),
                     ])->values()->all(),
                 ])

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Http\Requests\Auth\StudentForgotPasswordRequest;
 use App\Http\Requests\Auth\TeacherForgotPasswordRequest;
 use App\Http\Requests\Auth\ChangePasswordRequest;
@@ -73,7 +74,7 @@ class AuthController extends Controller
     /**
      * 學生忘記密碼
      * 
-     * 產生隨機新密碼並發送通知信至學生之校園信箱 (s[學號]@nutc.edu.tw)。
+     * 寄送重設密碼連結至學生綁定的信箱；在學生完成重設前，原密碼仍可使用。
      *
      * @param StudentForgotPasswordRequest $request
      * @return JsonResponse
@@ -85,14 +86,14 @@ class AuthController extends Controller
         );
 
         return response()->json([
-            'message' => '已寄送新密碼至學生校園信箱',
+            'message' => '已寄送重設密碼連結至學生信箱',
         ]);
     }
 
     /**
      * 教師忘記密碼
      * 
-     * 產生隨機新密碼並發送通知信至教師登記信箱。
+     * 寄送重設密碼連結至教師登記信箱；在教師完成重設前，原密碼仍可使用。
      *
      * @param TeacherForgotPasswordRequest $request
      * @return JsonResponse
@@ -104,7 +105,26 @@ class AuthController extends Controller
         );
 
         return response()->json([
-            'message' => '已寄送新密碼至教師校園信箱',
+            'message' => '已寄送重設密碼連結至教師信箱',
+        ]);
+    }
+
+    /**
+     * 以忘記密碼信中的連結設定新密碼
+     *
+     * @param ResetPasswordRequest $request
+     * @return JsonResponse
+     */
+    public function resetPassword(ResetPasswordRequest $request): JsonResponse
+    {
+        $this->authService->resetPasswordWithToken(
+            $request->string('type')->toString(),
+            $request->string('token')->toString(),
+            $request->string('new_password')->toString(),
+        );
+
+        return response()->json([
+            'message' => '密碼已重設，請使用新密碼登入',
         ]);
     }
 
