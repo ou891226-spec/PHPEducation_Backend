@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Http\UploadedFile;
 use App\Jobs\CodingGradingJob;
 use App\Models\Question;
 use App\Models\QuestionOption;
@@ -211,11 +212,24 @@ class StudentQuestionService
      */
     private function submitCoding(Student $student, Question $question, array $data): array
     {
-        $code = $data['code'] ?? null;
-        if (! is_string($code) || trim($code) === '') {
-            throw ValidationException::withMessages([
-                'code' => ['實作題請傳送 code。'],
-            ]);
+        $file = $data['file'] ?? null;
+
+        if ($file instanceof UploadedFile) {
+            $code = file_get_contents($file->getRealPath());
+
+            if($code === false || trim($code) === '') {
+                throw ValidationException::withMessages([
+                    'file' => ['上傳檔案不可為空。'],
+                ]);
+            }
+        }else{
+            $code = $data['code'] ?? null;
+
+            if(!is_string($code) || trim($code) === '') {
+                throw ValidationException::withMessages([
+                    'code' => ['程式碼不可為空。'],
+                ]);
+            }
         }
 
         $record = $this->storeRecord(

@@ -19,6 +19,7 @@ class SubmitQuestionRequest extends FormRequest
             'answer' => ['sometimes', 'nullable', 'string'],
             'answers' => ['sometimes', 'nullable', 'array'],
             'code' => ['sometimes', 'nullable', 'string'],
+            'file' => ['sometimes', 'nullable', 'file', 'extensions:php', 'max:2048'],// 可上傳.php
         ];
     }
 }
