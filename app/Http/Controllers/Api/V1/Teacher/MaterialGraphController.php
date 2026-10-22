@@ -21,6 +21,16 @@ class MaterialGraphController extends Controller
         ]);
     }
 
+    /**
+     * 教師端取得單一單元圖譜
+     */
+    public function unitGraph(Request $request, int $unitId): JsonResponse
+    {
+        return response()->json([
+            'unit' => $this->materialService->unitGraph($this->teacher($request), $unitId),
+        ]);
+    }
+
     private function teacher(Request $request): Teacher
     {
         $user = $request->user();

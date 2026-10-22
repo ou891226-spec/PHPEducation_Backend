@@ -118,6 +118,43 @@ class StudentMaterialService
         ];
     }
 
+    /**
+     * 學生端取得單一單元圖譜
+     */
+    public function unitGraph(Student $student, int $unitId): array
+    {
+        $unit = $this->enrolledPublishedUnit($student, $unitId);
+        $unit->load([
+            'chapter.course',
+            'knowledgeCards' => fn ($query) => $query->orderBy('sort_order'),
+        ]);
+
+        $course = $unit->chapter->course;
+        $cardStatus = $this->knowledgeCardService->cardStatusMap($student, $course);
+
+        return [
+            'id' => $unit->id,
+            'name' => $unit->name,
+            'title' => $unit->name,
+            'sort_order' => $unit->sort_order,
+            'status' => 'published',
+            'knowledge_cards' => $unit->knowledgeCards->map(
+                fn (KnowledgeCard $card) => [
+                    'id' => $card->id,
+                    'title' => $card->title,
+                    'name' => $card->title,
+                    'type' => $card->type ?: 'keyword',
+                    'content' => $card->content,
+                    'example' => $card->example,
+                    'code_example' => $card->example,
+                    'sort_order' => $card->sort_order,
+                    'completed' => $cardStatus[$card->id]['completed'] ?? false,
+                    'has_quiz' => $cardStatus[$card->id]['has_quiz'] ?? false,
+                ]
+            )->values()->all(),
+        ];
+    }
+
     private function enrolledCourse(Student $student, int $courseId): Course
     {
         $course = Course::query()

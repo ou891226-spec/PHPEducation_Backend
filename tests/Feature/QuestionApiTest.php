@@ -96,6 +96,7 @@ class QuestionApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('system_status', QuestionRecord::STATUS_CORRECT)
             ->assertJsonPath('record.teacher_status', QuestionRecord::STATUS_CORRECT)
+            ->assertJsonPath('record.solo', $correct->solo)
             ->assertJsonPath('explanation', '變數用來存放資料');
 
         $this->withToken($this->studentToken())
@@ -186,13 +187,13 @@ class QuestionApiTest extends TestCase
         ]);
     }
 
-    public function test_fill_parent_solo_follows_bloom_only_when_all_correct(): void
+    public function test_fill_records_configured_solo_for_each_cell_and_parent(): void
     {
         $cases = [
-            [['1' => 'x', '2' => 'y'], 1, 0, 'B12'],
-            [['1' => 'define', '2' => 'y'], 1, 1, 'B12'],
+            [['1' => 'x', '2' => 'y'], 3, 0, 'B12'],
+            [['1' => 'define', '2' => 'y'], 4, 1, 'B12'],
             [['1' => 'define', '2' => 'PI'], 3, 2, 'B12'],
-            [['1' => 'define', '2' => 'PI'], 2, 2, 'B11'],
+            [['1' => 'define', '2' => 'PI'], 3, 2, 'B11'],
         ];
 
         foreach ($cases as $index => [$answers, $solo, $correctCount, $bloomId]) {
@@ -202,13 +203,13 @@ class QuestionApiTest extends TestCase
                 'question_id' => $question->id,
                 'sub_id' => 1,
                 'answer' => 'define',
-                'solo' => QuestionSubAnswer::SOLO_CORRECT,
+                'solo' => 3,
             ]);
             QuestionSubAnswer::query()->create([
                 'question_id' => $question->id,
                 'sub_id' => 2,
                 'answer' => 'PI',
-                'solo' => QuestionSubAnswer::SOLO_CORRECT,
+                'solo' => 4,
             ]);
 
             $this->withToken($this->studentToken())
@@ -216,9 +217,12 @@ class QuestionApiTest extends TestCase
                     'answers' => $answers,
                 ])
                 ->assertOk()
-                ->assertJsonMissingPath('record.solo')
+                // 整題與子答案都回傳題目設定的 SOLO，不依答對／答錯重設。
+                ->assertJsonPath('record.solo', $solo)
                 ->assertJsonPath('record.result.correct', $correctCount)
                 ->assertJsonPath('record.result.total', 2)
+                ->assertJsonPath('record.subs.0.solo', 3)
+                ->assertJsonPath('record.subs.1.solo', 4)
                 ->assertJsonPath('review.subs.1.my_answer', $answers['2'])
                 ->assertJsonPath('review.subs.1.correct_answer', 'PI');
 

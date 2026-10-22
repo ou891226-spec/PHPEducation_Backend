@@ -26,7 +26,7 @@ class ReviewQuestionRecordRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'solo' => ['nullable', 'integer', Rule::in(range(QuestionRecord::SOLO_WRONG, QuestionRecord::SOLO_RELATIONAL))],
+            'solo' => ['required', 'integer', Rule::in(range(1, 5))],// 修正 SOLO 上限值
             'bloom_id' => ['nullable', 'string', 'exists:bloom,id'],
         ];
     }

@@ -86,6 +86,7 @@ Route::prefix('v1')->group(function () {
             Route::post('chapters/{chapterId}/units', [UnitController::class, 'store']);
             Route::put('units/{unitId}', [UnitController::class, 'update']);
             Route::delete('units/{unitId}', [UnitController::class, 'destroy']);
+            Route::get('units/{unitId}/graph', [MaterialGraphController::class, 'unitGraph']); // 教師端取得單一單元圖譜
 
             Route::get('units/{unitId}/knowledge-cards', [KnowledgeCardController::class, 'index']);
             Route::post('units/{unitId}/knowledge-cards', [KnowledgeCardController::class, 'store']);
@@ -93,6 +94,7 @@ Route::prefix('v1')->group(function () {
             Route::delete('knowledge-cards/{cardId}', [KnowledgeCardController::class, 'destroy']);
 
             Route::get('blooms', [TeacherQuestionController::class, 'blooms']);
+            Route::get('solos', [TeacherQuestionController::class, 'solos']); // SOLO 層級列表
             Route::get('courses/{courseId}/questions', [TeacherQuestionController::class, 'index']);
             Route::post('courses/{courseId}/questions', [TeacherQuestionController::class, 'store']);
             Route::get('questions/{questionId}', [TeacherQuestionController::class, 'show']);
@@ -114,6 +116,7 @@ Route::prefix('v1')->group(function () {
             Route::get('courses/{courseId}/chapters', [StudentMaterialController::class, 'chapters']);
             Route::get('chapters/{chapterId}/units', [StudentMaterialController::class, 'units']);
             Route::get('units/{unitId}/knowledge-cards', [StudentMaterialController::class, 'knowledgeCards']);
+            Route::get('units/{unitId}/graph', [StudentMaterialController::class, 'unitGraph']); // 學生端取得單一單元圖譜
             Route::get('courses/{courseId}/learning-progress', [StudentKnowledgeCardQuizController::class, 'progress']);
             Route::get('courses/{courseId}/learning-analytics', [StudentKnowledgeCardQuizController::class, 'analytics']);
             Route::get('courses/{courseId}/knowledge-cards/{cardId}/quiz', [StudentKnowledgeCardQuizController::class, 'show']);

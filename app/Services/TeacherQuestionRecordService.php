@@ -54,12 +54,18 @@ class TeacherQuestionRecordService
                 ]);
             }
 
+            // SOLO 使用教師送來的值
+            $solo = $data['solo'] ?? null;
+            if ($solo === null) {
+                throw ValidationException::withMessages([
+                    'solo' => ['實作題請選擇 SOLO 等級 S1 至 S5。'],
+                ]);
+            }
+
             $passed = $this->bloomMeetsRequirement($bloomId, $record->question?->bloom_id);
             $record->update([
                 'bloom_id' => $bloomId,
-                'solo' => isset($data['solo'])
-                    ? (int) $data['solo']
-                    : ($passed ? QuestionRecord::SOLO_CORRECT : QuestionRecord::SOLO_WRONG),
+                'solo' => (int) $solo,
                 'system_status' => $passed ? QuestionRecord::STATUS_CORRECT : QuestionRecord::STATUS_WRONG,
                 'teacher_status' => $passed ? QuestionRecord::STATUS_CORRECT : QuestionRecord::STATUS_WRONG,
             ]);
@@ -67,11 +73,11 @@ class TeacherQuestionRecordService
             $solo = isset($data['solo']) ? (int) $data['solo'] : null;
             if ($solo === null) {
                 throw ValidationException::withMessages([
-                    'solo' => ['請選擇 SOLO 層級（S1～S4）。'],
+                    'solo' => ['請選擇 SOLO 層級（S1～S5）。'],
                 ]);
             }
 
-            // 達到整題全對的層級才算答對
+            // 覆核時採用教師選定的整題 SOLO；選項與填空題不按作答正誤重算編碼。
             $record->update([
                 'solo' => $solo,
                 'teacher_status' => $solo >= $record->question->fullCorrectSolo()

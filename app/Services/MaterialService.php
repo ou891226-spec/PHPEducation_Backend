@@ -36,6 +36,29 @@ class MaterialService
         ];
     }
 
+    /**
+     * 教師端取得單一單元圖譜
+     */
+    public function unitGraph(Teacher $teacher, int $unitId): array
+    {
+        $unit = $this->ownedUnit($teacher, $unitId);
+        $unit->load([
+            'knowledgeCards' => fn ($query) => $query->orderBy('sort_order'),
+        ]);
+
+        return [
+            'id' => $unit->id,
+            'name' => $unit->name,
+            'title' => $unit->name,
+            'sort_order' => $unit->sort_order,
+            'status' => $unit->status === 'draft' ? 'draft' : 'published',
+            'knowledge_cards' => $unit->knowledgeCards
+                ->map(fn ($card) => $this->formatCard($card))
+                ->values()
+                ->all(),
+        ];
+    }
+
     public function listChapters(Teacher $teacher, int $courseId): array
     {
         $course = $this->ownedCourse($teacher, $courseId);

@@ -7,6 +7,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class QuestionSubAnswer extends Model
 {
+    // 每個填空格各自保存 SOLO；未設定時服務層沿用預設正解層級。
+    public const SOLO_DEFAULT = 1;
+
+    // 相容既有程式碼常數；每個子答案實際只保存單一 solo 欄位。
     public const SOLO_CORRECT = 2;
 
     public const SOLO_WRONG = 1;

@@ -53,6 +53,7 @@ class StoreTeacherQuestionRequest extends FormRequest
             'options.*.title' => [$optionType ? 'required' : 'nullable', 'string', 'max:255'],
             'options.*.description' => ['nullable', 'string'],
             'options.*.is_answer' => [$optionType ? 'required' : 'nullable', 'boolean'],
+            // 每個選項可獨立設定 SOLO；未傳值時由服務層套用既有預設。
             'options.*.solo' => ['nullable', 'integer', 'between:1,5'],
             'sub_answers' => array_filter([
                 Rule::requiredIf($subType),
@@ -63,7 +64,8 @@ class StoreTeacherQuestionRequest extends FormRequest
             'sub_answers.*.sub_id' => [$subType ? 'required' : 'nullable', 'integer', 'min:1', 'distinct'],
             'sub_answers.*.answer' => [$subType ? 'required' : 'nullable', 'string'],
             'sub_answers.*.description' => ['nullable', 'string'],
-            'sub_answers.*.solo' => ['nullable', 'integer', 'min:1'],
+            // 每個填空格可獨立設定 SOLO；未傳值時由服務層套用既有預設。
+            'sub_answers.*.solo' => ['nullable', 'integer', 'between:1,5'],
         ];
     }
 

@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\DB;
  * 1. 取得作答紀錄與題目內容（含 starter_code, expected_output, reference_answer）
  * 2. 透過 CodeExecutionUtil 在沙盒環境執行學生程式碼取得標準輸出與錯誤
  * 3. 呼叫 AI Provider 進行 SOLO 認知診斷 (S1~S5) 與繁體中文回饋
- * 4. 在資料庫 Transaction 內更新 QuestionRecord 的 SOLO 等級並寫入 AiFeedback
+ * 4. 將 AI 回饋（含建議 SOLO）存入 ai_feedback，不覆寫正式 SOLO
  */
 class CodingGradingService
 {
@@ -35,11 +35,12 @@ class CodingGradingService
         $question = $record->question;
 
         $rubric = <<<RUBRIC
-        S1：只能辨識單一資訊，無法完成題目要求。
-        S2：能處理部分資料，但程式邏輯不完整。
-        S3：能完成基本的邏輯運算，但程式結構或邊界處理仍有部分問題。
-        S4：能正確使用流程控制（如迴圈與判斷式），完整且正確完成題意要求。
-        S5：能在正確完成題目的基礎上，展現更完整、靈活或有效率的解題策略。
+        S1(預結構)：對於題意無法理解，亦無法推演程式執行的結果。
+        S2(單一結構)：嘗試解讀，但只推演出部分的結果，無法產出完整的結果。
+        S3(多結構)：對於多個子問題(例如function) 推演相關結果，但無法將其關聯性有系統地整合起來，產出完整的結果。
+        S4(關係型)：能解讀程式碼，整合相關知識，推演正確的結果。
+        S5(擴展抽象化)：可以在更高的抽象層次上概念化，並推廣到新的主題或領域。在這個階段，學生可以將課堂概念應用到現實生活中。
+
         RUBRIC;
 
         $studentCode = (string) $record->result;
@@ -57,7 +58,7 @@ class CodingGradingService
             $questionContent .= "\n【期望輸出】：\n" . $question->expected_output;
         }
 
-        // 3. 呼叫 AI 進行診斷評估（若外部 API 不可用則優雅降級）
+        // 3. 呼叫 AI 進行診斷評估
         try {
             $aiResult = $this->aiProvider->evaluate(
                 $questionContent,
@@ -74,18 +75,9 @@ class CodingGradingService
             ];
         }
 
-        // 解析 SOLO 等級 (S1~S5 轉為整數 1~5 存入 unsignedTinyInteger)
-        $rawSolo = $aiResult['solo'] ?? 'S1';
-        $soloLevel = (int) preg_replace('/\D/', '', (string) $rawSolo);
-        if ($soloLevel < 1 || $soloLevel > 5) {
-            $soloLevel = 1;
-        }
 
-        // 4. 資料庫交易確保作答紀錄更新與 AI 回饋儲存的一致性
-        return DB::transaction(function () use ($record, $soloLevel, $aiResult) {
-            $record->update([
-                'solo' => $soloLevel,
-            ]);
+        // 4. 將 AI 回饋（含建議 SOLO）存入 ai_feedback，不覆寫正式 SOLO
+        return DB::transaction(function () use ($record, $aiResult) {
 
             $feedback = AiFeedback::updateOrCreate(
                 [

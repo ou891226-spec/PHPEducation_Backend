@@ -9,6 +9,7 @@ use App\Models\Teacher;
 use App\Services\TeacherQuestionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class QuestionController extends Controller
 {
@@ -27,6 +28,26 @@ class QuestionController extends Controller
                     'id' => $bloom->id,
                     'title' => Bloom::teacherChoiceTitle($bloom->id),
                     'cognition_info' => $bloom->cognition_info,
+                ])
+                ->values()
+                ->all(),
+        ]);
+    }
+
+    /**
+     * SOLO 層級列表
+     */
+    public function solos(): JsonResponse
+    {
+        return response()->json([
+            'solos' => DB::table('solo')
+                ->orderBy('level')
+                ->get(['level', 'code', 'title', 'description'])
+                ->map(fn ($solo) => [
+                    'level' => (int) $solo->level,
+                    'code' => $solo->code,
+                    'title' => $solo->title,
+                    'description' => $solo->description,
                 ])
                 ->values()
                 ->all(),

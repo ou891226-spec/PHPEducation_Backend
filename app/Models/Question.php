@@ -117,7 +117,8 @@ class Question extends Model
         return match ($this->type) {
             self::TYPE_CHOICE, self::TYPE_TRUE_FALSE => (int) ($this->options->firstWhere('is_answer', true)?->solo
                 ?: Bloom::defaultCorrectSolo($this->bloom_id)),
-            self::TYPE_FILL => Bloom::defaultCorrectSolo($this->bloom_id),
+            // 填空全對時，以第一個子答案設定的 SOLO 作為整題層級。
+            self::TYPE_FILL => (int) ($this->subAnswers->first()?->solo ?: Bloom::defaultCorrectSolo($this->bloom_id)),
             default => QuestionRecord::SOLO_RELATIONAL,
         };
     }

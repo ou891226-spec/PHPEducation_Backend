@@ -221,12 +221,13 @@ class StudentQuestionService
         }
 
         $correct = (bool) $option->is_answer;
+        // 學生選到哪個選項，就記錄該選項設定的 SOLO；判對判錯不另換編碼。
         $record = $this->storeRecord(
             $student,
             $question,
             (string) $option->id,
             $correct ? QuestionRecord::STATUS_CORRECT : QuestionRecord::STATUS_WRONG,
-            $option->solo ? (int) $option->solo : null,
+            (int) $option->solo,
             $source,
         );
 
@@ -234,7 +235,7 @@ class StudentQuestionService
 
         return [
             'message' => $correct ? '正確' : '錯誤',
-            'record' => $this->formatRecord($record),
+            'record' => $this->formatRecord($record, $question->type),
             'system_status' => $record->system_status,
             'explanation' => $correctOption?->description,
         ];
@@ -275,7 +276,8 @@ class StudentQuestionService
                     'sub_id' => $key->sub_id,
                     'answer' => $studentAnswer,
                     'is_right' => $isRight,
-                    'solo' => $isRight ? (int) $key->solo : QuestionSubAnswer::SOLO_WRONG,
+                    // 子答案沿用題目設定的 SOLO，不依這一格是否答對改寫。
+                    'solo' => (int) $key->solo,
                 ];
             }
 
@@ -286,7 +288,10 @@ class StudentQuestionService
                 $question->type === Question::TYPE_DEBUG => $this->debugSolo($submitted, $keys),
                 $allCorrect => $question->fullCorrectSolo(),
                 $question->type === Question::TYPE_INTERPRET && $correctCount > 0 => QuestionRecord::SOLO_PARTIAL,
-                default => QuestionRecord::SOLO_WRONG,
+                // 填空部分答對或答錯時，整題沿用第一個錯誤格設定的 SOLO。
+                default => $question->type === Question::TYPE_FILL
+                    ? (int) ($keys->first(fn (QuestionSubAnswer $key) => ! AnswerText::same($submitted[$key->sub_id] ?? '', (string) $key->answer))?->solo ?? QuestionRecord::SOLO_WRONG)
+                    : QuestionRecord::SOLO_WRONG,
             };
 
             $record = $this->storeRecord(
@@ -308,7 +313,7 @@ class StudentQuestionService
 
         return [
             'message' => $record->system_status === QuestionRecord::STATUS_CORRECT ? '正確' : '錯誤',
-            'record' => $this->formatRecord($record),
+            'record' => $this->formatRecord($record, $question->type),
             'system_status' => $record->system_status,
             'description' => $keys->first()?->description,
         ];
@@ -602,8 +607,11 @@ class StudentQuestionService
     /**
      * @return array<string, mixed>
      */
-    private function formatRecord(QuestionRecord $record): array
+    private function formatRecord(QuestionRecord $record, ?string $questionType = null): array
     {
+        // 只在選擇、是非與填空作答回應中呈現題目所設定的 SOLO。
+        $includeSolo = in_array($questionType, [Question::TYPE_CHOICE, Question::TYPE_TRUE_FALSE, Question::TYPE_FILL], true);
+
         return [
             'id' => $record->id,
             'student_id' => $record->student_id,
@@ -611,12 +619,14 @@ class StudentQuestionService
             'result' => $this->formatStoredResult($record->result),
             'system_status' => $record->system_status,
             'teacher_status' => $record->teacher_status,
+            ...($includeSolo ? ['solo' => $record->solo] : []),
             'subs' => $record->subs
                 ->map(fn ($sub) => [
                     'id' => $sub->id,
                     'sub_id' => $sub->sub_id,
                     'answer' => $sub->answer,
                     'is_right' => (bool) $sub->is_right,
+                    ...($includeSolo ? ['solo' => (int) $sub->solo] : []),
                 ])
                 ->values()
                 ->all(),

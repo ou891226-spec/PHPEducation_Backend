@@ -123,7 +123,10 @@ class TeacherQuestionService
         if (in_array($question->type, Question::OPTION_TYPES, true)) {
             foreach ($data['options'] as $option) {
                 $isAnswer = (bool) $option['is_answer'];
-                $defaultSolo = $isAnswer ? Bloom::defaultCorrectSolo($question->bloom_id) : QuestionOption::SOLO_WRONG;
+                // 正解沿用 Bloom 預設、其他選項預設 S1；收到 solo 時每個選項都可自行覆寫。
+                $defaultSolo = $isAnswer
+                    ? Bloom::defaultCorrectSolo($question->bloom_id)
+                    : QuestionOption::SOLO_DEFAULT;
                 $question->options()->create([
                     'title' => $option['title'],
                     'description' => $option['description'] ?? null,
