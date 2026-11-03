@@ -163,6 +163,27 @@ class QuestionApiTest extends TestCase
         ]);
     }
 
+    public function test_fill_accepts_any_registered_answer_string(): void
+    {
+        $question = $this->makeQuestion($this->yingCourse(), Question::TYPE_FILL, '印出變數');
+        QuestionSubAnswer::query()->create([
+            'question_id' => $question->id,
+            'sub_id' => 1,
+            'answer' => 'print(name)',
+            'accepted_answers' => ['print (name)'],
+            'solo' => QuestionSubAnswer::SOLO_CORRECT,
+        ]);
+
+        $this->withToken($this->studentToken())
+            ->postJson("/api/v1/student/questions/{$question->id}/submit", [
+                'answers' => ['1' => 'print (name)'],
+            ])
+            ->assertOk()
+            ->assertJsonPath('system_status', QuestionRecord::STATUS_CORRECT)
+            ->assertJsonPath('record.subs.0.is_right', true)
+            ->assertJsonPath('review.subs.0.correct_answer', 'print(name) 或 print (name)');
+    }
+
     public function test_student_can_submit_debug_question(): void
     {
         $question = $this->makeDebugQuestion($this->yingCourse());

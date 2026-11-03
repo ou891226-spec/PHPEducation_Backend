@@ -9,7 +9,6 @@ use App\Models\QuestionOption;
 use App\Models\QuestionRecord;
 use App\Models\QuestionSubAnswer;
 use App\Models\Student;
-use App\Support\AnswerText;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
@@ -126,7 +125,7 @@ class StudentQuestionService
                 ->map(fn (QuestionSubAnswer $key) => [
                     'sub_id' => $key->sub_id,
                     'my_answer' => $submitted->get($key->sub_id)?->answer,
-                    'correct_answer' => $key->answer,
+                    'correct_answer' => $key->correctAnswerText(),
                     'is_right' => (bool) $submitted->get($key->sub_id)?->is_right,
                     'description' => $key->description,
                 ])
@@ -267,7 +266,7 @@ class StudentQuestionService
 
             foreach ($keys as $key) {
                 $studentAnswer = $submitted[$key->sub_id] ?? '';
-                $isRight = AnswerText::same($studentAnswer, (string) $key->answer);
+                $isRight = $key->accepts($studentAnswer);
                 if ($isRight) {
                     $correctCount++;
                 }
@@ -290,7 +289,7 @@ class StudentQuestionService
                 $question->type === Question::TYPE_INTERPRET && $correctCount > 0 => QuestionRecord::SOLO_PARTIAL,
                 // 填空部分答對或答錯時，整題沿用第一個錯誤格設定的 SOLO。
                 default => $question->type === Question::TYPE_FILL
-                    ? (int) ($keys->first(fn (QuestionSubAnswer $key) => ! AnswerText::same($submitted[$key->sub_id] ?? '', (string) $key->answer))?->solo ?? QuestionRecord::SOLO_WRONG)
+                    ? (int) ($keys->first(fn (QuestionSubAnswer $key) => ! $key->accepts($submitted[$key->sub_id] ?? ''))?->solo ?? QuestionRecord::SOLO_WRONG)
                     : QuestionRecord::SOLO_WRONG,
             };
 
@@ -336,7 +335,7 @@ class StudentQuestionService
         $answerRight = 0;
         foreach ($keys as $key) {
             foreach ($remaining as $index => $answer) {
-                if (AnswerText::same($answer, (string) $key->answer)) {
+                if ($key->accepts($answer)) {
                     $answerRight++;
                     unset($remaining[$index]);
                     break;
@@ -345,7 +344,7 @@ class StudentQuestionService
         }
 
         $exactRight = $keys->filter(
-            fn (QuestionSubAnswer $key) => AnswerText::same($submitted[$key->sub_id] ?? '', (string) $key->answer)
+            fn (QuestionSubAnswer $key) => $key->accepts($submitted[$key->sub_id] ?? '')
         )->count();
 
         return match (true) {

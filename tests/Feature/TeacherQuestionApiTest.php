@@ -298,7 +298,27 @@ class TeacherQuestionApiTest extends TestCase
             ->assertJsonPath('question.sub_answers.1.sub_id', 2)
             ->assertJsonPath('question.sub_answers.1.answer', 'PI')
             ->assertJsonPath('question.sub_answers.0.solo', QuestionSubAnswer::SOLO_CORRECT)
+            ->assertJsonPath('question.sub_answers.0.accepted_answers', [])
             ->assertJsonCount(0, 'question.options');
+
+        $this->withToken($this->teacherToken())
+            ->postJson("/api/v1/teacher/courses/{$courseId}/questions", [
+                'title' => '印出變數',
+                'type' => Question::TYPE_FILL,
+                'question_content' => '印出 name：（1）',
+                'bloom_id' => 'B13',
+                'knowledge_card_ids' => $cardIds,
+                'sub_answers' => [
+                    [
+                        'sub_id' => 1,
+                        'answer' => 'print(name)',
+                        'accepted_answers' => ['print (name)', 'print(name)', '  '],
+                    ],
+                ],
+            ])
+            ->assertCreated()
+            ->assertJsonPath('question.sub_answers.0.answer', 'print(name)')
+            ->assertJsonPath('question.sub_answers.0.accepted_answers', ['print (name)']);
     }
 
     public function test_teacher_can_create_debug_and_interpret_questions(): void

@@ -63,6 +63,8 @@ class StoreTeacherQuestionRequest extends FormRequest
             ]),
             'sub_answers.*.sub_id' => [$subType ? 'required' : 'nullable', 'integer', 'min:1', 'distinct'],
             'sub_answers.*.answer' => [$subType ? 'required' : 'nullable', 'string'],
+            'sub_answers.*.accepted_answers' => ['nullable', 'array'],
+            'sub_answers.*.accepted_answers.*' => ['nullable', 'string'],
             'sub_answers.*.description' => ['nullable', 'string'],
             // 每個填空格可獨立設定 SOLO；未傳值時由服務層套用既有預設。
             'sub_answers.*.solo' => ['nullable', 'integer', 'between:1,5'],

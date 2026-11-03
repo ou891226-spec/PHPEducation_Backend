@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Bloom;
+use App\Support\AnswerText;
 use App\Models\Course;
 use App\Models\KnowledgeCard;
 use App\Models\Question;
@@ -143,6 +144,7 @@ class TeacherQuestionService
                 $question->subAnswers()->create([
                     'sub_id' => (int) $sub['sub_id'],
                     'answer' => $sub['answer'],
+                    'accepted_answers' => $this->acceptedAnswerStrings($sub),
                     'description' => $sub['description'] ?? null,
                     'solo' => isset($sub['solo']) ? (int) $sub['solo'] : QuestionSubAnswer::SOLO_CORRECT,
                 ]);
@@ -186,6 +188,41 @@ class TeacherQuestionService
         }
 
         return $ids;
+    }
+
+    /**
+     * 去掉空白、與標準答案重複、以及彼此重複的其他答案。
+     *
+     * @param  array<string, mixed>  $sub
+     * @return list<string>|null
+     */
+    private function acceptedAnswerStrings(array $sub): ?array
+    {
+        $raw = $sub['accepted_answers'] ?? null;
+        if (! is_array($raw)) {
+            return null;
+        }
+
+        $primary = AnswerText::normalize((string) ($sub['answer'] ?? ''));
+        $kept = [];
+        $seen = [];
+
+        foreach ($raw as $item) {
+            if (! is_string($item)) {
+                continue;
+            }
+
+            $trimmed = trim($item);
+            $normalized = AnswerText::normalize($trimmed);
+            if ($normalized === '' || $normalized === $primary || isset($seen[$normalized])) {
+                continue;
+            }
+
+            $seen[$normalized] = true;
+            $kept[] = $trimmed;
+        }
+
+        return $kept === [] ? null : $kept;
     }
 
     /**
@@ -283,6 +320,7 @@ class TeacherQuestionService
                     'id' => $sub->id,
                     'sub_id' => $sub->sub_id,
                     'answer' => $sub->answer,
+                    'accepted_answers' => array_values($sub->accepted_answers ?? []),
                     'description' => $sub->description,
                     'solo' => (int) $sub->solo,
                 ])
