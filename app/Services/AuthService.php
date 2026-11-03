@@ -6,8 +6,10 @@ use App\Mail\TeacherPasswordReset;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use App\Exceptions\StudentLoginClosedException;
 use App\Exceptions\UnauthorizedLoginException;
 use App\Models\Admin;
+use App\Models\SiteSetting;
 use App\Models\Student;
 use App\Models\Teacher;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -45,6 +47,10 @@ class AuthService
 
         if ($authenticatable === null || ! Hash::check($password, $authenticatable->getAuthPassword())) {
             throw new UnauthorizedLoginException();
+        }
+
+        if ($authenticatable instanceof Student && ! SiteSetting::studentLoginEnabled()) {
+            throw new StudentLoginClosedException();
         }
 
         $token = $authenticatable->createToken('auth')->plainTextToken;

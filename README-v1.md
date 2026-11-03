@@ -65,6 +65,7 @@ Seeder 為 `teacher2`（陳老師）建立兩門「網際系統設計」（班�
 ```text
 帳號
 admins / teachers / students         → 三種身分各自存帳密
+site_settings                        → 全站開關（學生能否登入）
 teacher_applications                 → 教師申請（核准後寫入 teachers）
 student_applications / _items        → 學生申請主單與明細（核准後寫入 students）
 
@@ -91,7 +92,7 @@ solo                                 → SOLO 層級 S1–S5
 
 ```text
 app/
-├─ Exceptions/                  自訂例外（登入失敗、帳號未開通等）
+├─ Exceptions/                  自訂例外（登入失敗、學生登入已關閉、帳號未開通等）
 ├─ Http/
 │  ├─ Controllers/Api/V1/
 │  │  ├─ AuthController、DashboardController、StatsController
@@ -99,7 +100,7 @@ app/
 │  │  └─ Teacher/               Course、Question、QuestionRecord、MaterialTemplate、
 │  │                            StudentRosterTemplate、MaterialImport、MaterialGraph、
 │  │                            EditorImage、Chapter、Unit、KnowledgeCard、Stats
-│  ├─ Middleware/EnsureRole.php
+│  ├─ Middleware/EnsureRole.php、EnsureStudentLoginOpen.php
 │  └─ Requests/                 Auth、Course、Material、學生申請
 ├─ Models/
 └─ Services/                    業務邏輯（登入、課程、教材、匯入、題目、學生帳號、Dashboard）
@@ -119,7 +120,7 @@ tests/Feature                    API 功能測試
 | Controllers | 接收 Request、呼叫 Service、回傳 JSON |
 | Requests | 驗證欄位 |
 | Services | 業務邏輯 |
-| Middleware | 角色權限（如僅教師可存取 `/teacher/*`） |
+| Middleware | 角色權限（如僅教師可存取 `/teacher/*`）；學生登入關閉時擋下學生 |
 
 ---
 
@@ -269,6 +270,7 @@ tests/Feature                    API 功能測試
 | question_id | 題目（FK） |
 | sub_id | 填空格子編號（對題幹 `（1）`）或除錯行號 |
 | answer / description | 正解、說明（可空） |
+| accepted_answers | 填空／除錯／解讀可再登記、也算對的其他答案字串（JSON，可空） |
 | solo | 這格答對得到的 SOLO（1–5），老師出題時設定，預設 2 |
 
 ### question_knowledge_cards
@@ -302,7 +304,11 @@ tests/Feature                    API 功能測試
 
 ### personal_access_tokens
 
-Laravel Sanctum Token 表，關聯 Admin、Teacher 或 Student。
+Laravel Sanctum Token 表，關聯 Admin、Teacher 或 Student。管理員關閉學生登入時，會刪除所有 Student 的 Token。
+
+### site_settings
+
+全站只有一列。`student_login_enabled` 預設 `true`。管理員用 API 改這欄，網址不用換。
 
 ---
 
@@ -318,7 +324,7 @@ Authorization: Bearer {token}
 |--------|------|
 | 200 / 201 | 成功 |
 | 401 | 未登入或 Token 無效 |
-| 403 | 角色不符（例如非教師打 `/teacher/*`） |
+| 403 | 角色不符（例如非教師打 `/teacher/*`），或學生登入已關閉 |
 | 404 | 資料不存在，或不屬於目前使用者（別人的課、未選的課） |
 | 422 | 欄位驗證失敗 |
 
@@ -355,7 +361,16 @@ Authorization: Bearer {token}
 }
 ```
 
-帳號不存在或密碼錯誤 **401**（`{ "statusCode": 401, "message": "帳號或密碼錯誤" }`）；帳號未開通 **403**。
+帳號不存在或密碼錯誤 **401**（`{ "statusCode": 401, "message": "帳號或密碼錯誤" }`）；帳號未開通 **403**。學生登入被管理員關閉時，學生登入 **403**（`{ "statusCode": 403, "message": "學生登入已關閉" }`）。教師與管理員仍可登入。
+
+### 學生登入開關
+
+管理員專用。預設開放。關閉後，新的學生登入回上面的 403；已經登入的學生 Token 會被刪除，下一支 API 變成 **401**。登出仍可用。重新打開後，學生要再登入一次。
+
+| API | 說明 |
+|-----|------|
+| GET `/api/v1/student-login` | `{ "student_login_enabled": true }` |
+| PUT `/api/v1/student-login` | body：`{ "enabled": false }`。成功 **200**：`{ "message": "已關閉學生登入", "student_login_enabled": false }`。打開時訊息為「已開放學生登入」 |
 
 ### POST `/api/v1/auth/logout`
 
@@ -728,13 +743,18 @@ Request：`name`（必填）、`sort_order`、`status`（`draft`／`published`�
 { "options": [{ "title": "/* */", "is_answer": true }, { "title": "//", "is_answer": false }] }
 ```
 
-**填空**：`sub_answers`，`sub_id` 對題幹 `（1）（2）`。每格 `solo` 選填（1–5），預設 2。
+**填空**：`sub_answers`，`sub_id` 對題幹 `（1）（2）`。每格 `solo` 選填（1–5），預設 2。同一格可以再帶 `accepted_answers`，裡頭的字串也算對；和 `answer` 重複、空白、彼此重複的會拿掉。比對時會去掉前後空白，全形英數與引號會先轉成半形。
 
 ```json
-{ "sub_answers": [{ "sub_id": 1, "answer": "define" }, { "sub_id": 2, "answer": "PI", "solo": 3 }] }
+{
+  "sub_answers": [
+    { "sub_id": 1, "answer": "print(name)", "accepted_answers": ["print (name)"] },
+    { "sub_id": 2, "answer": "PI", "solo": 3 }
+  ]
+}
 ```
 
-**除錯**：題幹放完整的錯誤程式，`sub_answers` **只填有錯的行**（`sub_id` 行號、`answer` 修正後那行、`description` 錯誤原因）。
+**除錯**：題幹放完整的錯誤程式，`sub_answers` **只填有錯的行**（`sub_id` 行號、`answer` 修正後那行、`description` 錯誤原因）。同一行的其他正確寫法用 `accepted_answers`，規則與填空相同。
 
 ```json
 {
@@ -744,7 +764,7 @@ Request：`name`（必填）、`sort_order`、`status`（`draft`／`published`�
 }
 ```
 
-**解讀**：提問與程式碼用 `<!--code-stem-->` 分開，`sub_answers` 為預期輸出（`description` 交卷後才給學生看），可多個小題。
+**解讀**：提問與程式碼用 `<!--code-stem-->` 分開，`sub_answers` 為預期輸出（`description` 交卷後才給學生看），可多個小題。其他也算對的輸出同樣用 `accepted_answers`。
 
 ```json
 {
@@ -808,7 +828,7 @@ Request：`name`（必填）、`sort_order`、`status`（`draft`／`published`�
 
 列表每題只回摘要：`id`、`course_id`、`title`、`type`、`bloom_id`、`knowledge_card_ids`、`knowledge_cards`（`id`、`title`）、`practice`（作答過才有，含 `record_id`、`status`、`answered_at`），加上範圍與鎖定欄位。題幹、選項、知識卡內容進單題再拿。
 
-已作答的單題和交卷回應會帶 `review`：`my_answer`、`correct_answer`、`subs`（每格 `my_answer`、`correct_answer`、`is_right`、`description`）、`explanation`。實作題要老師批改後才回 `correct_answer`。
+已作答的單題和交卷回應會帶 `review`：`my_answer`、`correct_answer`、`subs`（每格 `my_answer`、`correct_answer`、`is_right`、`description`）、`explanation`。同一格有多個可接受答案時，`correct_answer` 用 ` 或 ` 接在一起。實作題要老師批改後才回 `correct_answer`。
 
 學生看不到：正解（作答前）、選項 `description`（交卷後以 `explanation` 回傳）、`solo`、`expected_output`、`reference_answer`。知識卡範例只有 `show_example: true` 時以 `examples` 回傳。
 

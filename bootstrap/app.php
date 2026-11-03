@@ -1,8 +1,10 @@
 <?php
 
 use App\Exceptions\AccountNotActivatedException;
+use App\Exceptions\StudentLoginClosedException;
 use App\Exceptions\UnauthorizedLoginException;
 use App\Http\Middleware\EnsureRole;
+use App\Http\Middleware\EnsureStudentLoginOpen;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -19,6 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->alias([
             'role' => EnsureRole::class,
+            'student.login' => EnsureStudentLoginOpen::class,
         ]);
 
         $middleware->redirectGuestsTo(function (Request $request) {
@@ -45,6 +48,15 @@ return Application::configure(basePath: dirname(__DIR__))
                     'statusCode' => 401,
                     'message' => $e->getMessage(),
                 ], 401);
+            }
+        });
+
+        $exceptions->render(function (StudentLoginClosedException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'statusCode' => 403,
+                    'message' => $e->getMessage(),
+                ], 403);
             }
         });
 

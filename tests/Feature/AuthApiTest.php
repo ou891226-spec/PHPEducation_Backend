@@ -55,6 +55,46 @@ class AuthApiTest extends TestCase
             ->assertJsonPath('user.name', '王小明');
     }
 
+    public function test_admin_can_close_and_reopen_student_login(): void
+    {
+        $admin = $this->loginToken('admin@nutc.edu.tw');
+        $student = $this->loginToken('s1411131000');
+
+        $this->withToken($admin)
+            ->putJson('/api/v1/student-login', ['enabled' => false])
+            ->assertOk()
+            ->assertJsonPath('student_login_enabled', false);
+
+        $this->app['auth']->forgetGuards();
+
+        $this->withToken($student)
+            ->getJson('/api/v1/auth/me')
+            ->assertUnauthorized();
+
+        $this->postJson('/api/v1/auth/login', [
+            'account' => 's1411131000',
+            'password' => self::PASSWORD,
+        ])->assertStatus(403)
+            ->assertJsonPath('message', '學生登入已關閉');
+
+        $this->postJson('/api/v1/auth/login', [
+            'account' => 'teacher@school.edu.tw',
+            'password' => self::PASSWORD,
+        ])->assertOk()
+            ->assertJsonPath('user.role', 'teacher');
+
+        $this->withToken($admin)
+            ->putJson('/api/v1/student-login', ['enabled' => true])
+            ->assertOk()
+            ->assertJsonPath('student_login_enabled', true);
+
+        $this->postJson('/api/v1/auth/login', [
+            'account' => 's1411131000',
+            'password' => self::PASSWORD,
+        ])->assertOk()
+            ->assertJsonPath('user.role', 'student');
+    }
+
     public function test_wrong_password_returns_401(): void
     {
         $response = $this->postJson('/api/v1/auth/login', [

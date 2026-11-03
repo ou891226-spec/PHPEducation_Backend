@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\StatsController;
+use App\Http\Controllers\Api\V1\StudentLoginSettingController;
 use App\Http\Controllers\Api\V1\Student\KnowledgeCardQuizController as StudentKnowledgeCardQuizController;
 use App\Http\Controllers\Api\V1\Student\MaterialController as StudentMaterialController;
 use App\Http\Controllers\Api\V1\Student\QuestionController as StudentQuestionController;
@@ -45,11 +46,15 @@ Route::prefix('v1')->group(function () {
     // -------------------------------------------------------------------------
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('/auth/logout', [AuthController::class, 'logout']);
+
+        Route::middleware('student.login')->group(function () {
         Route::get('/auth/me', [AuthController::class, 'me']);
         Route::post('/auth/change-password', [AuthController::class, 'changePassword']);
         Route::get('/dashboard', [DashboardController::class, 'show']);
 
         Route::middleware('role:admin')->group(function () {
+            Route::get('/student-login', [StudentLoginSettingController::class, 'show']);
+            Route::put('/student-login', [StudentLoginSettingController::class, 'update']);
             Route::get('/stats', [StatsController::class, 'show']);
             Route::get('/courses', [StudentAccountApplicationController::class, 'courses']);
             Route::get('/teacher-applications', [TeacherApplicationController::class, 'index']);
@@ -127,6 +132,7 @@ Route::prefix('v1')->group(function () {
             Route::post('questions/{questionId}/submit', [StudentQuestionController::class, 'submit']);
             Route::get('courses/{courseId}/question-records', [StudentQuestionController::class, 'records']);
             Route::get('question-records/{recordId}', [StudentQuestionController::class, 'showRecord']);
+        });
         });
     });
 
