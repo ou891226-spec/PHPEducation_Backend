@@ -275,8 +275,10 @@ class StudentQuestionService
                     'sub_id' => $key->sub_id,
                     'answer' => $studentAnswer,
                     'is_right' => $isRight,
-                    // 子答案沿用題目設定的 SOLO，不依這一格是否答對改寫。
-                    'solo' => (int) $key->solo,
+                    // 填空格答對記老師設定的 SOLO、答錯記 S1；除錯／解讀沿用題目設定。
+                    'solo' => $question->type === Question::TYPE_FILL && ! $isRight
+                        ? QuestionRecord::SOLO_WRONG
+                        : (int) $key->solo,
                 ];
             }
 
@@ -287,10 +289,7 @@ class StudentQuestionService
                 $question->type === Question::TYPE_DEBUG => $this->debugSolo($submitted, $keys),
                 $allCorrect => $question->fullCorrectSolo(),
                 $question->type === Question::TYPE_INTERPRET && $correctCount > 0 => QuestionRecord::SOLO_PARTIAL,
-                // 填空部分答對或答錯時，整題沿用第一個錯誤格設定的 SOLO。
-                default => $question->type === Question::TYPE_FILL
-                    ? (int) ($keys->first(fn (QuestionSubAnswer $key) => ! $key->accepts($submitted[$key->sub_id] ?? ''))?->solo ?? QuestionRecord::SOLO_WRONG)
-                    : QuestionRecord::SOLO_WRONG,
+                default => QuestionRecord::SOLO_WRONG,
             };
 
             $record = $this->storeRecord(

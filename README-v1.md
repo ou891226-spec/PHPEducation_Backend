@@ -271,7 +271,7 @@ tests/Feature                    API 功能測試
 | sub_id | 填空格子編號（對題幹 `（1）`）或除錯行號 |
 | answer / description | 正解、說明（可空） |
 | accepted_answers | 填空／除錯／解讀可再登記、也算對的其他答案字串（JSON，可空） |
-| solo | 這格答對得到的 SOLO（1–5），老師出題時設定，預設 2 |
+| solo | 這格答對得到的 SOLO（1–5），老師出題時設定；填空沒傳時依 Bloom（`B11` 為 2、其他為 3），除錯／解讀預設 2 |
 
 ### question_knowledge_cards
 
@@ -283,11 +283,11 @@ tests/Feature                    API 功能測試
 - `source`：`practice` 題目練習（每題只能答一次）、`quiz` 小試身手（可重答）。
 - 總表 `solo`：
   - 選擇／是非：抄學生所選選項的 `solo`。
-  - 填空：全對時 `B11` 為 `2`、其他 Bloom 為 `3`；沒全對為 `1`（`result` 記 `correct`／`total`）。
-  - 解讀：全對 `4`、部分對 `2`、全錯 `1`；老師覆核可改成 `1`–`4`。
+  - 填空：全對時抄第一格正解的 `solo`（老師出題時設定）；沒全對為 `1`（`result` 記 `correct`／`total`）。
+  - 解讀：全對 `4`、部分對 `2`、全錯 `1`；老師覆核可改成 `1`–`5`。
   - 除錯：行數、答案分開算對幾個。全對 `4`；行數對超過 1/2 且答案對超過 1/2 為 `3`；行數對超過 1/2 且答案對超過 1/3 為 `2`；其他 `1`。「答案對」不看行數，寫在錯的行也算答案對。
   - 實作：老師給 Bloom 後判定。
-- 子表 `solo`：該格行數與答案都對才抄正解的 `solo`，否則 `1`。
+- 子表 `solo`：填空該格答對抄正解的 `solo`，答錯為 `1`；除錯／解讀一律抄正解的 `solo`。
 - 比對前會把全形英數與標點轉半形並去掉前後空白；資料庫仍存學生原字。
 
 ### knowledge_card_completions
@@ -743,7 +743,7 @@ Request：`name`（必填）、`sort_order`、`status`（`draft`／`published`�
 { "options": [{ "title": "/* */", "is_answer": true }, { "title": "//", "is_answer": false }] }
 ```
 
-**填空**：`sub_answers`，`sub_id` 對題幹 `（1）（2）`。每格 `solo` 選填（1–5），預設 2。同一格可以再帶 `accepted_answers`，裡頭的字串也算對；和 `answer` 重複、空白、彼此重複的會拿掉。比對時會去掉前後空白，全形英數與引號會先轉成半形。
+**填空**：`sub_answers`，`sub_id` 對題幹 `（1）（2）`。每格 `solo` 選填（1–5），沒傳時依 Bloom 帶入（`B11` 為 2、其他為 3）；學生答錯該格一律記 1。同一格可以再帶 `accepted_answers`，裡頭的字串也算對；和 `answer` 重複、空白、彼此重複的會拿掉。比對時會去掉前後空白，全形英數與引號會先轉成半形。
 
 ```json
 {
@@ -848,11 +848,11 @@ Request：`name`（必填）、`sort_order`、`status`（`draft`／`published`�
 | Method | URL | 說明 |
 |--------|-----|------|
 | GET | `/api/v1/teacher/courses/{courseId}/question-records` | 該課學生題目練習的作答（含 `subs`；小試身手不列入） |
-| PUT | `/api/v1/teacher/question-records/{recordId}` | 實作題帶 `bloom_id`（`solo` 選填 1–4）；其他題型帶 `solo`（1–4） |
+| PUT | `/api/v1/teacher/question-records/{recordId}` | 實作題帶 `bloom_id` 與 `solo`（1–5，必填）；其他題型帶 `solo`（1–5） |
 
-實作題比對 Bloom 第一碼：老師給的 ≥ 出題 Bloom 為對，否則錯；沒帶 `solo` 時對記 `2`、錯記 `1`。
+實作題比對 Bloom 第一碼：老師給的 ≥ 出題 Bloom 為對，否則錯；`solo` 記老師選的層級，沒帶回 **422**。
 
-其他題型：老師給的 `solo` ≥ 該題全對的 SOLO 即判定正確，否則錯誤。全對的 SOLO：選擇／是非為正解選項的 `solo`；填空 `B11` 為 `2`、其他為 `3`；除錯、解讀為 `4`。
+其他題型：老師給的 `solo` ≥ 該題全對的 SOLO 即判定正確，否則錯誤。全對的 SOLO：選擇／是非為正解選項的 `solo`；填空為第一格正解的 `solo`；除錯、解讀為 `4`。
 
 ---
 

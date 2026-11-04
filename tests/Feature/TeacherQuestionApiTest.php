@@ -318,7 +318,8 @@ class TeacherQuestionApiTest extends TestCase
             ])
             ->assertCreated()
             ->assertJsonPath('question.sub_answers.0.answer', 'print(name)')
-            ->assertJsonPath('question.sub_answers.0.accepted_answers', ['print (name)']);
+            ->assertJsonPath('question.sub_answers.0.accepted_answers', ['print (name)'])
+            ->assertJsonPath('question.sub_answers.0.solo', 3);
     }
 
     public function test_teacher_can_create_debug_and_interpret_questions(): void
@@ -622,14 +623,23 @@ class TeacherQuestionApiTest extends TestCase
             ->putJson("/api/v1/teacher/question-records/{$record->id}", [
                 'bloom_id' => 'B41',
             ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('solo');
+
+        $this->withToken($this->teacherToken())
+            ->putJson("/api/v1/teacher/question-records/{$record->id}", [
+                'bloom_id' => 'B41',
+                'solo' => 4,
+            ])
             ->assertOk()
             ->assertJsonPath('record.bloom_id', 'B41')
-            ->assertJsonPath('record.solo', QuestionRecord::SOLO_CORRECT)
+            ->assertJsonPath('record.solo', 4)
             ->assertJsonPath('record.system_status', QuestionRecord::STATUS_CORRECT);
 
         $this->withToken($this->teacherToken())
             ->putJson("/api/v1/teacher/question-records/{$record->id}", [
                 'bloom_id' => 'b21',
+                'solo' => 1,
             ])
             ->assertOk()
             ->assertJsonPath('record.bloom_id', 'B21')

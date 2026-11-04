@@ -211,13 +211,13 @@ class QuestionApiTest extends TestCase
     public function test_fill_records_configured_solo_for_each_cell_and_parent(): void
     {
         $cases = [
-            [['1' => 'x', '2' => 'y'], 3, 0, 'B12'],
-            [['1' => 'define', '2' => 'y'], 4, 1, 'B12'],
-            [['1' => 'define', '2' => 'PI'], 3, 2, 'B12'],
-            [['1' => 'define', '2' => 'PI'], 3, 2, 'B11'],
+            [['1' => 'x', '2' => 'y'], 1, 0, 'B12', [1, 1]],
+            [['1' => 'define', '2' => 'y'], 1, 1, 'B12', [3, 1]],
+            [['1' => 'define', '2' => 'PI'], 3, 2, 'B12', [3, 4]],
+            [['1' => 'define', '2' => 'PI'], 3, 2, 'B11', [3, 4]],
         ];
 
-        foreach ($cases as $index => [$answers, $solo, $correctCount, $bloomId]) {
+        foreach ($cases as $index => [$answers, $solo, $correctCount, $bloomId, $subSolos]) {
             $question = $this->makeQuestion($this->yingCourse(), Question::TYPE_FILL, "PI常數{$index}");
             $question->update(['bloom_id' => $bloomId]);
             QuestionSubAnswer::query()->create([
@@ -238,12 +238,11 @@ class QuestionApiTest extends TestCase
                     'answers' => $answers,
                 ])
                 ->assertOk()
-                // 整題與子答案都回傳題目設定的 SOLO，不依答對／答錯重設。
                 ->assertJsonPath('record.solo', $solo)
                 ->assertJsonPath('record.result.correct', $correctCount)
                 ->assertJsonPath('record.result.total', 2)
-                ->assertJsonPath('record.subs.0.solo', 3)
-                ->assertJsonPath('record.subs.1.solo', 4)
+                ->assertJsonPath('record.subs.0.solo', $subSolos[0])
+                ->assertJsonPath('record.subs.1.solo', $subSolos[1])
                 ->assertJsonPath('review.subs.1.my_answer', $answers['2'])
                 ->assertJsonPath('review.subs.1.correct_answer', 'PI');
 
@@ -302,6 +301,12 @@ class QuestionApiTest extends TestCase
 
         $this->withToken($teacherToken)
             ->putJson("/api/v1/teacher/question-records/{$recordId}", ['solo' => 5])
+            ->assertOk()
+            ->assertJsonPath('record.solo', 5)
+            ->assertJsonPath('record.teacher_status', QuestionRecord::STATUS_CORRECT);
+
+        $this->withToken($teacherToken)
+            ->putJson("/api/v1/teacher/question-records/{$recordId}", ['solo' => 6])
             ->assertUnprocessable()
             ->assertJsonValidationErrors('solo');
     }

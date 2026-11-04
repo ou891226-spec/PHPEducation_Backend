@@ -140,13 +140,16 @@ class TeacherQuestionService
         }
 
         if (in_array($question->type, Question::SUB_ANSWER_TYPES, true)) {
+            $defaultSolo = $question->type === Question::TYPE_FILL
+                ? Bloom::defaultCorrectSolo($question->bloom_id)
+                : QuestionSubAnswer::SOLO_CORRECT;
             foreach ($data['sub_answers'] as $sub) {
                 $question->subAnswers()->create([
                     'sub_id' => (int) $sub['sub_id'],
                     'answer' => $sub['answer'],
                     'accepted_answers' => $this->acceptedAnswerStrings($sub),
                     'description' => $sub['description'] ?? null,
-                    'solo' => isset($sub['solo']) ? (int) $sub['solo'] : QuestionSubAnswer::SOLO_CORRECT,
+                    'solo' => isset($sub['solo']) ? (int) $sub['solo'] : $defaultSolo,
                 ]);
             }
         }
