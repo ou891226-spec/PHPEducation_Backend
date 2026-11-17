@@ -213,6 +213,37 @@ class TeacherQuestionApiTest extends TestCase
             ->assertJsonPath('knowledge_cards.0.title', '匿名函數、回撥函數與閉包');
     }
 
+    public function test_course_knowledge_cards_keep_longer_concept_titles(): void
+    {
+        $token = $this->teacherToken();
+        $courseId = $this->withToken($token)->postJson('/api/v1/teacher/courses', [
+            'name' => '較長知識點',
+            'description' => '超過 24 字的標題',
+            'semester' => '115-1',
+            'class_name' => '資應二甲',
+        ])->json('course.id');
+
+        $chapterId = $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/chapters", [
+            'name' => '第六章 引入檔案',
+        ])->json('chapter.id');
+
+        $unitId = $this->withToken($token)->postJson("/api/v1/teacher/chapters/{$chapterId}/units", [
+            'name' => '引入檔案',
+        ])->json('unit.id');
+
+        $title = '6.4.2 require_once 與 include_once';
+        $cardId = $this->withToken($token)->postJson("/api/v1/teacher/units/{$unitId}/knowledge-cards", [
+            'title' => $title,
+            'content' => 'require_once 與 include_once 只會引入一次。',
+        ])->json('knowledge_card.id');
+
+        $this->withToken($token)
+            ->getJson("/api/v1/teacher/courses/{$courseId}/knowledge-cards")
+            ->assertOk()
+            ->assertJsonPath('knowledge_cards.0.id', $cardId)
+            ->assertJsonPath('knowledge_cards.0.title', $title);
+    }
+
     public function test_teacher_can_create_choice_question_with_auto_solo(): void
     {
         [$courseId, $cardIds] = $this->seedCourseWithCards(2);

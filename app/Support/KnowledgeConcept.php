@@ -10,6 +10,11 @@ use App\Models\KnowledgeCard;
 final class KnowledgeConcept
 {
     /**
+     * 出題清單可顯示的知識點標題長度。教材本身仍可存到 255 字。
+     */
+    private const MAX_CONCEPT_TITLE_LENGTH = 60;
+
+    /**
      * @var list<string>
      */
     private const GENERIC_SECTIONS = ['說明', '內容', '介紹', '課文', '重點', '摘要', '講解'];
@@ -45,7 +50,7 @@ final class KnowledgeConcept
     public static function looksLikeConceptTitle(string $title): bool
     {
         $title = trim($title);
-        if ($title === '' || mb_strlen($title) > 24) {
+        if ($title === '' || mb_strlen($title) > self::MAX_CONCEPT_TITLE_LENGTH) {
             return false;
         }
 
