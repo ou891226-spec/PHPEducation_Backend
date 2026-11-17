@@ -53,7 +53,8 @@ final class KnowledgeConcept
             return false;
         }
 
-        if (preg_match('/[。．！？，、；：]|是用來|用來儲存/u', $title) === 1) {
+        // 句號與說明句才排除。「、」這類標點仍是知識點標題，例如「匿名函數、回撥函數與閉包」。
+        if (preg_match('/[。．！？]|是用來|用來儲存/u', $title) === 1) {
             return false;
         }
 
@@ -64,14 +65,10 @@ final class KnowledgeConcept
     {
         $unitName = trim((string) $card->unit?->name);
         $fromUnit = self::fromUnitName($unitName);
+        $stored = trim((string) $card->title);
 
-        if ($fromUnit !== null && ! self::isPracticeSection($unitName)) {
-            $stored = trim((string) $card->title);
-            if (self::looksLikeConceptTitle($stored) && $stored !== $fromUnit) {
-                return $stored;
-            }
-
-            return $fromUnit;
+        if (self::looksLikeConceptTitle($stored) && $stored !== $unitName && $stored !== $fromUnit) {
+            return $stored;
         }
 
         if ($fromUnit !== null) {

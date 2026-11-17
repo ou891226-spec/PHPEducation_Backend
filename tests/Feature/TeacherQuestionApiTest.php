@@ -183,6 +183,36 @@ class TeacherQuestionApiTest extends TestCase
             ->assertJsonPath('knowledge_cards.0.title', '變數');
     }
 
+    public function test_course_knowledge_cards_keep_titles_with_enumeration_comma(): void
+    {
+        $token = $this->teacherToken();
+        $courseId = $this->withToken($token)->postJson('/api/v1/teacher/courses', [
+            'name' => '標點知識點',
+            'description' => '頓號標題',
+            'semester' => '115-1',
+            'class_name' => '資應二甲',
+        ])->json('course.id');
+
+        $chapterId = $this->withToken($token)->postJson("/api/v1/teacher/courses/{$courseId}/chapters", [
+            'name' => '第一章 函數',
+        ])->json('chapter.id');
+
+        $unitId = $this->withToken($token)->postJson("/api/v1/teacher/chapters/{$chapterId}/units", [
+            'name' => '匿名函數',
+        ])->json('unit.id');
+
+        $cardId = $this->withToken($token)->postJson("/api/v1/teacher/units/{$unitId}/knowledge-cards", [
+            'title' => '匿名函數、回撥函數與閉包',
+            'content' => '函式可以沒有名稱，也可以當成參數傳遞。',
+        ])->json('knowledge_card.id');
+
+        $this->withToken($token)
+            ->getJson("/api/v1/teacher/courses/{$courseId}/knowledge-cards")
+            ->assertOk()
+            ->assertJsonPath('knowledge_cards.0.id', $cardId)
+            ->assertJsonPath('knowledge_cards.0.title', '匿名函數、回撥函數與閉包');
+    }
+
     public function test_teacher_can_create_choice_question_with_auto_solo(): void
     {
         [$courseId, $cardIds] = $this->seedCourseWithCards(2);
